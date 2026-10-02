@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+venv/.venv/
+logs/
+*.log
+*.csv
+.DS_Store
+.vscode/.idea/
+*.recovered
+*.backup-*
+RECOVERY_REPORT*.txt
+diagnostic_prompt1.py
