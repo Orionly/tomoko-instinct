@@ -10,3 +10,5 @@ logs/
 *.backup-*
 RECOVERY_REPORT*.txt
 diagnostic_prompt1.py
+# Generated at startup by Main.py.sync_static() - source of truth is ui/
+backend/static/

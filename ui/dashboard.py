@@ -19,7 +19,7 @@ from core.regime_engine import RegimeEngine
 from core.context_feed import ContextFeed
 from core.levels_engine import LevelsEngine
 from core.risk_engine import RiskEngine
-from core.news_feed import NewsFeed
+from core.news_engine import NewsEngine, WAITING_SOURCE
 from core.journal import Journal
 from strategies.trend_following_v2 import TrendFollowingV2
 from strategies.liquidity_sweep import LiquiditySweep
@@ -27,6 +27,24 @@ from datetime import datetime
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+
+def _ev_time(s):
+    """EA calendar time 'YYYY.MM.DD HH:MM' -> 'HH:MM'."""
+    parts = str(s or "").split()
+    return parts[-1][:5] if parts else "--:--"
+
+
+def _ev_imp(v):
+    """EA importance (HIGH/MEDIUM/LOW or numeric) -> display label."""
+    if v is None:
+        return "LOW"
+    s = str(v).upper()
+    if "HIGH" in s or s in ("2", "3"):
+        return "HIGH"
+    if "MED" in s or s == "1":
+        return "MED"
+    return "LOW"
 
 class PairCard(ctk.CTkFrame):
     def __init__(self, master, symbol, on_select, mt5_bridge, regime_engine, context_feed, levels_engine, journal, app_ref):
@@ -227,7 +245,7 @@ class TomokoBrainApp(ctk.CTk):
         self.journal_count = self.journal.get_count()
         self.pairs_data = {}
         self.selected_symbol = None
-        self.news_feed = NewsFeed()
+        self.news_engine = NewsEngine(self.mt5)
 
         # Top Context Strip
         top = ctk.CTkFrame(self, fg_color="#0a0e14", height=50)
@@ -393,22 +411,37 @@ Can Trade: {reason}
 
     def update_news(self):
         try:
-            events = self.news_feed.get_upcoming(hours=12)
             session_name, _ = self.context_feed.get_session()
             risk = self.context_feed.get_risk_sentiment(self.context_feed.get_context())
+            cal = self.news_engine.get_global_events(hours_ahead=12)
+
+            # No EA file yet -> say so plainly instead of showing stale/fake events.
+            if cal.get("status") == WAITING_SOURCE:
+                self.news_label.configure(
+                    text_color="#ffb800",
+                    text=f"SESSION {session_name} • Risk {risk} | calendar unavailable - waiting for EA")
+                self.after(60000, self.update_news)
+                return
+
+            events = cal.get("events") or []
             parts = [
-                f"{e['time']} {e['currency']} {e['event']} [{e['impact']}] F:{e['forecast']} P:{e['previous']}"
+                f"{_ev_time(e.get('time'))} {e.get('currency')} {e.get('event')} [{_ev_imp(e.get('importance'))}]"
                 for e in events[:3]
             ]
-            text = " | ".join(parts) if parts else "No high-impact events in next 12h"
-            block = self.news_feed.get_next_high_impact()
-            if block:
-                self.news_label.configure(text_color="#ef4444")
-                text = f"AVOID {block['currency']} | SESSION {session_name} • Risk {risk} | " + text
+            text = " | ".join(parts) if parts else "No HIGH events in next 12h"
+
+            symbol = self.selected_symbol or (config.PAIRS[0] if config.PAIRS else None)
+            is_clean, blocking = (True, [])
+            if symbol:
+                is_clean, blocking = self.news_engine.is_news_clean(symbol)
+            if not is_clean and blocking:
+                self.news_label.configure(
+                    text_color="#ef4444",
+                    text=f"AVOID {blocking[0].get('currency')} | SESSION {session_name} • Risk {risk} | " + text)
             else:
-                self.news_label.configure(text_color="#ffb800")
-                text = f"SESSION {session_name} • Risk {risk} | " + text
-            self.news_label.configure(text=text)
+                self.news_label.configure(
+                    text_color="#ffb800",
+                    text=f"SESSION {session_name} • Risk {risk} | " + text)
         except Exception as e:
             print("news update failed:", e)
         self.after(60000, self.update_news)

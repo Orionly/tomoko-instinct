@@ -57,6 +57,13 @@
   #news-bar.amber{ color:#FFB800; font-weight:700; }
   #news-bar.block{ color:#FF4D4D; font-weight:700; }
 
+  #api-banner{ padding:8px 16px; font-family:'JetBrains Mono',monospace; font-size:12px;
+    font-weight:700; color:#fff; background:#FF4D4D; border-bottom:1px solid var(--border);
+    text-align:center; letter-spacing:.03em; }
+  #api-banner.warn{ background:#FFB800; color:#000; }
+  .pulse-empty{ grid-column:1/-1; text-align:center; color:var(--muted);
+    font-family:'JetBrains Mono',monospace; font-size:11px; padding:16px 0; }
+
   main{ display:flex; gap:14px; padding:14px 16px; align-items:flex-start; flex:1; }
   #grid-wrap{ flex:3 1 0; }
   #grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
@@ -228,6 +235,8 @@
     </div>
   </header>
 
+  <div id="api-banner" style="display:none;"></div>
+
   <div id="context-strip"><span>context: loading…</span></div>
 
   <div id="news-bar" class="clean">SESSION: <span id="session">--</span> • <span id="news-next">loading…</span></div>
@@ -295,7 +304,7 @@ function scoreColor(s){ if(s<40) return {bg:'#FF4D4D',fg:'#fff'}; if(s<70) retur
 function fmt(n,d){ if(n===undefined||n===null||isNaN(n)) return '—'; return Number(n).toFixed(d); }
 function arrow(t){ return t==='UP'?'↑':t==='DOWN'?'↓':'→'; }
 function isGold(s){ return s.indexOf('XAU')>=0; }
-function priceTxt(s,p){ return isGold(s)? p.toFixed(3) : p.toFixed(5); }
+function priceTxt(s,p){ if(p==null||isNaN(p)) return '—'; return isGold(s)? p.toFixed(3) : p.toFixed(5); }
 /* SafeCalendarValue: MT5 int64 sentinel (-9223372036854775808) => show '—' not garbage */
 function safeCalValue(v){ if(v==null||v==='') return '—'; const s=String(v); if(s.indexOf('-922337203685')===0) return '—'; return s; }
 /* Parse "YYYY.MM.DD HH:MM" to Date (local) */
@@ -538,104 +547,102 @@ function renderHeatmap(raw){
     if(body) body.innerHTML = `<div style="color:red;padding:10px;">Error: ${e.message}</div>`;
   }
 }
-function demoWatchout(price, atr){
-  const daily_low=price-atr, daily_high=price+atr, eq=(daily_low+daily_high)/2;
+
+/* ---- Degraded-mode helpers (no fake data, ever) ---- */
+let DEGRADED = false;
+
+function showApiBanner(text, warn){
+  const b = document.getElementById('api-banner');
+  if(!b) return;
+  b.textContent = text;
+  b.className = warn ? 'api-banner warn' : 'api-banner';
+  b.style.display = 'block';
+}
+function hideApiBanner(){
+  const b = document.getElementById('api-banner');
+  if(b) b.style.display = 'none';
+}
+function degradedCard(symbol, reason){
   return {
-    buy_zone:{ low:daily_low, high:eq-0.1*atr, type:'DISCOUNT', discount_pct:38, distance_atr:1.02,
-      confluence:['H4 Bullish','Discount','Daily Low + EMA21','Liq Low '+price] },
-    sell_zone:{ low:daily_high, high:daily_high+1.0*atr, type:'PREMIUM', premium_pct:110, distance_atr:3.9,
-      confluence:['Premium','Daily High + Liq High','H4 extended'] },
-    premium_discount:{ daily_low:daily_low, daily_high:daily_high, eq:eq,
-      premium_zone:[eq,daily_high], discount_zone:[daily_low,eq], current_pct:40 }
+    symbol, price:null, score:0,
+    score_breakdown:{structural:0,volatility:0,levels:0,intermarket:0,news:0},
+    action:'WAIT', real_action:'WAIT', reason:reason || 'NO DATA - waiting for MT5',
+    h4:{gate:'INSIDE',direction:'FLAT',adx:0,atr_ratio:0,dist_ema21_atr:0,ema20:0,ema50:0,ema21:0,atr:0,close:0},
+    h1:{dist_ema21_atr:0,is_pullback:false,rsi:50,bias:'Neutral',close:0},
+    h1_bias:'Neutral', h4_bias:'Neutral', m15_bias:'Neutral',
+    levels:{daily_high:0,daily_low:0,weekly_open:0,liq_high:0,liq_low:0,atr:0,close:0},
+    weekly_open:0,
+    watchout_zones:null, atr:0, ema21:0
   };
 }
-function demoObj(symbol, h4d, h1b, m15b, score, price){
-  const atr = isGold(symbol) ? 3.5 : 0.25;
-  return {
-    symbol, price, atr,
-    h4:{ direction:h4d, gate:'OPEN', adx:42, atr_ratio:1.1, ema20:price-1, ema50:price-2, dist_ema21_atr:1.2 },
-    h1:{ bias:h1b, dist_ema21_atr:0.4, rsi:55, is_pullback:true },
-    m15_bias:m15b,
-    ema21: price*0.999,
-    levels:{ liq_high:price+8, liq_low:price-8, weekly_open:price-2, daily_high:price+5, daily_low:price-5 },
-    watchout_zones: demoWatchout(price, atr),
-    fundamental:{ bias:'Gold long favored DXY down' },
-    news:{ is_clean:true, source:'mt5_terminal_calendar', blocking:[], count:89 },
-    action: score>=75 ? 'WAIT FOR PULLBACK' : 'LOOK - EARLY',
-    reason:'demo static preview',
-    score_breakdown:{ structural:80, volatility:60, levels:70, intermarket:65, news:100 }
-  };
+function setDegradedCards(reason){
+  PAIRS.forEach(s=>{ DATA[s] = degradedCard(s, reason); });
+  renderCards();
 }
-const DEMO = [
-  demoObj('EURUSD','UP','Bullish','Bearish',68,1.16511),
-  demoObj('GBPUSD','UP','Bullish','Bearish',74,1.28500),
-  demoObj('USDJPY','UP','Bullish','Bearish',74,156.200),
-  demoObj('GBPJPY','UP','Bullish','Bearish',74,200.400),
-  demoObj('EURJPY','UP','Bullish','Bearish',68,171.100),
-  demoObj('EURGBP','DOWN','Neutral','Bullish',33,0.85420),
-  demoObj('XAUUSD','UP','Bullish','Bullish',82,4581.130)
-];
-function seedDemo(){ DEMO.forEach(d=>{ DATA[d.symbol]=d; }); }
-const DEMO_PULSE = {
-  USD:{ strength:1.84, direction:'up', label:'Strong', bull_ratio:'4/4', color:'green' },
-  EUR:{ strength:0.12, direction:'neutral', label:'Neutral', bull_ratio:'2/3', color:'yellow' },
-  GBP:{ strength:-0.87, direction:'down', label:'Weak', bull_ratio:'1/4', color:'red' },
-  JPY:{ strength:1.21, direction:'up', label:'Strong', bull_ratio:'3/4', color:'green' },
-  XAU:{ strength:-0.15, direction:'neutral', label:'Mixed', bull_ratio:'0/1', color:'yellow' },
-  AUD:{ strength:0.0, direction:'neutral', label:'No Data', bull_ratio:'0/1', color:'gray' },
-  NZD:{ strength:0.0, direction:'neutral', label:'No Data', bull_ratio:'0/1', color:'gray' },
-  CHF:{ strength:0.0, direction:'neutral', label:'No Data', bull_ratio:'0/1', color:'gray' },
-  timestamp:'2026.08.30 17:02', method:'H4 trend aggregation'
-};
-const DEMO_GLOBAL_CAL = [
-  { time:'2026.08.31 10:00', currency:'USD', event:'ISM Manufacturing PMI', priority:3, _rel_min:1500 },
-  { time:'2026.08.31 14:30', currency:'EUR', event:'CPI Flash Estimate', priority:3, _rel_min:1540 },
-  { time:'2026.08.31 14:30', currency:'CAD', event:'GDP Monthly', priority:2, _rel_min:1540 },
-  { time:'2026.09.01 03:30', currency:'AUD', event:'RBA Rate Decision', priority:3, _rel_min:2220 },
-  { time:'2026.09.01 11:00', currency:'EUR', event:'Unemployment Rate', priority:2, _rel_min:2560 },
-  { time:'2026.09.02 08:00', currency:'JPY', event:'BOJ Summary Opinions', priority:2, _rel_min:3180 },
-  { time:'2026.09.02 12:30', currency:'USD', event:'Non-Farm Payrolls', priority:3, _rel_min:3310 },
-  { time:'2026.09.02 12:30', currency:'USD', event:'Unemployment Rate', priority:3, _rel_min:3310 },
-  { time:'2026.09.03 14:30', currency:'GBP', event:'Services PMI Final', priority:1, _rel_min:4000 },
-  { time:'2026.09.06 23:50', currency:'JPY', event:'GDP Preliminary', priority:2, _rel_min:7680 }
-];
-const DEMO_HEATMAP = [
-  { pair:'XAUUSD', score:82, h4:'BULL', h1:'BULL', m15:'BULL', alignment:'3/3 BULL', dist:1.2, action:'WAIT FOR PULLBACK', color:'green', bull_count:3, bear_count:0 },
-  { pair:'USDJPY', score:74, h4:'BULL', h1:'BULL', m15:'BEAR', alignment:'2/3 BULL', dist:0.4, action:'LOOK FOR BUY PULLBACK', color:'yellow-green', bull_count:2, bear_count:1 },
-  { pair:'GBPJPY', score:74, h4:'BULL', h1:'BULL', m15:'BEAR', alignment:'2/3 BULL', dist:0.4, action:'LOOK FOR BUY PULLBACK', color:'yellow-green', bull_count:2, bear_count:1 },
-  { pair:'GBPUSD', score:74, h4:'BULL', h1:'BULL', m15:'BEAR', alignment:'2/3 BULL', dist:0.4, action:'LOOK FOR BUY PULLBACK', color:'yellow-green', bull_count:2, bear_count:1 },
-  { pair:'EURJPY', score:68, h4:'BULL', h1:'BEAR', m15:'BEAR', alignment:'2/3 BEAR', dist:0.8, action:'LOOK - EARLY', color:'orange', bull_count:1, bear_count:2 },
-  { pair:'EURUSD', score:68, h4:'BULL', h1:'BEAR', m15:'BEAR', alignment:'2/3 BEAR', dist:0.8, action:'LOOK - EARLY', color:'orange', bull_count:1, bear_count:2 },
-  { pair:'EURGBP', score:33, h4:'BEAR', h1:'NEUTRAL', m15:'BULL', alignment:'MIXED', dist:0.2, action:'WAIT', color:'gray', bull_count:1, bear_count:1 }
-];
+function renderEmptyPulse(msg){
+  const grid = document.getElementById('pulse-grid');
+  if(grid) grid.innerHTML = `<div class="pulse-empty">${msg||'waiting for live data'}</div>`;
+}
+function renderEmptyHeatmap(msg){
+  const body = document.getElementById('heatmap-body');
+  if(body) body.innerHTML = `<div style="padding:12px;color:#666;text-align:center;">${msg||'heatmap unavailable'}</div>`;
+}
+function renderEmptyCalendar(msg){
+  const tbody = document.getElementById('global-calendar-body');
+  if(tbody) tbody.innerHTML = `<tr><td colspan="5" class="gc-empty">${msg||'calendar unavailable'}</td></tr>`;
+}
+function enterDegradedMode(bannerText, warn, reason){
+  DEGRADED = true;
+  showApiBanner(bannerText, warn);
+  setDegradedCards(reason);
+  renderEmptyPulse('waiting for live data');
+  renderEmptyHeatmap('heatmap unavailable');
+  renderEmptyCalendar('calendar unavailable');
+  window._NEWS_BAR_TEXT = bannerText;
+  window._BLOCKING_NEWS = [];
+  try { renderNews(); } catch(e){ console.error('renderNews(degraded)', e); }
+}
+function leaveDegradedMode(){
+  DEGRADED = false;
+  hideApiBanner();
+}
 
 async function poll(){
+  // ---- 1) /api/scan_all: source of truth for cards / pulse / heatmap / news ----
   try{
     const r = await fetch('/api/scan_all');
     const data = await r.json();
-    const scans = Array.isArray(data.scans) ? data.scans : (data.symbol ? [data] : []);
-    scans.forEach(d=>{ if(d && d.symbol) DATA[d.symbol]=d; });
-    const n0 = (scans[0] && scans[0].news) || {};
-    window._NEWS_SOURCE = n0.source || data.calendar_source || '';
-    window._NEWS_COUNT = (n0.count != null) ? n0.count : (data.count != null ? data.count : (data.calendar_events||[]).length);
-    window._NEWS_BAR_TEXT = data.news_bar_text || '';
-    window._BLOCKING_NEWS = data.blocking_news || [];
-    window._CALENDAR_EVENTS = data.calendar_events || [];
-    window._CALENDAR_SOURCE = data.calendar_source || '';
-    window._CALENDAR_LAST_UPDATE = data.calendar_last_update || '';
-    renderCards();
-    try { renderNews(); } catch(e){ console.error('renderNews', e); }
-    try { if(data.market_pulse) renderMarketPulse(data.market_pulse); } catch(e){ console.error('renderMarketPulse', e); }
-    try { if(data.global_calendar){ window._GLOBAL_CAL_TOTAL = data.count; renderGlobalCalendar(data.global_calendar); } } catch(e){ console.error('renderGlobalCalendar', e); }
-    try {
-      const hmRaw = data.market_heatmap || data.heatmap;
-      if(hmRaw) renderHeatmap(hmRaw);
-    } catch(e){ console.error("heatmap poll", e); }
+    if(r.status === 503 || (!Array.isArray(data.scans) && !data.symbol)){
+      // MT5 down or degraded API: explicit error state, never fake data
+      const reason = (data && data.detail) ? String(data.detail) : 'NO DATA - waiting for MT5';
+      const banner = r.status === 503 ? 'MT5 NOT CONNECTED - API in degraded mode' : 'NO DATA - waiting for MT5';
+      enterDegradedMode(banner, r.status !== 503, reason);
+    } else {
+      leaveDegradedMode();
+      const scans = Array.isArray(data.scans) ? data.scans : (data.symbol ? [data] : []);
+      scans.forEach(d=>{ if(d && d.symbol) DATA[d.symbol]=d; });
+      const n0 = (scans[0] && scans[0].news) || {};
+      window._NEWS_SOURCE = n0.source || data.calendar_source || '';
+      window._NEWS_COUNT = (n0.count != null) ? n0.count : (data.count != null ? data.count : (data.calendar_events||[]).length);
+      window._NEWS_BAR_TEXT = data.news_bar_text || '';
+      window._BLOCKING_NEWS = data.blocking_news || [];
+      window._CALENDAR_EVENTS = data.calendar_events || [];
+      window._CALENDAR_SOURCE = data.calendar_source || '';
+      window._CALENDAR_LAST_UPDATE = data.calendar_last_update || '';
+      renderCards();
+      try { renderNews(); } catch(e){ console.error('renderNews', e); }
+      try { if(data.market_pulse) renderMarketPulse(data.market_pulse); else renderEmptyPulse('waiting for live data'); } catch(e){ console.error('renderMarketPulse', e); }
+      try { if(data.global_calendar){ window._GLOBAL_CAL_TOTAL = data.count; renderGlobalCalendar(data.global_calendar); } } catch(e){ console.error('renderGlobalCalendar', e); }
+      try {
+        const hmRaw = data.market_heatmap || data.heatmap;
+        if(hmRaw) renderHeatmap(hmRaw); else renderEmptyHeatmap('heatmap unavailable');
+      } catch(e){ console.error("heatmap poll", e); }
+    }
   }catch(e){
-    if(!window._DEMO){ seedDemo(); renderCards(); 
-      try { renderNews(); } catch(e2){} 
-      renderMarketPulse(DEMO_PULSE); renderHeatmap(DEMO_HEATMAP); }
+    // Network failure: explicit error state, never fake data
+    enterDegradedMode('NO DATA - waiting for MT5', true, 'NO DATA - waiting for MT5');
   }
+  // ---- 2) /api/context (yfinance based - still works while MT5 is down) ----
   try{
     const c = await fetch('/api/context');
     const j = await c.json();
@@ -645,13 +652,17 @@ async function poll(){
     renderContext(j.context, j.risk);
     renderNews();
   }catch(e){}
-  try{
-    const g = await fetch('/api/global_calendar');
-    const gj = await g.json();
-    window._GLOBAL_CAL_TOTAL = gj.count;
-    renderGlobalCalendar(gj.events);
-  }catch(e){
-    if(!window._DEMO){ renderGlobalCalendar(DEMO_GLOBAL_CAL); }
+  // ---- 3) /api/global_calendar (EA file based) ----
+  if(!DEGRADED){
+    try{
+      const g = await fetch('/api/global_calendar');
+      const gj = await g.json();
+      window._GLOBAL_CAL_TOTAL = gj.count;
+      if(gj.events && gj.events.length) renderGlobalCalendar(gj.events);
+      else renderEmptyCalendar(gj.status === 'waiting_for_ea' ? 'calendar unavailable - waiting for EA' : 'calendar unavailable');
+    }catch(e){
+      renderEmptyCalendar('calendar unavailable - waiting for EA');
+    }
   }
 }
 

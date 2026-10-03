@@ -14,32 +14,37 @@ import socket
 import sys
 import threading
 import argparse
+import logging
+
+# Ensure project root is importable (standalone: python core/mt5_bridge.py)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+import config
+
+# Library logger: silent unless the app configures logging (no stdout noise on
+# import/connect). WARNING+ still reaches stderr via logging's lastResort handler.
+log = logging.getLogger(__name__)
 
 # Global dictionary for calendar events keyed by event_id
 ea_calendar_dict = {}
 
-MT5_PATHS = {
-    "VT": r"C:\Program Files\VT Markets (Pty) MT5 Terminal\terminal64.exe",
-    "HFM": r"C:\Program Files\HFM Metatrader 5\terminal64.exe",
-}
-ACTIVE_BROKER = "VT"
-MT5_TERMINAL_PATH = MT5_PATHS[ACTIVE_BROKER]
-
 ACCOUNT_CENT_MODE = False  # VT Standard = 100k contract size, not Cent
 
-LIGHT_SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "EURGBP", "XAUUSD"]
+LIGHT_SYMBOLS = config.PAIRS
 
 ea_quotes = {}
 ea_calendar = []
 ea_connected = False
-_bridge_port = 18001
+_bridge_port = config.EA_SOCKET_PORT
 
 def _socket_server(port):
     global _bridge_port
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        srv.bind(('127.0.0.1', port))
+        srv.bind((config.EA_SOCKET_HOST, port))
     except PermissionError as e:
         print(f"[SOCKET] Port {port} blocked (WinError 10013 - Hyper-V/Firewall reservation)")
         print(f"[SOCKET] Run: netsh int ipv4 show excludedportrange protocol=tcp")
@@ -51,9 +56,9 @@ def _socket_server(port):
         raise
     srv.listen(5)
     _bridge_port = port
-    print(f"[SOCKET] Listening on 127.0.0.1:{port}")
-    if port != 18001:
-        print(f"!!! CRITICAL: Bound to {port} but EA targets 18001 - UPDATE EA INPUT TO {port}!!!")
+    print(f"[SOCKET] Listening on {config.EA_SOCKET_HOST}:{port}")
+    if port != config.EA_SOCKET_PORT:
+        print(f"!!! CRITICAL: Bound to {port} but EA targets {config.EA_SOCKET_PORT} - UPDATE EA INPUT TO {port}!!!")
     while True:
         try:
             conn, addr = srv.accept()
@@ -242,26 +247,26 @@ class MT5Bridge:
         # Common Files is same for all terminals
 
     def connect(self):
-        if not mt5.initialize(path=MT5_TERMINAL_PATH, timeout=10000):
-            print(f"[MT5] Failed to init {ACTIVE_BROKER} at {MT5_TERMINAL_PATH}, error: {mt5.last_error()}")
+        if not mt5.initialize(path=config.MT5_TERMINAL_PATH, timeout=10000):
+            log.error("[MT5] Failed to init %s at %s, error: %s", config.ACTIVE_BROKER, config.MT5_TERMINAL_PATH, mt5.last_error())
             if not mt5.initialize():
-                print("[MT5] Fallback initialization also failed")
+                log.error("[MT5] Fallback initialization also failed")
                 return False
             else:
-                print(f"[MT5] Warning: Using fallback MT5 terminal (not {ACTIVE_BROKER})")
+                log.warning("[MT5] Using fallback MT5 terminal (not %s)", config.ACTIVE_BROKER)
         self.connected = True
         acc = mt5.account_info()
         if acc:
-            print(f"[MT5] Connected to {acc.server} Balance {acc.balance} {acc.currency} via {MT5_TERMINAL_PATH}")
+            log.debug("[MT5] Connected to %s Balance %s %s via %s", acc.server, acc.balance, acc.currency, config.MT5_TERMINAL_PATH)
         terminal_info = mt5.terminal_info()
         if terminal_info:
-            print(f"[MT5] Terminal path: {terminal_info.path} Name: {terminal_info.name}")
+            log.debug("[MT5] Terminal path: %s Name: %s", terminal_info.path, terminal_info.name)
         # Discover symbols for your 7 pairs
         try:
             all_syms = mt5.symbols_get()
             if all_syms:
                 names = [s.name for s in all_syms]
-                for desired in ["EURUSD","GBPUSD","USDJPY","GBPJPY","EURJPY","EURGBP","XAUUSD"]:
+                for desired in LIGHT_SYMBOLS:
                     found = desired
                     if desired not in names:
                         for n in names:
@@ -270,11 +275,11 @@ class MT5Bridge:
                                 break
                     self.symbol_map[desired] = found
                     if found != desired:
-                        print(f"  Symbol mapping: {desired} -> {found}")
+                        log.debug("Symbol mapping: %s -> %s", desired, found)
                     mt5.symbol_select(found, True)
-            print(f"Symbol map: {self.symbol_map}")
+                log.debug("Symbol map: %s", self.symbol_map)
         except Exception as e:
-            print(f"discover failed: {e}")
+            log.error("discover failed: %s", e)
         return True
 
     def get_balance(self):
@@ -508,7 +513,9 @@ class MT5Bridge:
                 nearest_str = f"{nearest['event']} in {hrs}h {mins}m"
             else:
                 nearest_str = f"{nearest['event']} in {mins}m"
-        print(f"[NEWS_ENGINE] Loaded {len(events)} events, Window {window_start.strftime('%a %H:%M')} -> {window_end.strftime('%a %H:%M')}+{hours_ahead//24}d ({hours_ahead}h), {symbol} -> {total} events")
+        log.debug("[NEWS] Loaded %s events, window %s -> %s+%dd (%sh), %s -> %s events",
+                  len(events), window_start.strftime('%a %H:%M'), window_end.strftime('%a %H:%M'),
+                  hours_ahead // 24, hours_ahead, symbol, total)
         return filtered[:20]  # return more for global calendar
 
     def is_news_clean(self, symbol, minutes_before=60, minutes_after=30):
@@ -738,14 +745,14 @@ def calculate_currency_strength(scan_results: dict) -> dict:
     return cleaned
 
 
-def _find_available_port(start_port=18001, max_attempts=5):
+def _find_available_port(start_port=config.EA_SOCKET_PORT, max_attempts=5):
     """Try to bind consecutive ports, return the first available one."""
     import errno
     for port in range(start_port, start_port + max_attempts):
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            srv.bind(('127.0.0.1', port))
+            srv.bind((config.EA_SOCKET_HOST, port))
             srv.close()
             return port
         except OSError as e:
@@ -758,8 +765,14 @@ def _find_available_port(start_port=18001, max_attempts=5):
 
 
 if __name__ == "__main__":
+    # Standalone runs show logs; when imported as a library this stays silent.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     parser = argparse.ArgumentParser(description="Tomoko MT5 Bridge")
-    parser.add_argument("--port", type=int, default=18001, help="EA socket server port (default: 18001)")
+    parser.add_argument("--port", type=int, default=config.EA_SOCKET_PORT,
+                        help=f"EA socket server port (default: {config.EA_SOCKET_PORT})")
     args = parser.parse_args()
 
     # Try user-specified port first, then fallbacks
@@ -768,18 +781,18 @@ if __name__ == "__main__":
     try:
         srv_test = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv_test.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv_test.bind(('127.0.0.1', port))
+        srv_test.bind((config.EA_SOCKET_HOST, port))
         srv_test.close()
         print(f"Tomoko MT5 Bridge starting... (requested port {port})")
     except OSError:
         print(f"Requested port {port} unavailable, trying fallbacks...")
-        port = _find_available_port(18001)
+        port = _find_available_port(config.EA_SOCKET_PORT)
         if port is None:
-            print("ERROR: No available ports in 18001-18005 range!")
+            print("ERROR: No available ports in the fallback range!")
             sys.exit(1)
         print(f"Using port {port} instead of {requested_port}")
 
-    print(f"Broker: {ACTIVE_BROKER} | Path: {MT5_TERMINAL_PATH}")
+    print(f"Broker: {config.ACTIVE_BROKER} | Path: {config.MT5_TERMINAL_PATH}")
     print(f"Cent mode: {ACCOUNT_CENT_MODE} | Symbols: {LIGHT_SYMBOLS}")
 
     # Start socket server thread first

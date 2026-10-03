@@ -4,7 +4,9 @@ import time
 import os
 import sys
 
-URL = "http://127.0.0.1:8000"
+import config
+
+URL = f"http://{config.API_HOST}:{config.API_PORT}"
 
 
 def main():
@@ -15,7 +17,7 @@ def main():
     print("Starting Tomoko Brain API...")
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "backend.api:app",
-         "--host", "127.0.0.1", "--port", "8000", "--log-level", "warning"],
+         "--host", config.API_HOST, "--port", str(config.API_PORT), "--log-level", "warning"],
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
 

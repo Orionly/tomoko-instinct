@@ -13,6 +13,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
@@ -28,15 +30,65 @@ from core.watchout_zones import calculate_watchout_zones
 from core.intermarket_engine import IntermarketEngine
 from core.performance_tracker import PerformanceTracker
 from core.context_feed import ContextFeed
+from core.news_engine import NewsEngine, WAITING_SOURCE
 import config
 
 tracker = PerformanceTracker()
 
-# Global MT5 bridge singleton - connect once, don't reconnect per request
-# (reconnecting each /api/scan caused discover_symbols spam)
-mt5_bridge = MT5Bridge()
-mt5_bridge.connect()
-ctx_feed = ContextFeed(mt5_bridge)
+# --- Lazy MT5 bridge singleton ---------------------------------------------- #
+# connect() must NOT run at import time: if the MT5 terminal is closed the API
+# should still start and answer /api/scan_all with a 503 JSON instead of dying.
+# Endpoints call _ensure_mt5() to (re)connect once per cooldown window.
+_mt5_bridge = None
+_mt5_retry_state = {"last_attempt": 0.0}
+_MT5_RETRY_COOLDOWN = 15.0  # seconds between reconnect attempts while MT5 is down
+
+_ctx_feed = None
+
+
+def get_mt5_bridge():
+    global _mt5_bridge
+    if _mt5_bridge is None:
+        _mt5_bridge = MT5Bridge()
+    return _mt5_bridge
+
+
+def _ensure_mt5():
+    """Return True if the bridge is (or just became) connected.
+
+    While MT5 is down, retries at most once per _MT5_RETRY_COOLDOWN so a closed
+    terminal does not stall every poll for the full connect() timeout.
+    """
+    bridge = get_mt5_bridge()
+    if bridge.connected:
+        return True
+    now = time.time()
+    if now - _mt5_retry_state["last_attempt"] < _MT5_RETRY_COOLDOWN:
+        return False
+    _mt5_retry_state["last_attempt"] = now
+    try:
+        ok = bool(bridge.connect())
+    except Exception:
+        ok = False
+    return ok
+
+
+def get_ctx_feed():
+    global _ctx_feed
+    if _ctx_feed is None:
+        _ctx_feed = ContextFeed(get_mt5_bridge())
+    return _ctx_feed
+
+
+_news_engine = None
+
+
+def get_news_engine():
+    """Single news gate for web + desktop: EA calendar only, no external feeds."""
+    global _news_engine
+    if _news_engine is None:
+        _news_engine = NewsEngine(get_mt5_bridge())
+    return _news_engine
 
 # Calendar module globals - ensure same module instances, not new instances
 
@@ -59,7 +111,7 @@ def _report_calendar_once(source, count):
 
 def _get_ea_calendar():
     """Read EA-dumped calendar (exactly as MT5 terminal shows). Single source of truth."""
-    cal = mt5_bridge.get_calendar_from_ea()
+    cal = get_mt5_bridge().get_calendar_from_ea()
     source = cal.get('source', 'mt5_calendar_missing')
     events = cal.get('calendar', [])
     _report_calendar_once(source, len(events))
@@ -102,18 +154,24 @@ TIMEFRAME_M15 = mt5.TIMEFRAME_M15
 TIMEFRAME_D1 = mt5.TIMEFRAME_D1
 TIMEFRAME_W1 = mt5.TIMEFRAME_W1
 
-app = FastAPI(title="Tomoko Brain API", version="2.0")
-
 def start_socket_in_thread():
     """Start the EA socket server in a background thread."""
-    _socket_server(18001)
+    _socket_server(config.EA_SOCKET_PORT)
 
-@app.on_event("startup")
-def startup():
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Start EA socket server + log calendar source once at startup.
+
+    MT5 is intentionally NOT connected here - connect lazily per request so the
+    API boots even when the terminal is closed.
+    """
     threading.Thread(target=start_socket_in_thread, daemon=True).start()
+    _get_ea_calendar()
+    yield
 
-# Log EA calendar source once at startup (state-change logger prevents per-scan spam)
-_get_ea_calendar()
+
+app = FastAPI(title="Tomoko Brain API", version="2.0", lifespan=lifespan)
 
 # Intermarket snapshot failure logged once, not per-scan
 _im_logged = {"done": False}
@@ -126,7 +184,7 @@ _HEATMAP_CACHE_TTL = 5.0  # seconds
 def _intermarket_snapshot():
     """Get DXY/US10Y/VIX snapshot; never prints per-scan, returns neutral fallback."""
     try:
-        snap = IntermarketEngine(mt5_bridge).get_snapshot()
+        snap = IntermarketEngine(get_mt5_bridge()).get_snapshot()
         dxy_change = safe_float((snap.get("DXY") or {}).get("chg", 0.0))
         us10y_change = safe_float((snap.get("US10Y") or {}).get("chg", 0.0))
         vix_dir = (snap.get("VIX") or {}).get("dir", "FLAT")
@@ -139,10 +197,51 @@ def _intermarket_snapshot():
         return 0.0, 0.0, "NEUTRAL"
 
 
+def _safe_rates(symbol, timeframe, count):
+    """Fetch rates, returning None on any failure / empty frame (never raises)."""
+    try:
+        df = get_mt5_bridge().get_rates(symbol, timeframe, count)
+    except Exception:
+        return None
+    if df is None or df.empty:
+        return None
+    return df
+
+
+def _no_data_scan(symbol, reason="NO_DATA"):
+    """Degraded scan payload so dashboards never blank or crash on missing data."""
+    return {
+        "symbol": symbol,
+        "price": 0,
+        "score": 0,
+        "score_breakdown": {"structural": 0, "volatility": 0, "levels": 0, "intermarket": 0, "news": 0},
+        "action": "WAIT",
+        "real_action": "WAIT",
+        "reason": reason,
+        "h4": {"gate": "INSIDE", "direction": "FLAT", "adx": 0, "atr_ratio": 0,
+               "dist_ema21_atr": 0, "ema20": 0, "ema50": 0, "ema21": 0, "atr": 0, "close": 0},
+        "h1": {"dist_ema21_atr": 0, "is_pullback": False, "rsi": 50,
+               "close_vs_ema": "NEUTRAL", "bias": "Neutral", "close": 0},
+        "h1_bias": "Neutral",
+        "h4_bias": "Neutral",
+        "m15_bias": "Neutral",
+        "levels": {"daily_high": 0, "daily_low": 0, "weekly_open": 0,
+                   "liq_high": 0, "liq_low": 0, "atr": 0, "close": 0},
+        "weekly_open": 0,
+        "fundamental": {"structural": 0, "intermarket": 0, "bias": "No data",
+                        "levels_score": 0, "volatility_score": 0, "rates": {}},
+        "news": {"is_clean": True, "blocking": [], "upcoming_events": [],
+                 "source": WAITING_SOURCE, "status": WAITING_SOURCE, "count": 0,
+                 "total_events": 0, "risk": "RISK-ON"},
+        "watchout_zones": None,
+        "atr": 0,
+        "ema21": 0,
+    }
+
+
 def _scan(symbol: str, cal=None):
-    if not mt5_bridge.connected:
-        if not mt5_bridge.connect():
-            raise HTTPException(status_code=503, detail="MT5 terminal not connected")
+    if not _ensure_mt5():
+        return _no_data_scan(symbol, reason="MT5_NOT_CONNECTED")
 
     if cal is None:
         cal = _get_ea_calendar()
@@ -150,14 +249,21 @@ def _scan(symbol: str, cal=None):
     cal_count = cal.get("count", 0)
     cal_total = len(cal.get("calendar", []))
 
-    df_h4 = mt5_bridge.get_rates(symbol, TIMEFRAME_H4, 200)
-    df_h1 = mt5_bridge.get_rates(symbol, TIMEFRAME_H1, 200)
-    df_m15 = mt5_bridge.get_rates(symbol, TIMEFRAME_M15, 100)
-    df_d1 = mt5_bridge.get_rates(symbol, TIMEFRAME_D1, 50)
-    df_w1 = mt5_bridge.get_rates(symbol, TIMEFRAME_W1, 20)
-
-    if df_h1 is None or df_h1.empty:
-        raise HTTPException(status_code=404, detail=f"No data for {symbol}")
+    frames = {}
+    for key, tf, n in (("h4", TIMEFRAME_H4, 200), ("h1", TIMEFRAME_H1, 200),
+                       ("m15", TIMEFRAME_M15, 100), ("d1", TIMEFRAME_D1, 50),
+                       ("w1", TIMEFRAME_W1, 20)):
+        frames[key] = _safe_rates(symbol, tf, n)
+    if any(df is None for df in frames.values()):
+        degraded = _no_data_scan(symbol, reason="NO_DATA")
+        # News status still reflects the EA calendar (rates missing != calendar missing)
+        degraded["news"] = get_news_engine().get_news_for_symbol(symbol)
+        return degraded
+    df_h4 = frames["h4"]
+    df_h1 = frames["h1"]
+    df_m15 = frames["m15"]
+    df_d1 = frames["d1"]
+    df_w1 = frames["w1"]
 
     regime = RegimeEngine(config).evaluate_mtf_trend(df_h4, df_h1, df_m15)
     levels = LevelsEngine().get_key_levels(df_d1, df_w1, df_h1)
@@ -169,9 +275,9 @@ def _scan(symbol: str, cal=None):
     # --- Intermarket snapshot (DXY / US10Y / VIX) ---
     dxy_change, us10y_change, risk_sentiment = _intermarket_snapshot()
 
-    # --- News: EA calendar ONLY (MT5Bridge reads TomokoDataPump dump, no mt5.calendar_events) ---
-    is_clean, blocking = mt5_bridge.is_news_clean(symbol)
-    upcoming = mt5_bridge.get_upcoming_events(symbol, hours_ahead=168)
+    # --- News: EA calendar ONLY (NewsEngine = single gate, no external feeds) ---
+    is_clean, blocking = get_news_engine().is_news_clean(symbol)
+    upcoming = get_news_engine().get_upcoming_events(symbol, hours_ahead=168)
     news = {
         "is_clean": is_clean,
         "blocking": blocking,
@@ -267,9 +373,9 @@ def _scan(symbol: str, cal=None):
 @app.get("/api/context")
 def get_context():
     try:
-        ctx = ctx_feed.get_context()
-        risk = ctx_feed.get_risk_sentiment(ctx)
-        session, _active = ctx_feed.get_session()
+        ctx = get_ctx_feed().get_context()
+        risk = get_ctx_feed().get_risk_sentiment(ctx)
+        session, _active = get_ctx_feed().get_session()
         cal = _get_ea_calendar()
         return sanitize_for_json({
             "context": ctx, "risk": risk, "session": session,
@@ -285,13 +391,15 @@ def get_context():
 @app.get("/api/prices")
 def get_prices():
     """Live prices: MT5 tick first, EA fallback."""
+    if not _ensure_mt5():
+        raise HTTPException(status_code=503, detail="MT5 terminal not connected")
     result = {}
     for s in config.PAIRS:
-        p = mt5_bridge.get_price(s)
+        p = get_mt5_bridge().get_price(s)
         if p:
             result[s] = p
     # EA fallback for any missing
-    ea_prices = mt5_bridge.get_prices_from_ea()
+    ea_prices = get_mt5_bridge().get_prices_from_ea()
     for s in config.PAIRS:
         if s not in result or result[s] is None:
             if s in ea_prices:
@@ -301,6 +409,8 @@ def get_prices():
 
 @app.get("/api/scan_all")
 def scan_all():
+    if not _ensure_mt5():
+        raise HTTPException(status_code=503, detail="MT5 terminal not connected")
     cal = _get_ea_calendar()
     scans = [_scan(s, cal) for s in config.PAIRS]
     blocking_news = []
@@ -310,7 +420,7 @@ def scan_all():
     market_pulse = calculate_currency_strength(scan_results)
     market_pulse["timestamp"] = datetime.now().strftime("%Y.%m.%d %H:%M")
     market_pulse["method"] = "H4 trend aggregation"
-    market_heatmap = mt5_bridge.get_market_heatmap(scan_results)
+    market_heatmap = get_mt5_bridge().get_market_heatmap(scan_results)
     response = {
         "scans": scans,
         "calendar_source": cal.get("source", "mt5_calendar_missing"),
@@ -321,7 +431,7 @@ def scan_all():
         "blocking_news": blocking_news,
         "scan_timestamp": datetime.now().isoformat(),
         "market_pulse": market_pulse,
-        "global_calendar": mt5_bridge.get_global_calendar(),
+        "global_calendar": get_mt5_bridge().get_global_calendar(),
         "market_heatmap": market_heatmap,
     }
     return sanitize_for_json(response)
@@ -329,6 +439,8 @@ def scan_all():
 
 @app.get("/api/market_heatmap")
 def market_heatmap():
+    if not _ensure_mt5():
+        raise HTTPException(status_code=503, detail="MT5 terminal not connected")
     now = time.time()
     # Return cached result if fresh enough (avoids re-running 7x _scan = 1.8s)
     if _scan_cache["result"] is not None and (now - _scan_cache["ts"]) < _HEATMAP_CACHE_TTL:
@@ -342,7 +454,7 @@ def market_heatmap():
     cal = _get_ea_calendar()
     scans = [_scan(s, cal) for s in config.PAIRS]
     scan_results = {s["symbol"]: s for s in scans}
-    hm = mt5_bridge.get_market_heatmap(scan_results)
+    hm = get_mt5_bridge().get_market_heatmap(scan_results)
     _scan_cache["ts"] = now
     _scan_cache["result"] = hm
     return sanitize_for_json({
@@ -355,14 +467,19 @@ def market_heatmap():
 
 @app.get("/api/global_calendar")
 def global_calendar(hours: int = 168):
-    cal = mt5_bridge.get_calendar_from_ea()
-    total = len(cal.get("calendar", []))
-    # Use get_upcoming_events with ALL symbol to get all currencies, 7 days ahead
-    events = mt5_bridge.get_upcoming_events("ALL", hours_ahead=hours)
+    """Global calendar straight from the EA dump. Missing EA file => empty + waiting_for_ea."""
+    try:
+        cal = get_news_engine().get_global_events(hours_ahead=hours)
+    except Exception as exc:
+        print(f"global calendar failed: {exc}")
+        cal = {"events": [], "count": 0, "source": WAITING_SOURCE,
+               "status": WAITING_SOURCE, "last_update": ""}
     return sanitize_for_json({
-        "events": events,
-        "count": len(events),
-        "source": cal.get("source", "mt5_terminal_calendar"),
+        "events": cal.get("events", []),
+        "count": cal.get("count", 0),
+        "source": cal.get("source", WAITING_SOURCE),
+        "status": cal.get("status", WAITING_SOURCE),
+        "last_update": cal.get("last_update", ""),
         "window": f"{hours}h",
         "generated": datetime.now().isoformat(),
     })
@@ -380,9 +497,8 @@ def get_logs():
 
 @app.get("/pair/{symbol}")
 def serve_pair(symbol: str):
-    html_path = os.path.join(ROOT, "backend", "static", "pair.html")
-    if not os.path.exists(html_path):
-        html_path = os.path.join(ROOT, "ui", "pair.html")
+    # ui/ is the single source of truth for HTML - never backend/static/
+    html_path = os.path.join(ROOT, "ui", "pair.html")
     return FileResponse(html_path, headers={
         "Cache-Control": "no-cache, no-store, must-revalidate",
     })
@@ -392,11 +508,13 @@ def serve_pair(symbol: str):
 def get_pair_deep(symbol: str):
     """Per-pair deep dive: full scan for the symbol, its heatmap row, and its filtered calendar."""
     symbol = symbol.upper()
-    scan = _scan(symbol)  # reuses existing scan pipeline; 404 if no data
-    heatmap = mt5_bridge.get_market_heatmap({symbol: scan})
+    if not _ensure_mt5():
+        raise HTTPException(status_code=503, detail="MT5 terminal not connected")
+    scan = _scan(symbol)  # reuses existing scan pipeline; degraded scan if no data
+    heatmap = get_mt5_bridge().get_market_heatmap({symbol: scan})
     heatmap_row = heatmap[0] if heatmap else None
-    upcoming = mt5_bridge.get_upcoming_events(symbol, hours_ahead=168)
-    currencies = mt5_bridge.get_currencies(symbol)
+    upcoming = get_mt5_bridge().get_upcoming_events(symbol, hours_ahead=168)
+    currencies = get_mt5_bridge().get_currencies(symbol)
     return sanitize_for_json({
         "symbol": symbol,
         "currencies": currencies,
@@ -404,7 +522,7 @@ def get_pair_deep(symbol: str):
         "heatmap": heatmap_row,
         "calendar": upcoming,
         "calendar_count": len(upcoming),
-        "global_calendar": mt5_bridge.get_global_calendar(),
+        "global_calendar": get_mt5_bridge().get_global_calendar(),
         "calendar_source": (scan.get("news") or {}).get("source", "mt5_terminal_calendar"),
         "generated": datetime.now().isoformat(),
     })

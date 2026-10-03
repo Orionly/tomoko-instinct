@@ -6,7 +6,7 @@ This is the single orchestrating entry point. It replaces the old Tomoko.bat
 process chain (which had no supervisor and could serve stale demo data if one
 side crashed). Main.py launches and supervises exactly two child processes:
 
-  1) core/mt5_bridge.py        -> EA Bridge   on port 18001
+  1) core/mt5_bridge.py        -> EA Bridge   on config.EA_SOCKET_PORT
   2) backend.api:app / uvicorn -> Web Dashboard on port 8000
 
 Behavior:
@@ -33,9 +33,12 @@ import os
 import sys
 import time
 import ctypes
+import shutil
 import threading
 import subprocess
 import webbrowser
+
+import config
 
 # --------------------------------------------------------------------------- #
 # Configuration
@@ -49,9 +52,10 @@ REQUIRED_FILES = {
     "ui/web_dashboard.html": 1000,
 }
 
-HOST = "127.0.0.1"
-PORT = 8000
-BRIDGE_PORT = 18001
+# Host/ports centralized in config.py (single source of truth - no hardcoding)
+HOST = config.API_HOST
+PORT = config.API_PORT
+BRIDGE_PORT = config.EA_SOCKET_PORT
 SUPERVISOR_INTERVAL = 3  # seconds
 HEALTH_CHECK_WAIT = 3    # seconds granted to a child to prove it is alive
 PREFIX_MT5 = "MT5_BRIDGE"
@@ -115,6 +119,30 @@ def preflight_check():
     if not ok:
         log("FATAL", "ABORTING: engine pre-flight failed. Nothing was started.")
         sys.exit(1)
+
+
+def sync_static():
+    """Keep legacy backend/static/ copies in sync with ui/ (single source of truth).
+
+    ui/ holds the canonical HTML files. Old launchers that read
+    backend/static/*.html directly still find fresh byte-identical copies, so
+    the copies can never drift from the source.
+    """
+    pairs = {
+        "ui/web_dashboard.html": os.path.join("backend", "static", "web_dashboard.html"),
+        "ui/pair.html": os.path.join("backend", "static", "pair.html"),
+    }
+    for src, dst in pairs.items():
+        if not os.path.isfile(src):
+            log("WARN", f"sync skipped: {src} missing")
+            continue
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+            log("INFO", f"synced {src} -> {dst}")
+        except Exception as exc:
+            log("WARN", f"sync failed {src} -> {dst}: {exc}")
+    log("INFO", "synced ui -> backend/static")
 
 
 # --------------------------------------------------------------------------- #
@@ -254,7 +282,10 @@ def main():
     # 1) Pre-flight protects against empty/undersized engine overwrites.
     preflight_check()
 
-    # 2) Launch both children.
+    # 2) Mirror ui/ HTML into backend/static/ so old launchers keep working.
+    sync_static()
+
+    # 3) Launch both children.
     proc_bridge, proc_api = launch_children(dev_mode=dev_mode)
 
     # 3) Fail-fast: any child dying right after launch => FATAL.
