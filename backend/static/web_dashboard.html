@@ -60,7 +60,6 @@
   main{ display:flex; gap:14px; padding:14px 16px; align-items:flex-start; flex:1; }
   #grid-wrap{ flex:3 1 0; }
   #grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-  #deep{ flex:1 1 0; min-width:400px; position:sticky; top:14px; }
 
   @media (min-width:1600px) { #grid{ grid-template-columns:repeat(4,1fr); } }
   @media (min-width:1200px) and (max-width:1599px) { #grid{ grid-template-columns:repeat(3,1fr); } }
@@ -69,7 +68,6 @@
     #grid{ display:flex; flex-direction:row; overflow-x:auto; scroll-snap-type:x mandatory; gap:12px; padding-bottom:12px; }
     .card{ flex:0 0 320px; scroll-snap-align:start; min-width:320px; overflow:visible; }
     .card .body, .card .res, .card .badges{ white-space:normal; overflow:visible; flex-wrap:wrap; }
-    #deep{ display:none; }
     main{ flex-direction:column; }
   }
 
@@ -275,7 +273,6 @@
       </div>
     </div>
 
-    </div>
   </main>
 
   <footer class="bar">Tomoko Brain <b>V4.4 Block 3</b> // MARKET HEATMAP // Bot = Information. No brain = blowout. | Manual trades: 0/100 until auto | CSV: logs/brain_signals.csv</footer>
@@ -656,9 +653,6 @@ async function poll(){
   }catch(e){
     if(!window._DEMO){ renderGlobalCalendar(DEMO_GLOBAL_CAL); }
   }
-  try{
-    fetch('/api/market_heatmap').then(r=>r.json()).then(j=>renderHeatmap(j)).catch(e=>console.error("heatmap fetch", e));
-  }catch(e){}
 }
 
 async function loadLogs(){
@@ -686,9 +680,6 @@ function tick(){
 poll();
 setInterval(poll, 5000);
 setInterval(tick, 1000);
-setInterval(()=>{
-  fetch('/api/market_heatmap').then(r=>r.json()).then(j=>{ console.log("fetch heatmap", j); renderHeatmap(j); }).catch(e=>console.error(e));
-}, 5000);
 tick();
 </script>
 </body>

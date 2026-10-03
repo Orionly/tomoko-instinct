@@ -1,0 +1,703 @@
+======================================================================
+TOMOKO INSTINCT FULL AUDIT - FOR META AI REVIEW
+Generated: 2026-10-02 19:47:50.553819
+======================================================================
+
+[FILE TREE - all files, size]
+./
+  .gitignore - 139 bytes
+  config.py - 1969 bytes
+  create_desktop_shortcut.py - 1061 bytes
+  create_shortcut.ps1 - 493 bytes
+  dashboard_step2.png - 89907 bytes
+  dashboard_step3.png - 108038 bytes
+  dashboard_step4.png - 136114 bytes
+  dashboard_step5_modal.png - 71081 bytes
+  desktop_legacy.py - 461 bytes
+  FIX_REPORT.md - 8023 bytes
+  launch_hidden.vbs - 92 bytes
+  Main.py - 10034 bytes
+  RECOVERY_REPORT.md - 10516 bytes
+  Requirements.txt - 139 bytes
+  run_tomoko.bat - 181 bytes
+  START_HERE_OLD.bat - 1463 bytes
+  start_tomoko.bat - 32 bytes
+  test_mt5.py - 1248 bytes
+  Tomoko-Audit-Generator-FIXED.py - 4377 bytes
+  Tomoko.sh - 253 bytes
+  web_dashboard.html - 38807 bytes
+  web_legacy.py - 834 bytes
+  .kilo/
+    .gitignore - 107 bytes
+    worktrees/
+      vast-zipper/
+        .git - 66 bytes
+        config.py - 2029 bytes
+        create_desktop_shortcut.py - 1089 bytes
+        create_shortcut.ps1 - 503 bytes
+        dashboard_step2.png - 89907 bytes
+        dashboard_step3.png - 108038 bytes
+        dashboard_step4.png - 136114 bytes
+        dashboard_step5_modal.png - 71081 bytes
+        launch_hidden.vbs - 94 bytes
+        Main.py - 476 bytes
+        Requirements.txt - 146 bytes
+        run_tomoko.bat - 190 bytes
+        start_tomoko.bat - 33 bytes
+        test_mt5.py - 1289 bytes
+        Tomoko.bat - 1498 bytes
+        Tomoko.py - 869 bytes
+        Tomoko.sh - 261 bytes
+        web_dashboard.html - 62297 bytes
+        backend/
+          api.py - 16252 bytes
+          static/
+            pair.html - 25600 bytes
+            web_dashboard.html - 39919 bytes
+        core/
+          brain_score.py - 2774 bytes
+          context_feed.py - 5737 bytes
+          fundamental_engine.py - 3159 bytes
+          intermarket_engine.py - 3150 bytes
+          journal.py - 3064 bytes
+          levels_engine.py - 793 bytes
+          mt5_bridge.py - 32848 bytes
+          news_engine.py - 2983 bytes
+          news_feed.py - 4683 bytes
+          performance_tracker.py - 1468 bytes
+          regime_engine.py - 4481 bytes
+          risk_engine.py - 455 bytes
+          watchout_zones.py - 3198 bytes
+          __init__.py - 0 bytes
+        journal/
+          trades.csv - 147 bytes
+          trades.json - 2 bytes
+        strategies/
+          base_strategy.py - 77 bytes
+          liquidity_sweep.py - 813 bytes
+          trend_following_v2.py - 536 bytes
+          __init__.py - 0 bytes
+        ui/
+          dashboard.py - 27131 bytes
+          pair.html - 25600 bytes
+          web_dashboard.html - 39493 bytes
+          __init__.py - 0 bytes
+  backend/
+    api.py - 15826 bytes
+    static/
+      pair.html - 25202 bytes
+      web_dashboard.html - 38807 bytes
+  core/
+    brain_score.py - 2718 bytes
+    context_feed.py - 5585 bytes
+    fundamental_engine.py - 3079 bytes
+    intermarket_engine.py - 3065 bytes
+    journal.py - 3000 bytes
+    levels_engine.py - 774 bytes
+    mt5_bridge.py - 32052 bytes
+    news_engine.py - 2906 bytes
+    news_feed.py - 4565 bytes
+    performance_tracker.py - 1434 bytes
+    regime_engine.py - 4394 bytes
+    risk_engine.py - 446 bytes
+    watchout_zones.py - 3115 bytes
+    __init__.py - 0 bytes
+  journal/
+    trades.csv - 147 bytes
+    trades.json - 2 bytes
+  scripts/
+    guard.py - 2493 bytes
+  strategies/
+    base_strategy.py - 74 bytes
+    liquidity_sweep.py - 799 bytes
+    trend_following_v2.py - 526 bytes
+    __init__.py - 0 bytes
+  ui/
+    dashboard.py - 26614 bytes
+    pair.html - 25202 bytes
+    web_dashboard.html - 38807 bytes
+    __init__.py - 0 bytes
+
+[MAIN FILES - first 100 lines each]
+
+--- Main.py (10034 bytes) ---
+  1: #!/usr/bin/env python3
+  2: """
+  3: Tomoko Instinct V4.4 Block 3 - ONE TRUE MAIN ENGINE
+  4: 
+  5: This is the single orchestrating entry point. It replaces the old Tomoko.bat
+  6: process chain (which had no supervisor and could serve stale demo data if one
+  7: side crashed). Main.py launches and supervises exactly two child processes:
+  8: 
+  9:   1) core/mt5_bridge.py        -> EA Bridge   on port 18001
+ 10:   2) backend.api:app / uvicorn -> Web Dashboard on port 8000
+ 11: 
+ 12: Behavior:
+ 13:   * Pre-flight: refuses to start if any engine file is missing or undersized.
+ 14:   * Streams both children's output to this console with [MT5_BRIDGE]/[BRAIN_API]
+ 15:     prefixes so failures are visible.
+ 16:   * Fail-fast health check: any child that dies right after launch => FATAL exit.
+ 17:   * Supervisor loop: every 3 seconds, if either child has exited => FATAL exit
+ 18:     (never keep serving stale data).
+ 19:   * Ctrl+C terminates both children gracefully and exits 0.
+ 20:   * Auto-opens http://localhost:8000 once both are alive.
+ 21: 
+ 22: Usage:
+ 23:   python Main.py            # production (no --reload)
+ 24:   python Main.py --dev      # development (uvicorn --reload)
+ 25: 
+ 26: Legacy mains were renamed (not deleted):
+ 27:   Main.py    -> desktop_legacy.py   (old Tkinter desktop launcher)
+ 28:   Tomoko.py  -> web_legacy.py       (old simple uvicorn launcher)
+ 29:   Tomoko.bat -> START_HERE_OLD.bat  (old no-supervisor batch launcher)
+ 30: """
+ 31: 
+ 32: import os
+ 33: import sys
+ 34: import time
+ 35: import ctypes
+ 36: import threading
+ 37: import subprocess
+ 38: import webbrowser
+ 39: 
+ 40: # --------------------------------------------------------------------------- #
+ 41: # Configuration
+ 42: # --------------------------------------------------------------------------- #
+ 43: 
+ 44: # Pre-flight manifest: path -> minimum acceptable size in bytes.
+ 45: # Smaller files mean a bad overwrite (e.g. rescued 0-byte file), so abort.
+ 46: REQUIRED_FILES = {
+ 47:     "core/mt5_bridge.py": 500,
+ 48:     "backend/api.py": 1000,
+ 49:     "ui/web_dashboard.html": 1000,
+ 50: }
+ 51: 
+ 52: HOST = "127.0.0.1"
+ 53: PORT = 8000
+ 54: BRIDGE_PORT = 18001
+ 55: SUPERVISOR_INTERVAL = 3  # seconds
+ 56: HEALTH_CHECK_WAIT = 3    # seconds granted to a child to prove it is alive
+ 57: PREFIX_MT5 = "MT5_BRIDGE"
+ 58: PREFIX_BRAIN = "BRAIN_API"
+ 59: 
+ 60: 
+ 61: # --------------------------------------------------------------------------- #
+ 62: # Logging helpers
+ 63: # --------------------------------------------------------------------------- #
+ 64: 
+ 65: def log(level, message):
+ 66:     print(f"[{level}] {message}", flush=True)
+ 67: 
+ 68: 
+ 69: def log_stream(prefix, stream):
+ 70:     """Read lines from a child's stdout and reprint with a prefix."""
+ 71:     try:
+ 72:         for line in iter(stream.readline, ""):
+ 73:             line = line.rstrip("\r\n")
+ 74:             if line:
+ 75:                 print(f"[{prefix}] {line}", flush=True)
+ 76:     except Exception as exc:  # stream closed unexpectedly
+ 77:         log("WARN", f"[{prefix}] log pipe closed: {exc}")
+ 78:     finally:
+ 79:         try:
+ 80:             stream.close()
+ 81:         except Exception:
+ 82:             pass
+ 83: 
+ 84: 
+ 85: def spawn_reader(proc, prefix):
+ 86:     """Read a child's piped output into the console in a daemon thread."""
+ 87:     threading.Thread(
+ 88:         target=log_stream,
+ 89:         args=(prefix, proc.stdout),
+ 90:         daemon=True,
+ 91:         name=f"reader-{prefix}",
+ 92:     ).start()
+ 93: 
+ 94: 
+ 95: # --------------------------------------------------------------------------- #
+ 96: # Pre-flight
+ 97: # --------------------------------------------------------------------------- #
+ 98: 
+ 99: def preflight_check():
+100:     """Verify every engine file exists and exceeds its minimum size."""
+
+--- config.py (1969 bytes) ---
+  1: # Tomoko Brain - Original Brain - Config
+  2: PROJECT_NAME = "Tomoko"
+  3: VERSION = "V1-Brain-Scanner-Desktop"
+  4: 
+  5: # Account
+  6: ACCOUNT_MICRO = True
+  7: BALANCE_USC = 567.11  # 567.11 USC = $5.67
+  8: BALANCE_THRESHOLD = 1000
+  9: 
+ 10: # Trading Universe - VT Markets Standard (no c suffix)
+ 11: PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "EURGBP", "XAUUSD"]  # 7 pairs
+ 12: 
+ 13: # RiskManager micro-hardened
+ 14: RISK_CONFIG = {
+ 15:     "XAU": {"sl_atr_mult": 1.8, "tp_atr_mult": 3.6, "sl_min_usd": 3.0, "lot": 0.01},
+ 16:     "FX": {"sl_atr_mult": 1.2, "tp_atr_mult": 2.4, "lot": 0.01},
+ 17: }
+ 18: 
+ 19: # TrendFollowing V2 rules (for info display, not auto)
+ 20: TREND_CONFIG = {
+ 21:     "adx_min": 22,
+ 22:     "atr_ratio_min": 0.8,
+ 23:     "pullback_max_atr": 0.5,
+ 24: }
+ 25: 
+ 26: # Context Strip symbols for yfinance fallback
+ 27: CONTEXT_SYMBOLS = {
+ 28:     "DXY": "DX-Y.NYB",
+ 29:     "US10Y": "^TNX",
+ 30:     "VIX": "^VIX",
+ 31:     "SPX": "^GSPC",
+ 32:     "OIL": "CL=F",
+ 33:     "GOLD": "GC=F",
+ 34:     "NIKKEI": "^N225"
+ 35: }
+ 36: 
+ 37: # Intermarket Drivers
+ 38: INTERMARKET_MAP = {
+ 39:     "EURUSD": ["DXY", "US10Y", "EURUSD"],
+ 40:     "GBPUSD": ["DXY", "US10Y", "GBPUSD"],
+ 41:     "USDJPY": ["DXY", "US10Y", "NIKKEI", "US10Y-JP10Y"],
+ 42:     "GBPJPY": ["GBPUSD", "USDJPY", "NIKKEI", "DXY"],
+ 43:     "EURJPY": ["EURUSD", "USDJPY", "NIKKEI"],
+ 44:     "EURGBP": ["EURUSD", "GBPUSD", "UK10Y-EU10Y"],
+ 45:     "XAUUSD": ["DXY", "US10Y", "VIX", "GOLD", "SPX"]  # Gold drivers: DXY inverse, real yields, risk-off, VIX
+ 46: }
+ 47: 
+ 48: # Gold (XAUUSD) specific ATR/risk handling
+ 49: XAU_CONFIG = {"sl_atr_mult": 1.8, "tp_atr_mult": 3.6, "sl_min_usd": 3.0, "lot": 0.01}
+ 50: 
+ 51: # Journal - Manual Trade Logger (Brain is information only, no auto-trade)
+ 52: JOURNAL_PATH = "journal/trades.json"
+ 53: JOURNAL_CSV = "journal/trades.csv"
+ 54: MAX_DAILY_TRADES = 3
+ 55: MAX_OPEN_POSITIONS = 1  # balance < 1000
+ 56: 
+ 57: # News Feed config
+ 58: NEWS_CONFIG = {"show_actual": True, "block_minutes_before": 60, "high_impact_only": False}
+ 59: 
+ 60: # Liquidity Limit Rule (H4 OPEN + ADX>40 + Dist>1.2 ATR)
+ 61: LIQ_RULE_CONFIG = {"adx_threshold": 40, "dist_threshold_atr": 1.2, "liq_offset_atr": 0.3, "enabled": True}
+
+--- Requirements.txt (139 bytes) ---
+  1: MetaTrader5==5.0.45
+  2: customtkinter==5.2.2
+  3: CTkTable==0.1.0
+  4: pandas==2.2.2
+  5: numpy==1.26.4
+  6: yfinance==0.2.40
+  7: requests==2.32.3
+  8: python-dotenv==1.0.1
+
+--- backend/api.py (15826 bytes) ---
+  1: # Tomoko Brain Scanner - Web API (FastAPI)
+  2: # Run: uvicorn backend.api:app --reload
+  3: # Then open http://localhost:8000/
+  4: 
+  5: import os
+  6: import sys
+  7: import csv
+  8: import time
+  9: import threading
+ 10: 
+ 11: # Ensure project root (parent of backend/) is importable
+ 12: ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ 13: if ROOT not in sys.path:
+ 14:     sys.path.insert(0, ROOT)
+ 15: 
+ 16: from fastapi import FastAPI, HTTPException
+ 17: from fastapi.responses import FileResponse, HTMLResponse
+ 18: 
+ 19: import MetaTrader5 as mt5
+ 20: from datetime import datetime
+ 21: 
+ 22: from core.mt5_bridge import MT5Bridge, calculate_currency_strength, sanitize_for_json, safe_float, ea_calendar, ea_quotes, _socket_server
+ 23: from core.regime_engine import RegimeEngine
+ 24: from core.levels_engine import LevelsEngine
+ 25: from core.brain_score import calculate_brain_score, get_manual_action
+ 26: from core.fundamental_engine import FundamentalEngine
+ 27: from core.watchout_zones import calculate_watchout_zones
+ 28: from core.intermarket_engine import IntermarketEngine
+ 29: from core.performance_tracker import PerformanceTracker
+ 30: from core.context_feed import ContextFeed
+ 31: import config
+ 32: 
+ 33: tracker = PerformanceTracker()
+ 34: 
+ 35: # Global MT5 bridge singleton - connect once, don't reconnect per request
+ 36: # (reconnecting each /api/scan caused discover_symbols spam)
+ 37: mt5_bridge = MT5Bridge()
+ 38: mt5_bridge.connect()
+ 39: ctx_feed = ContextFeed(mt5_bridge)
+ 40: 
+ 41: # Calendar module globals - ensure same module instances, not new instances
+ 42: 
+ 43: 
+ 44: # --- Calendar source of truth: THE EA DUMP via MT5Bridge only (no mt5.calendar_events) ---
+ 45: _cal_log_state = {"source": None}
+ 46: 
+ 47: 
+ 48: def _report_calendar_once(source, count):
+ 49:     """Log calendar source once at startup + on state change only. No per-scan spam."""
+ 50:     if _cal_log_state["source"] == source:
+ 51:         return
+ 52:     _cal_log_state["source"] = source
+ 53:     if source == "mt5_calendar_missing":
+ 54:         print(f"EA Calendar MISSING ({source}) - news will not block. "
+ 55:               f"Start TomokoDataPump EA to dump tomoko_calendar_raw.json")
+ 56:     else:
+ 57:         print(f"EA Calendar: {source} {count} events")
+ 58: 
+ 59: 
+ 60: def _get_ea_calendar():
+ 61:     """Read EA-dumped calendar (exactly as MT5 terminal shows). Single source of truth."""
+ 62:     cal = mt5_bridge.get_calendar_from_ea()
+ 63:     source = cal.get('source', 'mt5_calendar_missing')
+ 64:     events = cal.get('calendar', [])
+ 65:     _report_calendar_once(source, len(events))
+ 66:     return {
+ 67:         "source": source,
+ 68:         "last_update": cal.get('last_update', ''),
+ 69:         "calendar": events,
+ 70:         "count": len(events),
+ 71:     }
+ 72: 
+ 73: 
+ 74: def _build_news_bar_text(blocking_events, cal):
+ 75:     """Global news bar from blocking HIGH events (60min before / 30min after)."""
+ 76:     parts, seen = [], set()
+ 77:     for ev in blocking_events:
+ 78:         key = (ev.get("time"), ev.get("event"), ev.get("currency"))
+ 79:         if key in seen:
+ 80:             continue
+ 81:         seen.add(key)
+ 82:         try:
+ 83:             t = datetime.strptime(ev.get("time", ""), "%Y.%m.%d %H:%M").strftime("%H:%M")
+ 84:         except Exception:
+ 85:             t = ev.get("time", "")
+ 86:         parts.append(f"{t} {ev.get('event', '')} [HIGH] AVOID {ev.get('currency', '')}")
+ 87:     if parts:
+ 88:         return " • ".join(parts) + " • Risk: RISK-OFF"
+ 89:     src = cal.get("source", "mt5_calendar_missing")
+ 90:     if src == "mt5_calendar_missing":
+ 91:         return f"EA calendar unavailable (mt5_calendar_missing) • Risk: RISK-ON"
+ 92:     return (f"No HIGH news in 60min • Calendar: {src} ({cal.get('count', 0)} events) "
+ 93:             f"• {cal.get('last_update', '')} • Risk: RISK-ON")
+ 94: 
+ 95: 
+ 96: def _clamp(v, lo=0, hi=100):
+ 97:     return int(max(lo, min(hi, v)))
+ 98: 
+ 99: TIMEFRAME_H4 = mt5.TIMEFRAME_H4
+100: TIMEFRAME_H1 = mt5.TIMEFRAME_H1
+
+--- core/mt5_bridge.py (32052 bytes) ---
+  1: # MT5 Bridge - Real data for Tomoko Brain + EA DUMB PIPE
+  2: # Local only, no VPS - Option A file bridge
+  3: # Fixes: AttributeError get_calendar_from_ea
+  4: 
+  5: import MetaTrader5 as mt5
+  6: import pandas as pd
+  7: import numpy as np
+  8: from datetime import datetime, timedelta, timezone
+  9: import os
+ 10: import json
+ 11: import math
+ 12: import time
+ 13: import socket
+ 14: import sys
+ 15: import threading
+ 16: import argparse
+ 17: 
+ 18: # Global dictionary for calendar events keyed by event_id
+ 19: ea_calendar_dict = {}
+ 20: 
+ 21: MT5_PATHS = {
+ 22:     "VT": r"C:\Program Files\VT Markets (Pty) MT5 Terminal\terminal64.exe",
+ 23:     "HFM": r"C:\Program Files\HFM Metatrader 5\terminal64.exe",
+ 24: }
+ 25: ACTIVE_BROKER = "VT"
+ 26: MT5_TERMINAL_PATH = MT5_PATHS[ACTIVE_BROKER]
+ 27: 
+ 28: ACCOUNT_CENT_MODE = False  # VT Standard = 100k contract size, not Cent
+ 29: 
+ 30: LIGHT_SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "EURGBP", "XAUUSD"]
+ 31: 
+ 32: ea_quotes = {}
+ 33: ea_calendar = []
+ 34: ea_connected = False
+ 35: _bridge_port = 18001
+ 36: 
+ 37: def _socket_server(port):
+ 38:     global _bridge_port
+ 39:     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+ 40:     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+ 41:     try:
+ 42:         srv.bind(('127.0.0.1', port))
+ 43:     except PermissionError as e:
+ 44:         print(f"[SOCKET] Port {port} blocked (WinError 10013 - Hyper-V/Firewall reservation)")
+ 45:         print(f"[SOCKET] Run: netsh int ipv4 show excludedportrange protocol=tcp")
+ 46:         print(f"[SOCKET] Or try: netsh int ipv4 add excludedportrange protocol=tcp startport={port} numberofports=1")
+ 47:         print(f"[SOCKET] Or run this script as Administrator")
+ 48:         raise
+ 49:     except OSError as e:
+ 50:         print(f"[SOCKET] Port {port} unavailable: {e}")
+ 51:         raise
+ 52:     srv.listen(5)
+ 53:     _bridge_port = port
+ 54:     print(f"[SOCKET] Listening on 127.0.0.1:{port}")
+ 55:     if port != 18001:
+ 56:         print(f"!!! CRITICAL: Bound to {port} but EA targets 18001 - UPDATE EA INPUT TO {port}!!!")
+ 57:     while True:
+ 58:         try:
+ 59:             conn, addr = srv.accept()
+ 60:             t = threading.Thread(target=_socket_handle_client, args=(conn, addr), daemon=True)
+ 61:             t.start()
+ 62:         except Exception as e:
+ 63:             print(e)
+ 64:             continue
+ 65: 
+ 66: def _parse_event_time(time_str):
+ 67:     """Parse event time string, trying multiple formats. Returns timezone-aware UTC datetime or None."""
+ 68:     if not time_str:
+ 69:         return None
+ 70:     formats = ["%Y.%m.%d %H:%M:%S", "%Y.%m.%d %H:%M", "%Y-%m-%dT%H:%M:%S"]
+ 71:     for fmt in formats:
+ 72:         try:
+ 73:             return datetime.strptime(time_str, fmt).replace(tzinfo=timezone.utc)
+ 74:         except (ValueError, TypeError):
+ 75:             continue
+ 76:     return None
+ 77: 
+ 78: 
+ 79: def _normalize_importance(importance):
+ 80:     """Map importance string to numeric: HIGH->2, MEDIUM->1, LOW->0."""
+ 81:     if importance is None:
+ 82:         return 0
+ 83:     if isinstance(importance, (int, float)):
+ 84:         try:
+ 85:             return int(importance)
+ 86:         except (ValueError, TypeError):
+ 87:             return 0
+ 88:     if isinstance(importance, str):
+ 89:         upper = importance.upper().strip()
+ 90:         if upper == "HIGH":
+ 91:             return 2
+ 92:         elif upper == "MEDIUM":
+ 93:             return 1
+ 94:         elif upper == "LOW":
+ 95:             return 0
+ 96:     return 0
+ 97: 
+ 98: 
+ 99: def _normalize_event(ev):
+100:     """Normalize a calendar event: ensure time, event, currency, importance fields."""
+
+--- ui/web_dashboard.html (38807 bytes) ---
+  1: <!DOCTYPE html>
+  2: <html lang="en">
+  3: <head>
+  4: <meta charset="UTF-8" />
+  5: <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  6: <title>Tomoko // Brain V4.4 Block 3</title>
+  7: <link rel="preconnect" href="https://fonts.googleapis.com" />
+  8: <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  9: <style>
+ 10:   :root{
+ 11:     --bg:#05070A; --card:#0C111B; --glass:rgba(18,24,36,0.72); --border:#1A2234;
+ 12:     --cyan:#00E5FF; --gold:#FFB800; --red:#FF4D4D; --green:#22C55E;
+ 13:     --text:#E5E7EB; --muted:#71717A; --dim:#3F4756;
+ 14:     --bull:#00FF88; --bear:#FF5A79; --neut:#FFB800;
+ 15:   }
+ 16:   *{ box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+ 17:   html,body{ margin:0; background:var(--bg); color:var(--text); font-family:'Inter',system-ui,sans-serif; }
+ 18:   .mono{ font-family:'JetBrains Mono',ui-monospace,monospace; }
+ 19: 
+ 20:   /* Premium backdrop: glows + faint noise */
+ 21:   #bg{ position:fixed; inset:0; pointer-events:none; z-index:0;
+ 22:     background:
+ 23:       radial-gradient(1200px 600px at 20% -10%, rgba(0,229,255,0.08), transparent 60%),
+ 24:       radial-gradient(800px 400px at 90% 0%, rgba(255,184,0,0.06), transparent 60%),
+ 25:       radial-gradient(600px 400px at 50% 120%, rgba(99,102,241,0.04), transparent 60%),
+ 26:       var(--bg);
+ 27:   }
+ 28:   #noise{ position:fixed; inset:0; pointer-events:none; z-index:0; opacity:0.025;
+ 29:     background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'
+ 30:   @keyframes pulseDot{ 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:.7;transform:scale(1.15);} }
+ 31:   @keyframes shimmer{ 0%{transform:translateX(-100%);} 100%{transform:translateX(200%);} }
+ 32: 
+ 33:   #app{ position:relative; z-index:10; display:flex; flex-direction:column; min-height:100vh; }
+ 34: 
+ 35:   header.top{ min-height:56px; display:flex; align-items:center; justify-content:space-between;
+ 36:     padding:10px 16px; border-bottom:1px solid var(--border); gap:2;
+ 37:     background:linear-gradient(180deg, rgba(18,24,36,0.9), rgba(14,18,26,0.9)); backdrop-filter:blur(12px); }
+ 38:   .brand{ display:flex; align-items:center; gap:10px; }
+ 39:   .dot{ width:8px; height:8px; border-radius:9999px; background:var(--cyan); display:block;
+ 40:     box-shadow:0 0 12px var(--cyan), 0 0 20px rgba(0,229,255,0.4); animation:pulseDot 2s infinite; }
+ 41:   .brand .name{ font-weight:800; letter-spacing:.22em; font-size:13px; color:var(--cyan); }
+ 42:   .brand .v{ font-size:11px; font-weight:600; color:var(--muted); letter-spacing:.1em; }
+ 43:   .meta{ display:flex; align-items:center; gap:6px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); }
+ 44:   .meta .sep{ opacity:.3; }
+ 45:   .meta a, .meta button{ color:var(--cyan); text-decoration:underline; text-underline-offset:4px;
+ 46:     text-decoration-color:rgba(0,229,255,.5); background:none; border:0; cursor:pointer; font:inherit; padding:0; }
+ 47:   #live-time{ color:#9CA3AF; }
+ 48: 
+ 49:   #context-strip{ display:flex; gap:18px; flex-wrap:wrap; background:rgba(12,17,27,0.6);
+ 50:     border-bottom:1px solid var(--border); padding:7px 16px; font-family:'JetBrains Mono',monospace;
+ 51:     font-size:10px; color:#9CA3AF; }
+ 52:   #context-strip b{ color:var(--text); font-weight:500; }
+ 53: 
+ 54:   #news-bar{ padding:7px 16px; font-family:'JetBrains Mono',monospace; font-size:11px;
+ 55:     color:var(--gold); border-bottom:1px solid var(--border); background:rgba(20,28,44,0.5); }
+ 56:   #news-bar.clean{ color:#9CA3AF; }
+ 57:   #news-bar.amber{ color:#FFB800; font-weight:700; }
+ 58:   #news-bar.block{ color:#FF4D4D; font-weight:700; }
+ 59: 
+ 60:   main{ display:flex; gap:14px; padding:14px 16px; align-items:flex-start; flex:1; }
+ 61:   #grid-wrap{ flex:3 1 0; }
+ 62:   #grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+ 63: 
+ 64:   @media (min-width:1600px) { #grid{ grid-template-columns:repeat(4,1fr); } }
+ 65:   @media (min-width:1200px) and (max-width:1599px) { #grid{ grid-template-columns:repeat(3,1fr); } }
+ 66:   @media (min-width:900px) and (max-width:1199px) { #grid{ grid-template-columns:repeat(2,1fr); } }
+ 67:   @media (max-width:899px) {
+ 68:     #grid{ display:flex; flex-direction:row; overflow-x:auto; scroll-snap-type:x mandatory; gap:12px; padding-bottom:12px; }
+ 69:     .card{ flex:0 0 320px; scroll-snap-align:start; min-width:320px; overflow:visible; }
+ 70:     .card .body, .card .res, .card .badges{ white-space:normal; overflow:visible; flex-wrap:wrap; }
+ 71:     main{ flex-direction:column; }
+ 72:   }
+ 73: 
+ 74: .card{ position:relative; background:var(--glass); border:1px solid var(--border); border-radius:14px;
+ 75:   padding:13px; cursor:pointer; overflow:hidden; transition:transform .15s,border-color .15s,box-shadow .15s; }
+ 76:   .card::before{ content:""; position:absolute; top:0; left:0; height:2px; width:100%;
+ 77:     background:linear-gradient(90deg, var(--cyan), transparent); opacity:.5; }
+ 78:   .card:hover{ transform:translateY(-3px); border-color:var(--cyan); box-shadow:0 10px 30px rgba(0,0,0,.5); }
+ 79:   .card.sel{ border-color:var(--cyan); box-shadow:0 0 0 1px var(--cyan); }
+ 80:   .chead{ display:flex; align-items:center; gap:8px; }
+ 81:   .sym{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--cyan); font-size:14px; }
+ 82:   .price{ font-family:'JetBrains Mono',monospace; font-size:13px; color:#CBD5E1; }
+ 83: 
+ 84:   /* Alignment dot + score circle (top-right) */
+ 85:   .align-wrap{ margin-left:auto; display:flex; align-items:center; gap:6px; }
+ 86:   .align-dot{ width:10px; height:10px; border-radius:9999px; border:2px solid rgba(255,255,255,0.15); flex:none; }
+ 87:   .align-dot.lvl-HIGH{ background:var(--bull); box-shadow:0 0 16px rgba(0,255,136,0.6); animation:alignmentPulse 2s infinite; }
+ 88:   .align-dot.lvl-MEDIUM{ background:var(--neut); box-shadow:0 0 14px rgba(255,184,0,0.5); }
+ 89: .align-dot.lvl-LOW{ background:#4B5563; }
+ 90:    .align-tag{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.06em; min-width:34px; text-align:left; }
+ 91:    .align-tag.lvl-HIGH{ color:var(--bull); }
+ 92:    .align-tag.lvl-MEDIUM{ color:var(--neut); }
+ 93:    .align-tag.lvl-LOW{ color:#6B7280; }
+ 94:    @keyframes alignmentPulse{
+ 95:      0%{ box-shadow:0 0 0 0 rgba(0,255,136,0.7); }
+ 96:      70%{ box-shadow:0 0 0 8px rgba(0,255,136,0); }
+ 97:      100%{ box-shadow:0 0 0 0 rgba(0,255,136,0); }
+ 98:    }
+ 99:    .circle{ width:36px; height:36px; border-radius:9999px; display:flex;
+100:      align-items:center; justify-content:center; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:13px; flex:none; }
+
+--- strategies/__init__.py (0 bytes) ---
+
+[STRATEGIES FOLDER]
+
+--- strategies\base_strategy.py (74 bytes) ---
+class BaseStrategy:
+    def check_entry(self, *args):
+        return None
+
+
+--- strategies\liquidity_sweep.py (799 bytes) ---
+from .base_strategy import BaseStrategy
+
+
+class LiquiditySweep(BaseStrategy):
+    def check_entry(self, h4, h1, levels, score):
+        adx = h4['adx']
+        dist = h1['dist_ema21_atr']
+        liq_high = levels['liq_high']
+        liq_low = levels['liq_low']
+        if h4['gate'] == "OPEN" and h4['direction'] == "UP" and adx > 40 and dist > 1.2 and score > 70:
+            return f"LIMIT AT LIQ HIGH {liq_high:.2f}", f"H4 OPEN UP ADX {adx}>40 Dist {dist}>1.2 => LIMIT at Liq High {liq_high:.2f} instead of 0.5 ATR pullback. Your example 4647.41"
+        if h4['gate'] == "OPEN" and h4['direction'] == "DOWN" and adx > 40 and dist > 1.2 and score > 70:
+            return f"LIMIT AT LIQ LOW {liq_low:.2f}", f"H4 OPEN DOWN ADX {adx}>40 Dist {dist}>1.2 => LIMIT {liq_low:.2f}"
+        return None
+
+
+--- strategies\trend_following_v2.py (526 bytes) ---
+from .base_strategy import BaseStrategy
+
+
+class TrendFollowingV2(BaseStrategy):
+    def check_entry(self, h4, h1, score):
+        if h4['gate'] == "OPEN" and h4['adx'] > 22 and h1['dist_ema21_atr'] <= 0.5 and score > 70:
+            return f"LOOK FOR {h4['direction']} PULLBACK", "H4 intact, pullback OK"
+        if h4['gate'] == "OPEN" and h4['adx'] > 22 and score > 70:
+            return "WAIT FOR PULLBACK", f"High score but extended {h1['dist_ema21_atr']} ATR"
+        return "WAIT", f"Gate {h4['gate']} ADX {h4['adx']}"
+
+
+--- strategies\__init__.py (0 bytes) ---
+
+
+[BACKEND FOLDER]
+  backend\api.py: 15826 bytes
+    Contains scoring logic
+
+[UI - web_dashboard.html analysis]
+
+ui/web_dashboard.html: 38682 chars
+  Has EURUSD: True
+  Has demoObj: True
+  Has Market Pulse: False
+  Preview: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tomoko // Brain V4.4 Block 3</title>
+<link rel="preconn
+
+web_dashboard.html: 38682 chars
+  Has EURUSD: True
+  Has demoObj: True
+  Has Market Pulse: False
+  Preview: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tomoko // Brain V4.4 Block 3</title>
+<link rel="preconn
+
+backend/static/web_dashboard.html: 38682 chars
+  Has EURUSD: True
+  Has demoObj: True
+  Has Market Pulse: False
+  Preview: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tomoko // Brain V4.4 Block 3</title>
+<link rel="preconn
+
+[GIT LOG]
+22bf6e2 fix: make Main.py true orchestrator (10KB), add supervisor, guard, gitignore - fixes multi-main chaos
+702a378 Tomoko initial - half build
+
+git status:
+ M backend/static/web_dashboard.html
+ M web_dashboard.html
+?? FIX_REPORT.md
+?? RECOVERY_REPORT.md
+?? Tomoko-Audit-Generator-FIXED.py
+
+
+======================================================================
+END OF AUDIT
+======================================================================
