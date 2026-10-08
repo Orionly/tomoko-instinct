@@ -727,7 +727,7 @@ def calculate_currency_strength(scan_results: dict) -> dict:
         score = safe_float(round(score, 2), 0.0)
         print(f"[MARKET_PULSE] {currency} final score={score} bull={bull_count}/{total}")
 
-        label = "Strong" if abs(score) > 1.0 else "Neutral" if abs(score) < 0.5 else ("Mixed" if score > 0 else "Weak")
+        label = "Strong" if score > 1.0 else "Weak" if score < -1.0 else "Neutral" if abs(score) < 0.5 else ("Mixed" if score > 0 else "Weak")
         direction = "up" if score > 0.5 else "down" if score < -0.5 else "neutral"
         color = "green" if score > 0.5 else "red" if score < -0.5 else "yellow"
 

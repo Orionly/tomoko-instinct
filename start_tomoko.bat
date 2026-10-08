@@ -1,2 +1,3 @@
 @echo off
-call "%~dp0Tomoko.bat"
+cd /d "%~dp0"
+python Main.py

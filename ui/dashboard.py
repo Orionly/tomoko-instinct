@@ -14,7 +14,8 @@ TIMEFRAME_H1 = mt5.TIMEFRAME_H1
 TIMEFRAME_M15 = mt5.TIMEFRAME_M15
 TIMEFRAME_D1 = mt5.TIMEFRAME_D1
 from core.mt5_bridge import MT5Bridge
-from core.brain_score import calculate_brain_score, get_manual_action
+from core.brain_score import (calculate_brain_score, get_manual_action,
+                              score_volatility, score_levels)
 from core.regime_engine import RegimeEngine
 from core.context_feed import ContextFeed
 from core.levels_engine import LevelsEngine
@@ -124,12 +125,14 @@ class PairCard(ctk.CTkFrame):
             m15_struct = self.regime.evaluate_m15_structure(df_m15)
             levels = self.levels_engine.get_key_levels(df_daily, df_weekly, df_h1)
             self.mtf = regime
-            # Brain score
+            # Brain score - volatility/levels computed the same way as the web API
             structural = 90 if h4['gate'] == "OPEN" else 40
-            volatility = min(100, int(h4['adx'] * 2.5))
-            levels_score = 70
             intermarket = 65
             news = 100
+            volatility, _vol_why = score_volatility(
+                h4.get('atr_ratio', 0), h4.get('dist_ema21_atr', 0))
+            levels_score, _levels_why = score_levels(
+                price_data['bid'], levels.get('daily_low', 0), levels.get('daily_high', 0))
             score = calculate_brain_score(structural, volatility, levels_score, intermarket, news)
             # Action via strategies: liquidity sweep first, then trend following
             liq = LiquiditySweep().check_entry(h4, h1, levels, score)

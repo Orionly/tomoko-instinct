@@ -13,7 +13,7 @@ try:
     except Exception:
         desktop = Path(os.environ.get("USERPROFILE", Path.home())) / "Desktop"
 
-    target = Path.cwd() / "Tomoko.bat"
+    target = Path.cwd() / "start_tomoko.bat"
     wsh = win32com.client.Dispatch("WScript.Shell")
     shortcut = wsh.CreateShortcut(str(desktop / "Tomoko Brain.lnk"))
     shortcut.TargetPath = str(target)

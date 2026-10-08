@@ -2,22 +2,17 @@
 """
 Tomoko Instinct V4.4 Block 3 - ONE TRUE MAIN ENGINE
 
-This is the single orchestrating entry point. It replaces the old Tomoko.bat
-process chain (which had no supervisor and could serve stale demo data if one
-side crashed). Main.py launches and supervises exactly two child processes:
-
-  1) core/mt5_bridge.py        -> EA Bridge   on config.EA_SOCKET_PORT
-  2) backend.api:app / uvicorn -> Web Dashboard on port 8000
+This is the single orchestrating entry point. Main.py launches and supervises
+the unified Brain Engine (FastAPI Web Dashboard on port 8000 + embedded
+TomokoDataPump EA Socket Bridge on port 18001).
 
 Behavior:
   * Pre-flight: refuses to start if any engine file is missing or undersized.
-  * Streams both children's output to this console with [MT5_BRIDGE]/[BRAIN_API]
-    prefixes so failures are visible.
-  * Fail-fast health check: any child that dies right after launch => FATAL exit.
-  * Supervisor loop: every 3 seconds, if either child has exited => FATAL exit
-    (never keep serving stale data).
-  * Ctrl+C terminates both children gracefully and exits 0.
-  * Auto-opens http://localhost:8000 once both are alive.
+  * Streams child output to this console with [BRAIN_API] prefix.
+  * Fail-fast health check: child dying right after launch => FATAL exit.
+  * Supervisor loop: every 3 seconds, if child exits => FATAL exit.
+  * Ctrl+C terminates child gracefully and exits 0.
+  * Auto-opens http://localhost:8000 once alive.
 
 Usage:
   python Main.py            # production (no --reload)
@@ -163,84 +158,62 @@ def popen_no_window(cmd):
     )
 
 
-def launch_children(dev_mode):
-    """Start the EA bridge and the web API."""
-    # 1) MT5 EA bridge
-    bridge_cmd = [sys.executable, "core/mt5_bridge.py", "--port", str(BRIDGE_PORT)]
-    log("INFO", f"Launching EA Bridge: {bridge_cmd}")
-    proc_bridge = popen_no_window(bridge_cmd)
-
-    # 2) Web dashboard (FastAPI/uvicorn)
+def launch_engine(dev_mode):
+    """Start the unified Brain Engine (Web API + embedded EA Socket Bridge)."""
     api_cmd = [
-        sys.executable, "-m", "uvicorn", "backend.api:app",
+        sys.executable, "-u", "-m", "uvicorn", "backend.api:app",
         "--host", HOST, "--port", str(PORT),
     ]
     if dev_mode:
         api_cmd.append("--reload")
-    log("INFO", f"Launching Brain API: {' '.join(api_cmd)}")
+    log("INFO", f"Launching Brain Engine (API:{PORT} + EA Bridge:{BRIDGE_PORT}): {' '.join(api_cmd)}")
     proc_api = popen_no_window(api_cmd)
-
-    spawn_reader(proc_bridge, PREFIX_MT5)
     spawn_reader(proc_api, PREFIX_BRAIN)
-    return proc_bridge, proc_api
+    return proc_api
 
 
 # --------------------------------------------------------------------------- #
 # Health check + supervisor
 # --------------------------------------------------------------------------- #
 
-def health_check(proc_bridge, proc_api):
-    """Give children HEALTH_CHECK_WAIT seconds to prove they stay alive."""
+def health_check(proc_api):
+    """Give engine HEALTH_CHECK_WAIT seconds to prove it stays alive."""
     time.sleep(HEALTH_CHECK_WAIT)
-    failed = False
-    if proc_bridge.poll() is not None:
-        log("FATAL", f"EA Bridge (pid {proc_bridge.pid}) died immediately, "
-                     f"exit code {proc_bridge.returncode}.")
-        failed = True
     if proc_api.poll() is not None:
         log("FATAL", f"Brain API (pid {proc_api.pid}) died immediately, "
                      f"exit code {proc_api.returncode}.")
-        failed = True
-    return not failed
+        return False
+    return True
 
 
-def supervisor_loop(proc_bridge, proc_api):
-    """Poll every interval; if either child dies, stop everything (fail fast)."""
+def supervisor_loop(proc_api):
+    """Poll every interval; if engine dies, stop everything (fail fast)."""
     while True:
         time.sleep(SUPERVISOR_INTERVAL)
-        if proc_bridge.poll() is not None:
-            log("FATAL", f"EA Bridge (pid {proc_bridge.pid}) DIED, "
-                         f"exit code {proc_bridge.returncode}. "
-                         f"Stopping dashboard to avoid stale data.")
-            stop_all(proc_bridge, proc_api)
-            sys.exit(1)
         if proc_api.poll() is not None:
             log("FATAL", f"Brain API (pid {proc_api.pid}) DIED, "
-                         f"exit code {proc_api.returncode}. "
-                         f"Stopping bridge to avoid stale data.")
-            stop_all(proc_bridge, proc_api)
+                         f"exit code {proc_api.returncode}.")
+            stop_all(proc_api)
             sys.exit(1)
 
 
-def stop_all(proc_bridge, proc_api):
-    """Terminate both children gracefully, then hard-kill if needed."""
-    log("INFO", "Stopping children...")
-    for proc in (proc_bridge, proc_api):
-        if proc.poll() is None:
+def stop_all(proc_api):
+    """Terminate engine gracefully, then hard-kill if needed."""
+    log("INFO", "Stopping Brain Engine...")
+    if proc_api.poll() is None:
+        try:
+            proc_api.terminate()
+        except Exception:
+            pass
+    if proc_api.poll() is None:
+        try:
+            proc_api.wait(timeout=5)
+        except Exception:
             try:
-                proc.terminate()
+                proc_api.kill()
             except Exception:
                 pass
-    for proc in (proc_bridge, proc_api):
-        if proc.poll() is None:
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-    log("INFO", "All children stopped.")
+    log("INFO", "Brain Engine stopped.")
 
 
 # --------------------------------------------------------------------------- #
@@ -285,27 +258,27 @@ def main():
     # 2) Mirror ui/ HTML into backend/static/ so old launchers keep working.
     sync_static()
 
-    # 3) Launch both children.
-    proc_bridge, proc_api = launch_children(dev_mode=dev_mode)
+    # 3) Launch unified engine.
+    proc_api = launch_engine(dev_mode=dev_mode)
 
-    # 3) Fail-fast: any child dying right after launch => FATAL.
-    if not health_check(proc_bridge, proc_api):
-        stop_all(proc_bridge, proc_api)
-        log("FATAL", "ABORTING: a child process failed immediately after launch.")
+    # 4) Fail-fast: engine dying right after launch => FATAL.
+    if not health_check(proc_api):
+        stop_all(proc_api)
+        log("FATAL", "ABORTING: Brain engine failed immediately after launch.")
         sys.exit(1)
 
     log("INFO", f"BRAIN LIVE: http://localhost:{PORT}/ (pid {proc_api.pid})")
-    log("INFO", f"MT5 BRIDGE LIVE (pid {proc_bridge.pid}, port {BRIDGE_PORT})")
+    log("INFO", f"EA SOCKET BRIDGE ACTIVE (port {BRIDGE_PORT}, embedded in Brain engine)")
     log("INFO", f"Supervisor active (poll every {SUPERVISOR_INTERVAL}s). "
-                "Ctrl+C to stop both.")
+                "Ctrl+C to stop.")
     threading.Thread(target=open_browser, daemon=True).start()
 
-    # 4) Supervisor loop with graceful Ctrl+C.
+    # 5) Supervisor loop with graceful Ctrl+C.
     try:
-        supervisor_loop(proc_bridge, proc_api)
+        supervisor_loop(proc_api)
     except KeyboardInterrupt:
         log("INFO", "Ctrl+C received. Shutting down gracefully...")
-        stop_all(proc_bridge, proc_api)
+        stop_all(proc_api)
         log("INFO", "Tomoko stopped cleanly. Goodbye.")
         sys.exit(0)
 

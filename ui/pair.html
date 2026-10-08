@@ -85,7 +85,7 @@
   .lvl-row.cur .dot2{ background:var(--gold); box-shadow:0 0 8px var(--gold); }
 
   .score-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
-  .score-grid .sc{ text-align:center; background:#05070A; border:1px solid var(--border); border-radius:6px; padding:8px 2px; }
+  .score-grid .sc{ text-align:center; background:#05070A; border:1px solid var(--border); border-radius:6px; padding:8px 2px; cursor:help; }
   .score-grid .sc .k{ font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--muted); text-transform:uppercase; }
   .score-grid .sc .n{ font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; color:#E5E7EB; }
   .score-total{ text-align:center; margin-top:9px; font-family:'JetBrains Mono',monospace; font-size:12px; color:#94A3B8; }
@@ -235,17 +235,24 @@ function renderOverview(scan){
      <div style="margin-top:10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)">LOOK — EARLY: prepare, don't chase. Wait for confirmation before entry.</div>`;
 }
 
+function scCell(label, key, bd, tips){
+  const v = bd[key] ?? '—';
+  const t = (tips && tips[key]) || '';
+  return `<div class="sc" title="${esc(t)}"><div class="k">${label}</div><div class="n">${v}</div></div>`;
+}
+
 function renderScoreBreakdown(scan){
   const bd = scan.score_breakdown || {};
+  const tips = scan.score_tooltips || {};
   const s = scan.score;
   const sc = scoreColor(s);
   $('score-breakdown').innerHTML =
     `<div class="score-grid">
-       <div class="sc"><div class="k">struct</div><div class="n">${bd.structural??'—'}</div></div>
-       <div class="sc"><div class="k">vol</div><div class="n">${bd.volatility??'—'}</div></div>
-       <div class="sc"><div class="k">levels</div><div class="n">${bd.levels??'—'}</div></div>
-       <div class="sc"><div class="k">inter</div><div class="n">${bd.intermarket??'—'}</div></div>
-       <div class="sc"><div class="k">news</div><div class="n">${bd.news??'—'}</div></div>
+       ${scCell('struct','structural',bd,tips)}
+       ${scCell('vol','volatility',bd,tips)}
+       ${scCell('levels','levels',bd,tips)}
+       ${scCell('inter','intermarket',bd,tips)}
+       ${scCell('news','news',bd,tips)}
      </div>
      <div class="score-total">real score <b style="color:${sc.bg}">${s??'—'}</b></div>`;
 }

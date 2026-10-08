@@ -24,7 +24,8 @@ from datetime import datetime
 from core.mt5_bridge import MT5Bridge, calculate_currency_strength, sanitize_for_json, safe_float, ea_calendar, ea_quotes, _socket_server
 from core.regime_engine import RegimeEngine
 from core.levels_engine import LevelsEngine
-from core.brain_score import calculate_brain_score, get_manual_action
+from core.brain_score import (calculate_brain_score, get_manual_action,
+                             score_volatility, score_levels)
 from core.fundamental_engine import FundamentalEngine
 from core.watchout_zones import calculate_watchout_zones
 from core.intermarket_engine import IntermarketEngine
@@ -156,7 +157,10 @@ TIMEFRAME_W1 = mt5.TIMEFRAME_W1
 
 def start_socket_in_thread():
     """Start the EA socket server in a background thread."""
-    _socket_server(config.EA_SOCKET_PORT)
+    try:
+        _socket_server(config.EA_SOCKET_PORT)
+    except Exception as exc:
+        print(f"[SOCKET] EA socket server error on port {config.EA_SOCKET_PORT}: {exc}")
 
 
 @asynccontextmanager
@@ -166,7 +170,7 @@ async def lifespan(_app: FastAPI):
     MT5 is intentionally NOT connected here - connect lazily per request so the
     API boots even when the terminal is closed.
     """
-    threading.Thread(target=start_socket_in_thread, daemon=True).start()
+    threading.Thread(target=start_socket_in_thread, daemon=True, name="ea-socket-server").start()
     _get_ea_calendar()
     yield
 
@@ -197,6 +201,41 @@ def _intermarket_snapshot():
         return 0.0, 0.0, "NEUTRAL"
 
 
+def _news_why(news, news_score):
+    """Explain the news component for the hover tooltip."""
+    if news_score >= 100:
+        mins = config.NEWS_CONFIG.get("block_minutes_before", 60)
+        return f"No HIGH news in {mins}min = news 100"
+    blocking = news.get("blocking") or []
+    if not blocking:
+        return f"News gate closed = news {news_score}"
+    ev = blocking[0]
+    rel = ""
+    try:
+        ev_time = datetime.strptime(ev.get("time", ""), "%Y.%m.%d %H:%M")
+        rel = f" in {int((ev_time - datetime.now()).total_seconds() / 60)}min"
+    except Exception:
+        rel = ""
+    return f"BLOCKED: {ev.get('currency')} {ev.get('event')}{rel} = news {news_score}"
+
+
+def _zone_label(watchout_zones):
+    """DISCOUNT / PREMIUM / EQUILIBRIUM from the watchout zones (or '' if absent)."""
+    pd = (watchout_zones or {}).get("premium_discount") or {}
+    cp = pd.get("current_pct")
+    if cp is None:
+        return ""
+    try:
+        cp = float(cp)
+    except (TypeError, ValueError):
+        return ""
+    if cp < 50:
+        return "DISCOUNT"
+    if cp > 50:
+        return "PREMIUM"
+    return "EQUILIBRIUM"
+
+
 def _safe_rates(symbol, timeframe, count):
     """Fetch rates, returning None on any failure / empty frame (never raises)."""
     try:
@@ -215,6 +254,8 @@ def _no_data_scan(symbol, reason="NO_DATA"):
         "price": 0,
         "score": 0,
         "score_breakdown": {"structural": 0, "volatility": 0, "levels": 0, "intermarket": 0, "news": 0},
+        "score_tooltips": {"structural": "", "volatility": "", "levels": "",
+                            "intermarket": "", "news": reason},
         "action": "WAIT",
         "real_action": "WAIT",
         "reason": reason,
@@ -229,7 +270,7 @@ def _no_data_scan(symbol, reason="NO_DATA"):
                    "liq_high": 0, "liq_low": 0, "atr": 0, "close": 0},
         "weekly_open": 0,
         "fundamental": {"structural": 0, "intermarket": 0, "bias": "No data",
-                        "levels_score": 0, "volatility_score": 0, "rates": {}},
+                        "rates": {}},
         "news": {"is_clean": True, "blocking": [], "upcoming_events": [],
                  "source": WAITING_SOURCE, "status": WAITING_SOURCE, "count": 0,
                  "total_events": 0, "risk": "RISK-ON"},
@@ -307,14 +348,31 @@ def _scan(symbol: str, cal=None):
         _atr = 0.0
         watchout_zones = None
 
-    # --- Real brain score (no more 70,70,70,70,70 placeholders) ---
+    # --- Real brain score ---
+    # structural / intermarket / news come from the engines; volatility and
+    # levels are computed here from live H4/price data (no magic constants).
     structural = fund["structural"]
-    volatility = fund["volatility_score"]
-    levels_score = fund["levels_score"]
     intermarket = fund["intermarket"]
     news_score = 0 if not is_clean else 100
 
+    atr_ratio_h4 = safe_float(h4.get("atr_ratio", 0))
+    dist_h4 = safe_float(h4.get("dist_ema21_atr", 0))
+    volatility, vol_why = score_volatility(atr_ratio_h4, dist_h4)
+
+    levels_score, levels_why = score_levels(
+        price, levels["daily_low"], levels["daily_high"],
+        zone_label=_zone_label(watchout_zones),
+    )
+
     score = calculate_brain_score(structural, volatility, levels_score, intermarket, news_score)
+
+    score_tooltips = {
+        "structural": f"{fund['bias']} = structural {structural}",
+        "volatility": vol_why,
+        "levels": levels_why,
+        "intermarket": f"{fund['bias']} = intermarket {intermarket}",
+        "news": _news_why(news, news_score),
+    }
 
     # --- Manual action (news cleanliness gates everything) ---
     action, reason = get_manual_action(
@@ -333,10 +391,13 @@ def _scan(symbol: str, cal=None):
     )
 
     # --- XAU fundamental conflict guard ---
-    if "XAU" in symbol and action.startswith("LIMIT AT LIQ") and (
-        "DXY up" in fund["bias"] or "short pressure" in fund["bias"]
-    ):
-        reason = reason + f" [Fundamental Conflict] {fund['bias']}, reduce lot or wait."
+    if "XAU" in symbol:
+        if action.startswith("LIMIT AT LIQ HIGH") and (
+            "DXY up" in fund["bias"] or "short pressure" in fund["bias"]
+        ):
+            reason = reason + f" [Fundamental Conflict] {fund['bias']}, reduce lot or wait."
+        elif action.startswith("LIMIT AT LIQ LOW") and ("long favored" in fund["bias"]):
+            reason = reason + f" [Fundamental Conflict] {fund['bias']}, reduce lot or wait."
 
     full_data = {
         "symbol": symbol,
@@ -349,6 +410,7 @@ def _scan(symbol: str, cal=None):
             "intermarket": intermarket,
             "news": news_score,
         },
+        "score_tooltips": score_tooltips,
         "action": action,
         "real_action": action,
         "reason": reason,

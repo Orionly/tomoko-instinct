@@ -75,6 +75,4 @@ class FundamentalEngine:
             "intermarket": intermarket,
             "bias": bias,
             "rates": rates,
-            "levels_score": 75,
-            "volatility_score": 70,
         }
