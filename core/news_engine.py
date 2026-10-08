@@ -9,9 +9,9 @@
 # the desktop dashboard, so both surfaces always agree.
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
-from core.mt5_bridge import MT5Bridge
+from core.mt5_bridge import MT5Bridge, _parse_event_time
 
 log = logging.getLogger(__name__)
 
@@ -135,14 +135,11 @@ class NewsEngine:
                     "source": source, "status": WAITING_SOURCE}
 
         is_clean, blocking = self.is_news_clean(symbol)
-        now = datetime.now()
+        now_utc = datetime.now(timezone.utc)
         next_events = []
         for ev in blocking:
-            try:
-                ev_time = datetime.strptime(ev.get("time", ""), "%Y.%m.%d %H:%M")
-                countdown = int((ev_time - now).total_seconds() / 60)
-            except Exception:
-                countdown = None
+            ev_dt = _parse_event_time(ev.get("time", ""))
+            countdown = int((ev_dt - now_utc).total_seconds() / 60) if ev_dt else None
             next_events.append({
                 "time": ev.get("time", ""),
                 "event": ev.get("event", "High Impact"),

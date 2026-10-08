@@ -19,9 +19,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
 import MetaTrader5 as mt5
-from datetime import datetime
+from datetime import datetime, timezone
 
-from core.mt5_bridge import MT5Bridge, calculate_currency_strength, sanitize_for_json, safe_float, ea_calendar, ea_quotes, _socket_server
+from core.mt5_bridge import MT5Bridge, calculate_currency_strength, sanitize_for_json, safe_float, ea_calendar, ea_quotes, _socket_server, _parse_event_time
 from core.regime_engine import RegimeEngine
 from core.levels_engine import LevelsEngine
 from core.brain_score import (calculate_brain_score, get_manual_action,
@@ -133,7 +133,8 @@ def _build_news_bar_text(blocking_events, cal):
             continue
         seen.add(key)
         try:
-            t = datetime.strptime(ev.get("time", ""), "%Y.%m.%d %H:%M").strftime("%H:%M")
+            ev_dt = _parse_event_time(ev.get("time", ""))
+            t = ev_dt.strftime("%H:%M") if ev_dt else str(ev.get("time", ""))[-5:]
         except Exception:
             t = ev.get("time", "")
         parts.append(f"{t} {ev.get('event', '')} [HIGH] AVOID {ev.get('currency', '')}")
@@ -212,8 +213,11 @@ def _news_why(news, news_score):
     ev = blocking[0]
     rel = ""
     try:
-        ev_time = datetime.strptime(ev.get("time", ""), "%Y.%m.%d %H:%M")
-        rel = f" in {int((ev_time - datetime.now()).total_seconds() / 60)}min"
+        ev_time = _parse_event_time(ev.get("time", ""))
+        if ev_time:
+            now_utc = datetime.now(timezone.utc)
+            mins_diff = int((ev_time - now_utc).total_seconds() / 60)
+            rel = f" in {mins_diff}min" if mins_diff >= 0 else f" {abs(mins_diff)}min ago"
     except Exception:
         rel = ""
     return f"BLOCKED: {ev.get('currency')} {ev.get('event')}{rel} = news {news_score}"
@@ -550,8 +554,7 @@ def global_calendar(hours: int = 168):
 @app.get("/api/logs")
 def get_logs():
     try:
-        with open(tracker.file, "r", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))[-100:]  # last 100
+        rows = tracker.get_recent_logs(100)
         return {"count": len(rows), "rows": rows}
     except Exception:
         return {"count": 0, "rows": []}

@@ -72,13 +72,24 @@ def _parse_event_time(time_str):
     """Parse event time string, trying multiple formats. Returns timezone-aware UTC datetime or None."""
     if not time_str:
         return None
-    formats = ["%Y.%m.%d %H:%M:%S", "%Y.%m.%d %H:%M", "%Y-%m-%dT%H:%M:%S"]
+    formats = [
+        "%Y.%m.%d %H:%M:%S",
+        "%Y.%m.%d %H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+    ]
     for fmt in formats:
         try:
-            return datetime.strptime(time_str, fmt).replace(tzinfo=timezone.utc)
+            return datetime.strptime(str(time_str).strip(), fmt).replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
             continue
     return None
+
+
+parse_event_time = _parse_event_time
+
 
 
 def _normalize_importance(importance):
