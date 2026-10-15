@@ -32,6 +32,7 @@ import shutil
 import threading
 import subprocess
 import webbrowser
+import socket
 
 import config
 
@@ -138,6 +139,27 @@ def sync_static():
         except Exception as exc:
             log("WARN", f"sync failed {src} -> {dst}: {exc}")
     log("INFO", "synced ui -> backend/static")
+
+
+def free_port(port):
+    """If port is occupied by a stale process, terminate it to ensure clean binding."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        res = s.connect_ex((HOST, port))
+        s.close()
+        if res == 0:
+            log("WARN", f"Port {port} is occupied by an existing process. Freeing port...")
+            if os.name == "nt":
+                cmd = f'powershell -Command "(Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue).OwningProcess"'
+                out = subprocess.check_output(cmd, shell=True, text=True).strip()
+                if out:
+                    pid = int(out.split()[0])
+                    if pid != os.getpid():
+                        subprocess.run(f"taskkill /F /PID {pid}", shell=True, capture_output=True)
+                        time.sleep(1)
+                        log("INFO", f"Freed port {port} (killed stale PID {pid}).")
+    except Exception as exc:
+        log("WARN", f"Port check note: {exc}")
 
 
 # --------------------------------------------------------------------------- #
@@ -258,7 +280,10 @@ def main():
     # 2) Mirror ui/ HTML into backend/static/ so old launchers keep working.
     sync_static()
 
-    # 3) Launch unified engine.
+    # 3) Free port 8000 if occupied by a stale zombie process.
+    free_port(PORT)
+
+    # 4) Launch unified engine.
     proc_api = launch_engine(dev_mode=dev_mode)
 
     # 4) Fail-fast: engine dying right after launch => FATAL.
