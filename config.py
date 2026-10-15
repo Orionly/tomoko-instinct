@@ -22,6 +22,9 @@ MT5_TERMINAL_PATH = MT5_PATHS[ACTIVE_BROKER]
 EA_SOCKET_HOST = "127.0.0.1"
 EA_SOCKET_PORT = 18001
 
+# Finnhub API Key for Decoupled Live WebSocket
+FINNHUB_API_KEY = "db8aja9r01qmvbh6ojdgdb8aja9r01qmvbh6oje0"
+
 # Web API (uvicorn)
 API_HOST = "127.0.0.1"
 API_PORT = 8000

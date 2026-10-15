@@ -1,0 +1,420 @@
+# Decoupled PriceEngine - Autonomous Market Data & Finnhub WebSocket
+#
+# Real-Time Spot / Ticks: Finnhub WebSocket (OANDA:EUR_USD, etc.)
+# Historical Candle Bars: yfinance (H4, H1, M15, D1, W1) with background cache
+# Completely decoupled from MetaTrader 5 (MT5).
+
+import os
+import time
+import json
+import math
+import asyncio
+import logging
+import threading
+from typing import Dict, List, Optional
+import pandas as pd
+import numpy as np
+import websockets
+import yfinance as yf
+
+import config
+
+log = logging.getLogger(__name__)
+
+FINNHUB_WS_URL = "wss://ws.finnhub.io"
+
+SYMBOLS_MAP = {
+    "EURUSD": "OANDA:EUR_USD",
+    "GBPUSD": "OANDA:GBP_USD",
+    "USDJPY": "OANDA:USD_JPY",
+    "GBPJPY": "OANDA:GBP_JPY",
+    "EURJPY": "OANDA:EUR_JPY",
+    "EURGBP": "OANDA:EUR_GBP",
+    "XAUUSD": "OANDA:XAU_USD",
+}
+
+REVERSE_MAP = {v: k for k, v in SYMBOLS_MAP.items()}
+
+YF_MAP = {
+    "EURUSD": "EURUSD=X",
+    "GBPUSD": "GBPUSD=X",
+    "USDJPY": "USDJPY=X",
+    "GBPJPY": "GBPJPY=X",
+    "EURJPY": "EURJPY=X",
+    "EURGBP": "EURGBP=X",
+    "XAUUSD": "GC=F",
+}
+
+POINTS_MAP = {
+    "EURUSD": 0.00001,
+    "GBPUSD": 0.00001,
+    "USDJPY": 0.001,
+    "GBPJPY": 0.001,
+    "EURJPY": 0.001,
+    "EURGBP": 0.00001,
+    "XAUUSD": 0.01,
+}
+
+DEFAULT_SPREADS = {
+    "EURUSD": 12,
+    "GBPUSD": 15,
+    "USDJPY": 14,
+    "GBPJPY": 22,
+    "EURJPY": 18,
+    "EURGBP": 16,
+    "XAUUSD": 25,
+}
+
+CURRENCY_MAP = {
+    "EURUSD": ["EUR", "USD"],
+    "GBPUSD": ["GBP", "USD"],
+    "USDJPY": ["USD", "JPY"],
+    "GBPJPY": ["GBP", "JPY"],
+    "EURJPY": ["EUR", "JPY"],
+    "EURGBP": ["EUR", "GBP"],
+    "XAUUSD": ["XAU", "USD"],
+}
+
+
+class PriceEngine:
+    """
+    Autonomous Price & Rates Engine.
+    Uses Finnhub WebSocket for live tick stream and yfinance for historical OHLCV bars.
+    """
+
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or getattr(config, "FINNHUB_API_KEY", "")
+        self.latest_prices: Dict[str, Dict] = {}
+        self.candles_cache: Dict[str, Dict[str, pd.DataFrame]] = {}
+        self.last_candle_update: Dict[str, float] = {}
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self.connected = False
+
+        # Pre-seed initial prices and historical bars
+        self._seed_initial_data()
+
+        # Start background threads:
+        # 1. Finnhub WebSocket stream
+        self._ws_thread = threading.Thread(target=self._start_ws_loop, daemon=True)
+        self._ws_thread.start()
+
+        # 2. Periodic candle refresher (every 90s)
+        self._candle_thread = threading.Thread(target=self._candle_refresh_loop, daemon=True)
+        self._candle_thread.start()
+
+    def _seed_initial_data(self):
+        """Quickly pre-populate prices and candles from yfinance so the app starts instantly."""
+        try:
+            log.info("[PriceEngine] Pre-seeding initial candles for all pairs...")
+            self.refresh_all_candles()
+            self.connected = True
+        except Exception as e:
+            log.warning("[PriceEngine] Pre-seeding warning: %s", e)
+
+    def _start_ws_loop(self):
+        """Runs the asyncio websocket event loop with automatic reconnect."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        while not self._stop_event.is_set():
+            try:
+                loop.run_until_complete(self._finnhub_ws_client())
+            except Exception as e:
+                log.debug("[PriceEngine] WS connection dropped: %s. Reconnecting in 5s...", e)
+                time.sleep(5)
+
+    async def _finnhub_ws_client(self):
+        ws_url = f"{FINNHUB_WS_URL}?token={self.api_key}"
+        async with websockets.connect(ws_url, ping_interval=20, ping_timeout=10) as ws:
+            self.connected = True
+            log.info("[PriceEngine] Finnhub WebSocket connected successfully.")
+
+            # Subscribe to all 7 pairs
+            for sym in SYMBOLS_MAP.values():
+                await ws.send(json.dumps({"type": "subscribe", "symbol": sym}))
+
+            while not self._stop_event.is_set():
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=25.0)
+                    data = json.loads(msg)
+                    msg_type = data.get("type")
+
+                    if msg_type == "trade":
+                        trades = data.get("data", [])
+                        now_sec = time.time()
+                        for t in trades:
+                            fh_sym = t.get("s")
+                            pair = REVERSE_MAP.get(fh_sym)
+                            price = t.get("p")
+                            if pair and price:
+                                point = POINTS_MAP.get(pair, 0.00001)
+                                spread_pts = DEFAULT_SPREADS.get(pair, 15)
+                                half_spread = (spread_pts * point) / 2.0
+                                bid = round(price - half_spread, 5 if "JPY" not in pair and pair != "XAUUSD" else (3 if pair == "XAUUSD" else 3))
+                                ask = round(price + half_spread, 5 if "JPY" not in pair and pair != "XAUUSD" else (3 if pair == "XAUUSD" else 3))
+
+                                with self._lock:
+                                    self.latest_prices[pair] = {
+                                        "price": price,
+                                        "bid": bid,
+                                        "ask": ask,
+                                        "spread": spread_pts,
+                                        "point": point,
+                                        "time": now_sec,
+                                        "symbol": pair,
+                                        "source": "finnhub_ws",
+                                    }
+
+                    elif msg_type == "ping":
+                        await ws.send(json.dumps({"type": "pong"}))
+
+                except asyncio.TimeoutError:
+                    # Keepalive ping
+                    await ws.ping()
+                except Exception as e:
+                    log.debug("[PriceEngine] WS message error: %s", e)
+                    break
+
+    # -------------------------------------------------------------
+    # Candle Bar Management (yfinance Layer)
+    # -------------------------------------------------------------
+
+    def _candle_refresh_loop(self):
+        """Refreshes H4, H1, M15 candles in the background every 90 seconds."""
+        while not self._stop_event.is_set():
+            time.sleep(90)
+            try:
+                self.refresh_all_candles()
+            except Exception as e:
+                log.debug("[PriceEngine] Candle refresh error: %s", e)
+
+    def refresh_all_candles(self):
+        """Batch downloads latest bars for H1, M15, D1."""
+        tickers = list(YF_MAP.values())
+
+        # 1. Download H1 (used for H1 and resampled to H4)
+        try:
+            df_h1_raw = yf.download(tickers, period="10d", interval="1h", progress=False)
+            now_ts = time.time()
+            for pair, yf_sym in YF_MAP.items():
+                try:
+                    if len(tickers) == 1:
+                        sub = df_h1_raw.copy()
+                    else:
+                        sub = pd.DataFrame({
+                            "open": df_h1_raw["Open"][yf_sym],
+                            "high": df_h1_raw["High"][yf_sym],
+                            "low": df_h1_raw["Low"][yf_sym],
+                            "close": df_h1_raw["Close"][yf_sym],
+                            "volume": df_h1_raw["Volume"][yf_sym] if "Volume" in df_h1_raw else 0,
+                        }).dropna()
+
+                    if not sub.empty:
+                        sub.index = pd.to_datetime(sub.index)
+                        sub["time"] = sub.index
+
+                        # Compute H1 with indicators
+                        h1_ind = self._add_indicators(sub.copy())
+
+                        # Compute H4 by 4h resampling
+                        h4_res = sub.resample("4h").agg({
+                            "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "time": "first"
+                        }).dropna()
+                        h4_ind = self._add_indicators(h4_res)
+
+                        # Compute D1 by 1d resampling
+                        d1_res = sub.resample("1D").agg({
+                            "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "time": "first"
+                        }).dropna()
+                        d1_ind = self._add_indicators(d1_res)
+
+                        # Compute W1 by 1W resampling
+                        w1_res = sub.resample("1W").agg({
+                            "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "time": "first"
+                        }).dropna()
+                        w1_ind = self._add_indicators(w1_res)
+
+                        with self._lock:
+                            if pair not in self.candles_cache:
+                                self.candles_cache[pair] = {}
+                            self.candles_cache[pair]["H1"] = h1_ind
+                            self.candles_cache[pair]["H4"] = h4_ind
+                            self.candles_cache[pair]["D1"] = d1_ind
+                            self.candles_cache[pair]["W1"] = w1_ind
+                            self.last_candle_update[pair] = now_ts
+
+                            # If no live tick yet, seed latest_prices with latest close
+                            if pair not in self.latest_prices:
+                                last_c = float(sub["close"].iloc[-1])
+                                pt = POINTS_MAP.get(pair, 0.00001)
+                                sp = DEFAULT_SPREADS.get(pair, 15)
+                                self.latest_prices[pair] = {
+                                    "price": last_c,
+                                    "bid": round(last_c - (sp * pt) / 2, 5),
+                                    "ask": round(last_c + (sp * pt) / 2, 5),
+                                    "spread": sp,
+                                    "point": pt,
+                                    "time": now_ts,
+                                    "symbol": pair,
+                                    "source": "yf_seed",
+                                }
+                except Exception as ex:
+                    log.debug("[PriceEngine] Pair %s candle processing error: %s", pair, ex)
+
+        except Exception as e:
+            log.warning("[PriceEngine] Batch yfinance download warning: %s", e)
+
+        # 2. Download M15 for M15 bias
+        try:
+            df_m15_raw = yf.download(tickers, period="3d", interval="15m", progress=False)
+            for pair, yf_sym in YF_MAP.items():
+                try:
+                    if len(tickers) == 1:
+                        sub = df_m15_raw.copy()
+                    else:
+                        sub = pd.DataFrame({
+                            "open": df_m15_raw["Open"][yf_sym],
+                            "high": df_m15_raw["High"][yf_sym],
+                            "low": df_m15_raw["Low"][yf_sym],
+                            "close": df_m15_raw["Close"][yf_sym],
+                            "volume": df_m15_raw["Volume"][yf_sym] if "Volume" in df_m15_raw else 0,
+                        }).dropna()
+                    if not sub.empty:
+                        sub.index = pd.to_datetime(sub.index)
+                        sub["time"] = sub.index
+                        m15_ind = self._add_indicators(sub)
+                        with self._lock:
+                            if pair not in self.candles_cache:
+                                self.candles_cache[pair] = {}
+                            self.candles_cache[pair]["M15"] = m15_ind
+                except Exception as ex:
+                    log.debug("[PriceEngine] M15 pair %s error: %s", pair, ex)
+        except Exception as e:
+            log.warning("[PriceEngine] M15 yfinance download warning: %s", e)
+
+    @staticmethod
+    def _add_indicators(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty or len(df) < 14:
+            return df
+        close = df["close"]
+        high = df["high"]
+        low = df["low"]
+
+        # EMAs
+        df["EMA20"] = close.ewm(span=20, adjust=False).mean()
+        df["EMA50"] = close.ewm(span=50, adjust=False).mean()
+        df["EMA21"] = close.ewm(span=21, adjust=False).mean()
+
+        # ATR (14)
+        tr = pd.concat([high - low, (high - close.shift(1)).abs(), (low - close.shift(1)).abs()], axis=1).max(axis=1)
+        df["ATR"] = tr.rolling(14).mean().bfill().replace(0, 0.0001)
+
+        # RSI (14)
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = (-delta.where(delta < 0, 0.0)).rolling(14).mean()
+        avg_gain = gain.rolling(14).mean()
+        rs = avg_gain / loss.replace(0, np.nan)
+        df["RSI"] = (100 - (100 / (1 + rs))).fillna(50)
+
+        # ADX (14)
+        up_move = high - high.shift(1)
+        down_move = low.shift(1) - low
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+        atr14 = tr.ewm(alpha=1 / 14, adjust=False).mean().replace(0, 0.0001)
+        plus_di = 100 * pd.Series(plus_dm, index=df.index).ewm(alpha=1 / 14, adjust=False).mean() / atr14
+        minus_di = 100 * pd.Series(minus_dm, index=df.index).ewm(alpha=1 / 14, adjust=False).mean() / atr14
+        dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+        df["ADX"] = dx.ewm(alpha=1 / 14, adjust=False).mean().fillna(20)
+
+        # Distance from EMA21 in ATR units
+        df["dist_ema21_atr"] = ((close - df["EMA21"]).abs() / df["ATR"].replace(0, np.nan)).round(2)
+        df["dist_ema21_atr"] = df["dist_ema21_atr"].fillna(0.0)
+
+        return df
+
+    # -------------------------------------------------------------
+    # Public API Compatible with MT5Bridge
+    # -------------------------------------------------------------
+
+    def get_price(self, symbol: str) -> Optional[Dict]:
+        with self._lock:
+            if symbol in self.latest_prices:
+                return dict(self.latest_prices[symbol])
+        return None
+
+    def get_rates(self, symbol: str, timeframe, count: int = 200) -> pd.DataFrame:
+        """
+        Returns indicator-augmented DataFrame for symbol & timeframe.
+        Accepts MT5 timeframe constants (16388=H4, 16385=H1, 15=M15, 16408=D1, 32769=W1) or strings.
+        """
+        # Map timeframe to key
+        tf_key = "H1"
+        tf_str = str(timeframe)
+        if tf_str in ("16388", "H4", "TIMEFRAME_H4"):
+            tf_key = "H4"
+        elif tf_str in ("16385", "H1", "TIMEFRAME_H1"):
+            tf_key = "H1"
+        elif tf_str in ("15", "M15", "TIMEFRAME_M15"):
+            tf_key = "M15"
+        elif tf_str in ("16408", "D1", "TIMEFRAME_D1", "1440"):
+            tf_key = "D1"
+        elif tf_str in ("32769", "W1", "TIMEFRAME_W1", "10080"):
+            tf_key = "W1"
+
+        with self._lock:
+            cached = self.candles_cache.get(symbol, {}).get(tf_key)
+            if cached is not None and not cached.empty:
+                df = cached.copy()
+                # Update latest bar's close with real-time Finnhub tick if available
+                if symbol in self.latest_prices:
+                    live_p = self.latest_prices[symbol]["price"]
+                    df.iloc[-1, df.columns.get_loc("close")] = live_p
+                    if live_p > df.iloc[-1]["high"]:
+                        df.iloc[-1, df.columns.get_loc("high")] = live_p
+                    if live_p < df.iloc[-1]["low"]:
+                        df.iloc[-1, df.columns.get_loc("low")] = live_p
+                return df.tail(count)
+
+        return pd.DataFrame()
+
+    def get_all_pair_info(self, pairs: List[str]) -> Dict[str, Dict]:
+        data = {}
+        for p in pairs:
+            q = self.get_price(p)
+            if q:
+                data[p] = {
+                    "spread": q.get("spread", 15),
+                    "bid": q.get("bid", 0.0),
+                    "ask": q.get("ask", 0.0),
+                    "point": q.get("point", 0.00001),
+                }
+        return data
+
+    def get_balance(self) -> float:
+        return getattr(config, "BALANCE_USC", 567.11)
+
+    def get_currencies(self, symbol: str) -> List[str]:
+        return CURRENCY_MAP.get(symbol, ["USD"])
+
+    def get_market_heatmap(self, scan_results: Dict) -> List[Dict]:
+        """Calculates 7-pair heatmap matching MT5Bridge output."""
+        from core.mt5_bridge import MT5Bridge
+        # Can delegate to MT5Bridge static method or duplicate lightweight logic
+        rows = []
+        for sym, sc in scan_results.items():
+            h4 = sc.get("h4", {})
+            h1 = sc.get("h1", {})
+            score = sc.get("score", 50)
+            color = "green" if score >= 65 else ("red" if score < 45 else "yellow")
+            rows.append({
+                "pair": sym,
+                "score": score,
+                "color": color,
+                "h4": h4.get("direction", "NEUTRAL"),
+                "h1": h1.get("bias", "Neutral"),
+                "m15": sc.get("m15_bias", "Neutral"),
+                "alignment": f"{sc.get('m15_bias', '')} align",
+            })
+        return rows

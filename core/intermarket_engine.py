@@ -3,7 +3,6 @@
 import time
 import math
 import yfinance as yf
-import MetaTrader5 as mt5
 
 _YF_TTL = 300  # seconds
 _yf_cache = {}  # ticker -> {"price","chg","dir","ts"}

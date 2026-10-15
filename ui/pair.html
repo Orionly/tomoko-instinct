@@ -150,6 +150,8 @@
   .fn-pill.med{ background:rgba(255,184,0,0.15); color:#FFB800; border:1px solid rgba(255,184,0,0.35); }
   .fn-pill.lo{ background:rgba(82,82,91,0.3); color:#94A3B8; border:1px solid rgba(82,82,91,0.3); }
   .fn-num{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#CBD5E1; text-align:right; }
+  .fn-num.green{ color:#00FF88; font-weight:700; }
+  .fn-num.red{ color:#FF5A79; font-weight:700; }
   .fn-empty{ font-family:'JetBrains Mono',monospace; font-size:10px; color:#71717a; }
 
   footer.bar{ padding:9px 16px; border-top:1px solid var(--border); background:rgba(12,17,27,.7);
@@ -424,12 +426,18 @@ function renderFundamental(scan, currencies){
   if(events.length){
     for(const ev of events.slice(0,8)){
       const imp = getImportance(ev);
+      const actVal = safeCalValue(ev.actual);
+      let actClass = '';
+      if(actVal !== '—'){
+        if(ev.impact_direction === 1) actClass = ' green';
+        else if(ev.impact_direction === 2) actClass = ' red';
+      }
       tbl += `<tr${imp.pri>=3?' class="hi"':''}>` +
         `<td class="cal-time">${esc(calTime(ev.time))}<span class="cal-rel">${relMinStr(ev._rel_min, ev.time)}</span></td>` +
         `<td class="cal-cur">${esc(ev.currency)}</td>` +
         `<td class="cal-event" title="${esc(ev.event)}">${esc(truncEv(ev.event,26))}</td>` +
         `<td class="cal-p"><span class="fn-pill ${imp.cls}">${imp.label}</span></td>` +
-        `<td class="fn-num${safeCalValue(ev.actual)!=='—'?'':''}">${esc(safeCalValue(ev.actual))}</td>` +
+        `<td class="fn-num${actClass}">${esc(actVal)}</td>` +
         `<td class="fn-num">${esc(safeCalValue(ev.forecast))}</td>` +
         `<td class="fn-num">${esc(safeCalValue(ev.previous))}</td>` +
         `</tr>`;

@@ -2,7 +2,10 @@
 # Local only, no VPS - Option A file bridge
 # Fixes: AttributeError get_calendar_from_ea
 
-import MetaTrader5 as mt5
+try:
+    import MetaTrader5 as mt5
+except ImportError:
+    mt5 = None
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, timezone
@@ -70,15 +73,16 @@ def _socket_server(port):
 
 def get_broker_utc_offset_hours():
     """Calculates broker's offset from UTC in hours (e.g. 3.0 for UTC+3)."""
-    try:
-        tick = mt5.symbol_info_tick("EURUSD")
-        if tick and tick.time > 0:
-            broker_dt = datetime.fromtimestamp(tick.time, timezone.utc)
-            now_utc = datetime.now(timezone.utc)
-            diff = (broker_dt - now_utc).total_seconds() / 3600.0
-            return round(diff)
-    except Exception:
-        pass
+    if mt5 is not None:
+        try:
+            tick = mt5.symbol_info_tick("EURUSD")
+            if tick and tick.time > 0:
+                broker_dt = datetime.fromtimestamp(tick.time, timezone.utc)
+                now_utc = datetime.now(timezone.utc)
+                diff = (broker_dt - now_utc).total_seconds() / 3600.0
+                return round(diff)
+        except Exception:
+            pass
     return 3.0  # default VT Markets / Forex broker offset (EEST)
 
 
@@ -305,6 +309,9 @@ class MT5Bridge:
         # Common Files is same for all terminals
 
     def connect(self):
+        if mt5 is None:
+            self.connected = False
+            return False
         if not mt5.initialize(path=config.MT5_TERMINAL_PATH, timeout=10000):
             log.error("[MT5] Failed to init %s at %s, error: %s", config.ACTIVE_BROKER, config.MT5_TERMINAL_PATH, mt5.last_error())
             if not mt5.initialize():
@@ -340,38 +347,75 @@ class MT5Bridge:
             log.error("discover failed: %s", e)
         return True
 
+    def _get_pe(self):
+        if not hasattr(self, "_price_engine") or self._price_engine is None:
+            from core.price_engine import PriceEngine
+            self._price_engine = PriceEngine()
+        return self._price_engine
+
     def get_balance(self):
-        info = mt5.account_info()
-        return info.balance if info else 0
+        if self.connected and mt5 is not None:
+            try:
+                info = mt5.account_info()
+                if info and info.balance > 0:
+                    return info.balance
+            except Exception:
+                pass
+        return getattr(config, "BALANCE_USC", 567.11)
 
     def get_price(self, symbol):
         global ea_quotes
-        # Priority 1: EA quotes from socket
+        # Priority 1: Finnhub WebSocket live stream tick
+        try:
+            pe = self._get_pe()
+            p = pe.get_price(symbol)
+            if p:
+                return p
+        except Exception:
+            pass
+
+        # Priority 2: EA quotes from socket
         if symbol in ea_quotes:
             q = ea_quotes[symbol]
             return {"bid": q.get("bid", 0), "ask": q.get("ask", 0), "time": q.get("time", 0), "symbol": symbol, "source": "ea_socket"}
-        # Priority 2: MT5 real tick
-        real = self.symbol_map.get(symbol, symbol)
-        try:
-            tick = mt5.symbol_info_tick(real)
-            if tick:
-                return {"bid": tick.bid, "ask": tick.ask, "time": tick.time, "symbol": symbol, "real_symbol": real}
-        except:
-            pass
-        # Priority 3: EA file fallback
+
+        # Priority 3: MT5 real tick
+        if self.connected and mt5 is not None:
+            real = self.symbol_map.get(symbol, symbol)
+            try:
+                tick = mt5.symbol_info_tick(real)
+                if tick:
+                    return {"bid": tick.bid, "ask": tick.ask, "time": tick.time, "symbol": symbol, "real_symbol": real}
+            except Exception:
+                pass
+
+        # Priority 4: EA file fallback
         ea_prices = self.get_prices_from_ea()
         if symbol in ea_prices:
             return {"bid": ea_prices[symbol].get("bid"), "ask": ea_prices[symbol].get("ask"), "time": 0, "symbol": symbol, "real_symbol": symbol+" (EA)", "source": "ea"}
         return None
 
     def get_rates(self, symbol, timeframe, count=200):
-        real = self.symbol_map.get(symbol, symbol)
+        # Priority 1: Decoupled PriceEngine (Finnhub live tick + yfinance)
         try:
-            rates = mt5.copy_rates_from_pos(real, timeframe, 0, count)
+            pe = self._get_pe()
+            df_pe = pe.get_rates(symbol, timeframe, count=count)
+            if df_pe is not None and not df_pe.empty:
+                return df_pe
         except Exception:
-            rates = None
+            pass
+
+        rates = None
+        if self.connected and mt5 is not None:
+            real = self.symbol_map.get(symbol, symbol)
+            try:
+                rates = mt5.copy_rates_from_pos(real, timeframe, 0, count)
+            except Exception:
+                rates = None
+
         if rates is None or len(rates) == 0:
             return pd.DataFrame()
+
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s')
         return self._add_indicators(df)
@@ -426,16 +470,33 @@ class MT5Bridge:
     def get_all_pair_info(self, pairs):
         data = {}
         for p in pairs:
-            real = self.symbol_map.get(p, p)
-            info = mt5.symbol_info(real)
-            tick = mt5.symbol_info_tick(real)
-            if info and tick:
-                data[p] = {
-                    "spread": info.spread,
-                    "bid": tick.bid,
-                    "ask": tick.ask,
-                    "point": info.point,
-                }
+            if self.connected and mt5 is not None:
+                real = self.symbol_map.get(p, p)
+                try:
+                    info = mt5.symbol_info(real)
+                    tick = mt5.symbol_info_tick(real)
+                    if info and tick:
+                        data[p] = {
+                            "spread": info.spread,
+                            "bid": tick.bid,
+                            "ask": tick.ask,
+                            "point": info.point,
+                        }
+                        continue
+                except Exception:
+                    pass
+            # Decoupled PriceEngine fallback
+            try:
+                pe_price = self._get_pe().get_price(p)
+                if pe_price:
+                    data[p] = {
+                        "spread": pe_price.get("spread", 15),
+                        "bid": pe_price.get("bid", 0),
+                        "ask": pe_price.get("ask", 0),
+                        "point": pe_price.get("point", 0.00001),
+                    }
+            except Exception:
+                pass
         return data
 
     # --- EA DUMB PIPE - Option A ---

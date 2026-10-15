@@ -18,7 +18,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
-import MetaTrader5 as mt5
 from datetime import datetime, timezone
 
 from core.mt5_bridge import MT5Bridge, calculate_currency_strength, sanitize_for_json, safe_float, ea_calendar, ea_quotes, _socket_server, _parse_event_time
@@ -56,23 +55,24 @@ def get_mt5_bridge():
 
 
 def _ensure_mt5():
-    """Return True if the bridge is (or just became) connected.
-
-    While MT5 is down, retries at most once per _MT5_RETRY_COOLDOWN so a closed
-    terminal does not stall every poll for the full connect() timeout.
-    """
+    """Return True if decoupled PriceEngine or MT5 is available."""
     bridge = get_mt5_bridge()
+    try:
+        if bridge._get_pe().connected:
+            return True
+    except Exception:
+        pass
     if bridge.connected:
         return True
     now = time.time()
-    if now - _mt5_retry_state["last_attempt"] < _MT5_RETRY_COOLDOWN:
-        return False
-    _mt5_retry_state["last_attempt"] = now
-    try:
-        ok = bool(bridge.connect())
-    except Exception:
-        ok = False
-    return ok
+    if now - _mt5_retry_state["last_attempt"] >= _MT5_RETRY_COOLDOWN:
+        _mt5_retry_state["last_attempt"] = now
+        try:
+            if bridge.connect():
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def get_ctx_feed():
@@ -112,10 +112,10 @@ def _report_calendar_once(source, count):
 
 
 def _get_ea_calendar():
-    """Read EA-dumped calendar (exactly as MT5 terminal shows). Single source of truth."""
-    cal = get_mt5_bridge().get_calendar_from_ea()
-    source = cal.get('source', 'mt5_calendar_missing')
-    events = cal.get('calendar', [])
+    """Read decoupled calendar (nfs.faireconomy.media + Tradays actuals). Single source of truth."""
+    cal = get_news_engine().get_global_events()
+    source = cal.get('source', 'decoupled_faireconomy_tradays')
+    events = cal.get('events', [])
     _report_calendar_once(source, len(events))
     return {
         "source": source,
@@ -151,11 +151,11 @@ def _build_news_bar_text(blocking_events, cal):
 def _clamp(v, lo=0, hi=100):
     return int(max(lo, min(hi, v)))
 
-TIMEFRAME_H4 = mt5.TIMEFRAME_H4
-TIMEFRAME_H1 = mt5.TIMEFRAME_H1
-TIMEFRAME_M15 = mt5.TIMEFRAME_M15
-TIMEFRAME_D1 = mt5.TIMEFRAME_D1
-TIMEFRAME_W1 = mt5.TIMEFRAME_W1
+TIMEFRAME_H4 = 16388
+TIMEFRAME_H1 = 16385
+TIMEFRAME_M15 = 15
+TIMEFRAME_D1 = 16408
+TIMEFRAME_W1 = 32769
 
 def start_socket_in_thread():
     """Start the EA socket server in a background thread."""
@@ -321,18 +321,9 @@ def _scan(symbol: str, cal=None):
     # --- Intermarket snapshot (DXY / US10Y / VIX) ---
     dxy_change, us10y_change, risk_sentiment = _intermarket_snapshot()
 
-    # --- News: EA calendar ONLY (NewsEngine = single gate, no external feeds) ---
-    is_clean, blocking = get_news_engine().is_news_clean(symbol)
-    upcoming = get_news_engine().get_upcoming_events(symbol, hours_ahead=168)
-    news = {
-        "is_clean": is_clean,
-        "blocking": blocking,
-        "upcoming_events": upcoming,
-        "source": cal_source,
-        "count": cal_count,
-        "total_events": cal_total,
-        "risk": "RISK-OFF" if blocking else "RISK-ON",
-    }
+    # --- News: Autonomous Macro Calendar (NewsEngine) ---
+    news = get_news_engine().get_news_for_symbol(symbol, hours_ahead=168)
+    is_clean = news.get("is_clean", True)
 
     # --- Fundamental engine: structural / intermarket / bias (dynamic rates) ---
     # dxy_change / us10y_change wired from intermarket snapshot (spec TODO, done here)
@@ -488,17 +479,18 @@ def scan_all():
     market_pulse["timestamp"] = datetime.now().strftime("%Y.%m.%d %H:%M")
     market_pulse["method"] = "H4 trend aggregation"
     market_heatmap = get_mt5_bridge().get_market_heatmap(scan_results)
+    cal_info = get_news_engine().get_global_events()
     response = {
         "scans": scans,
-        "calendar_source": cal.get("source", "mt5_calendar_missing"),
-        "calendar_last_update": cal.get("last_update", ""),
-        "calendar_events": cal.get("calendar", [])[:30],
-        "count": cal.get("count", 0),
-        "news_bar_text": _build_news_bar_text(blocking_news, cal),
+        "calendar_source": cal_info.get("source", "decoupled_faireconomy_tradays"),
+        "calendar_last_update": cal_info.get("last_update", ""),
+        "calendar_events": cal_info.get("events", [])[:30],
+        "count": cal_info.get("count", 0),
+        "news_bar_text": _build_news_bar_text(blocking_news, cal_info),
         "blocking_news": blocking_news,
         "scan_timestamp": datetime.now().isoformat(),
         "market_pulse": market_pulse,
-        "global_calendar": get_mt5_bridge().get_global_calendar(),
+        "global_calendar": cal_info.get("events", []),
         "market_heatmap": market_heatmap,
     }
     return sanitize_for_json(response)
@@ -579,7 +571,7 @@ def get_pair_deep(symbol: str):
     scan = _scan(symbol)  # reuses existing scan pipeline; degraded scan if no data
     heatmap = get_mt5_bridge().get_market_heatmap({symbol: scan})
     heatmap_row = heatmap[0] if heatmap else None
-    upcoming = get_mt5_bridge().get_upcoming_events(symbol, hours_ahead=168)
+    upcoming = get_news_engine().get_upcoming_events(symbol, hours_ahead=168)
     currencies = get_mt5_bridge().get_currencies(symbol)
     return sanitize_for_json({
         "symbol": symbol,
@@ -588,8 +580,8 @@ def get_pair_deep(symbol: str):
         "heatmap": heatmap_row,
         "calendar": upcoming,
         "calendar_count": len(upcoming),
-        "global_calendar": get_mt5_bridge().get_global_calendar(),
-        "calendar_source": (scan.get("news") or {}).get("source", "mt5_terminal_calendar"),
+        "global_calendar": get_news_engine().get_global_events().get("events", []),
+        "calendar_source": (scan.get("news") or {}).get("source", "decoupled_faireconomy_tradays"),
         "generated": datetime.now().isoformat(),
     })
 

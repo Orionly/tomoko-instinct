@@ -1,7 +1,6 @@
 import time
 import math
 import yfinance as yf
-import MetaTrader5 as mt5
 from datetime import datetime, timezone
 
 _YF_TTL = 300  # seconds
@@ -104,12 +103,12 @@ class ContextFeed:
         result = {}
         # Try MT5 first for GOLD (since we have XAU), then yfinance fallback
         for key, yf_ticker in self.tickers.items():
-            # Special: GOLD we already have from MT5 XAUUSD mapping
+            # Special: GOLD we already have from XAUUSD live feed
             if key == "GOLD":
                 xau_price = self.mt5.get_price("XAUUSD")
                 if xau_price:
                     # Calculate change from daily rates
-                    df = self.mt5.get_rates("XAUUSD", mt5.TIMEFRAME_D1, 5)
+                    df = self.mt5.get_rates("XAUUSD", "D1", 5)
                     if not df.empty and len(df) >= 2:
                         prev_close = _safe_num(df.iloc[-2]['close'])
                         last_close = _safe_num(df.iloc[-1]['close'])
@@ -118,7 +117,7 @@ class ContextFeed:
                             "price": _safe_num(xau_price['bid']),
                             "change_pct": round(change, 2),
                             "trend": "UP" if change > 0 else "DOWN",
-                            "source": "MT5",
+                            "source": xau_price.get("source", "live"),
                         }
                         continue
             # yfinance (cached 300s, rate-limit once)

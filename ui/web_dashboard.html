@@ -200,6 +200,10 @@
   .gc-imp.hi{ color:#FF5A79; }
   .gc-imp.med{ color:#FFB800; }
   .gc-imp.lo{ color:#a1a1aa; }
+  .gc-num{ font-family:'JetBrains Mono',monospace; font-size:11px; text-align:right; padding:0 8px; }
+  .gc-num.green{ color:#00FF88; font-weight:700; }
+  .gc-num.red{ color:#FF5A79; font-weight:700; }
+  .gc-num.neut{ color:#CBD5E1; }
   .gc-in{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#FFB800; }
   .gc-empty{ font-family:'JetBrains Mono',monospace; font-size:10px; color:#71717a; text-align:center; padding:20px; }
 
@@ -355,15 +359,18 @@
           <table class="fundamental-table">
             <thead>
               <tr>
-                <th>TIME</th>
-                <th>CUR</th>
+                <th style="width:75px">TIME</th>
+                <th style="width:40px">CUR</th>
                 <th>EVENT</th>
-                <th>IMP</th>
-                <th>IN</th>
+                <th style="width:75px">IMP</th>
+                <th style="width:65px;text-align:right;padding-right:8px">ACTUAL</th>
+                <th style="width:65px;text-align:right;padding-right:8px">FORECAST</th>
+                <th style="width:65px;text-align:right;padding-right:8px">PREVIOUS</th>
+                <th style="width:75px">IN</th>
               </tr>
             </thead>
             <tbody id="global-calendar-body">
-              <tr><td colspan="5" class="gc-empty">Loading global calendar…</td></tr>
+              <tr><td colspan="8" class="gc-empty">Loading global calendar…</td></tr>
             </tbody>
           </table>
         </div>
@@ -683,7 +690,7 @@ function renderGlobalCalendar(events){
   const list = Array.isArray(events) ? events : [];
   if(countEl) countEl.textContent = (window._GLOBAL_CAL_TOTAL != null ? window._GLOBAL_CAL_TOTAL : list.length);
   if(list.length === 0){
-    tbody.innerHTML = '<tr><td colspan="5" class="gc-empty">No events in next 7 days</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="gc-empty">No events in next 7 days</td></tr>';
     return;
   }
   tbody.innerHTML = list.map(e => {
@@ -692,11 +699,24 @@ function renderGlobalCalendar(events){
     const relStr = formatRelative(e._rel_min, e.time);
     const cur = (e.currency || '—');
     const name = (e.event || '—');
+    const act = (e.actual != null && e.actual !== '') ? e.actual : '—';
+    const fore = (e.forecast != null && e.forecast !== '') ? e.forecast : '—';
+    const prev = (e.previous != null && e.previous !== '') ? e.previous : '—';
+
+    let actClass = 'neut';
+    if(act !== '—'){
+      if(e.impact_direction === 1) actClass = 'green';
+      else if(e.impact_direction === 2) actClass = 'red';
+    }
+
     return `<tr>
       <td class="gc-time">${timeStr}</td>
       <td class="gc-cur">${cur}</td>
       <td class="gc-event" title="${name}">${name}</td>
       <td class="gc-imp ${imp.cls}">${imp.icon} ${imp.label}</td>
+      <td class="gc-num ${actClass}">${act}</td>
+      <td class="gc-num neut">${fore}</td>
+      <td class="gc-num neut">${prev}</td>
       <td class="gc-in">${relStr}</td>
     </tr>`;
   }).join('');
@@ -781,7 +801,7 @@ function renderEmptyHeatmap(msg){
 }
 function renderEmptyCalendar(msg){
   const tbody = document.getElementById('global-calendar-body');
-  if(tbody) tbody.innerHTML = `<tr><td colspan="5" class="gc-empty">${msg||'calendar unavailable'}</td></tr>`;
+  if(tbody) tbody.innerHTML = `<tr><td colspan="8" class="gc-empty">${msg||'calendar unavailable'}</td></tr>`;
 }
 function enterDegradedMode(bannerText, warn, reason){
   DEGRADED = true;
