@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Tomoko // Pair Deep Dive</title>
+<title>Tomoko // Pair Deep Dive V5.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
@@ -41,8 +41,6 @@
   .back-btn:hover{ border-color:var(--cyan); background:rgba(0,229,255,0.08); }
   .dot{ width:8px; height:8px; border-radius:9999px; background:var(--cyan); display:block;
     box-shadow:0 0 12px var(--cyan), 0 0 20px rgba(0,229,255,0.4); animation:pulseDot 2s infinite; }
-  .brand .name{ font-weight:800; letter-spacing:.22em; font-size:13px; color:var(--cyan); }
-  .brand .v{ font-size:11px; font-weight:600; color:var(--muted); letter-spacing:.1em; }
   .sym{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--cyan); font-size:14px; }
   .price{ font-family:'JetBrains Mono',monospace; font-size:13px; color:#CBD5E1; }
   .meta{ display:flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); }
@@ -61,29 +59,43 @@
   .align-dot.lvl-HIGH{ background:var(--bull); box-shadow:0 0 16px rgba(0,255,136,0.6); }
   .align-dot.lvl-MEDIUM{ background:var(--neut); box-shadow:0 0 14px rgba(255,184,0,0.5); }
   .align-dot.lvl-LOW{ background:#4B5563; }
-  .align-tag{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.06em; min-width:34px; text-align:left; }
-  .align-tag.lvl-HIGH{ color:var(--bull); }
-  .align-tag.lvl-MEDIUM{ color:var(--neut); }
-  .align-tag.lvl-LOW{ color:#6B7280; }
 
   main{ flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:14px; max-width:1100px; width:100%; margin:0 auto; }
   .panel{ background:var(--glass); border:1px solid var(--border); border-radius:14px; padding:16px;
     backdrop-filter:blur(8px); }
   .panel h3{ margin:0 0 11px; font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.1em;
-    color:var(--cyan); text-transform:uppercase; }
+    color:var(--cyan); text-transform:uppercase; display:flex; justify-content:space-between; align-items:center; }
   .panel .ph{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); }
   .v{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:#CBD5E1; line-height:1.6; white-space:pre-line; word-break:break-word; }
 
-  .conf-track{ height:8px; background:#05070A; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
-  .conf-fill{ height:100%; border-radius:4px; }
+  /* Macro Confluence Panel */
+  #macro-confluence{
+    background:linear-gradient(180deg, rgba(14,20,32,0.85), rgba(10,14,22,0.85));
+    border:1px solid rgba(0,229,255,0.3);
+  }
+  .macro-conf-badge{
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800;
+    padding:3px 8px; border-radius:5px; letter-spacing:.05em;
+  }
+  .macro-conf-badge.bull{ background:rgba(0,255,136,0.18); color:var(--bull); border:1px solid rgba(0,255,136,0.4); }
+  .macro-conf-badge.bear{ background:rgba(255,77,77,0.18); color:var(--red); border:1px solid rgba(255,77,77,0.4); }
+  .macro-conf-badge.neut{ background:rgba(255,184,0,0.18); color:var(--gold); border:1px solid rgba(255,184,0,0.4); }
 
-  .lvl-row{ display:flex; align-items:center; gap:10px; font-family:'JetBrains Mono',monospace; font-size:12px; height:34px; }
-  .lvl-row .name{ width:110px; color:#94A3B8; font-family:'Inter',sans-serif; font-size:12px; }
-  .lvl-row .track{ flex:1; height:6px; background:#1f2937; border-radius:9999px; position:relative; }
-  .lvl-row .dot2{ position:absolute; top:-3px; width:12px; height:12px; border-radius:9999px; background:var(--cyan); border:2px solid #0A0E14; box-shadow:0 0 8px var(--cyan); transform:translateX(-50%); }
-  .lvl-row .val{ width:84px; text-align:right; color:var(--cyan); font-weight:700; font-size:12px; }
-  .lvl-row.cur .dot2{ background:var(--gold); box-shadow:0 0 8px var(--gold); }
+  .conf-grid{
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:10px;
+  }
+  @media(max-width:700px){ .conf-grid{ grid-template-columns:1fr; } }
+  .conf-box{
+    background:rgba(18,24,36,0.65); border:1px solid var(--border); border-radius:8px; padding:10px;
+  }
+  .conf-box .k{ font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--muted); text-transform:uppercase; margin-bottom:4px; }
+  .conf-box .n{ font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:var(--text); }
+  .conf-desc{
+    font-family:'Inter',sans-serif; font-size:11.5px; color:#CBD5E1; line-height:1.5; margin-top:10px;
+    padding:10px 12px; background:rgba(12,17,27,0.6); border-radius:8px; border-left:3px solid var(--cyan);
+  }
 
+  /* Score Grid */
   .score-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
   .score-grid .sc{ text-align:center; background:#05070A; border:1px solid var(--border); border-radius:6px; padding:8px 2px; cursor:help; }
   .score-grid .sc .k{ font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--muted); text-transform:uppercase; }
@@ -91,6 +103,7 @@
   .score-total{ text-align:center; margin-top:9px; font-family:'JetBrains Mono',monospace; font-size:12px; color:#94A3B8; }
   .score-total b{ font-size:18px; color:var(--cyan); }
 
+  /* Watchout Cards */
   .wo-cards{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .wo-card{ border-radius:10px; padding:14px; font-family:'JetBrains Mono',monospace; }
   .wo-card.buy{ border:1px solid rgba(0,255,136,0.30); background:rgba(0,255,136,0.08); }
@@ -104,7 +117,15 @@
   .wo-card li::marker{ content:'✓ '; }
   .wo-disclaimer{ font-family:'JetBrains Mono',monospace; font-size:8px; color:#6B7280; line-height:1.5; margin-top:10px; }
 
-  .pd-badge-row{ display:flex; align-items:center; gap:6px; }
+  /* Key Levels */
+  .lvl-row{ display:flex; align-items:center; gap:10px; font-family:'JetBrains Mono',monospace; font-size:12px; height:34px; }
+  .lvl-row .name{ width:110px; color:#94A3B8; font-family:'Inter',sans-serif; font-size:12px; }
+  .lvl-row .track{ flex:1; height:6px; background:#1f2937; border-radius:9999px; position:relative; }
+  .lvl-row .dot2{ position:absolute; top:-3px; width:12px; height:12px; border-radius:9999px; background:var(--cyan); border:2px solid #0A0E14; box-shadow:0 0 8px var(--cyan); transform:translateX(-50%); }
+  .lvl-row .val{ width:84px; text-align:right; color:var(--cyan); font-weight:700; font-size:12px; }
+  .lvl-row.cur .dot2{ background:var(--gold); box-shadow:0 0 8px var(--gold); }
+
+  /* Fundamental & Calendar */
   .fn-badge{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; padding:4px 10px; border-radius:6px; }
   .fn-badge.clean{ background:rgba(0,255,136,0.15); color:#00FF88; }
   .fn-badge.blocked{ background:rgba(255,90,121,0.15); color:#FF5A79; }
@@ -124,26 +145,16 @@
   .cal-rel{ display:block; font-size:10px; color:#FFB800; font-weight:400; margin-top:1px; }
   .cal-cur{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:#a1a1aa; text-align:center; }
   .cal-event{ font-family:'Inter',sans-serif; font-size:12px; color:#f4f4f5; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .cal-p{ text-align:center; }
-  .fn-pill{ display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:4px;
-    font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; }
+  .fn-pill{ display:inline-flex; align-items:center; justify-content:center; padding:2px 6px; min-width:32px; border-radius:4px; font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; text-transform:uppercase; }
   .fn-pill.hi{ background:rgba(255,90,121,0.18); color:#FF5A79; border:1px solid rgba(255,90,121,0.35); }
-  .fn-pill.med{ background:rgba(255,184,0,0.15); color:#FFB800; }
-  .fn-pill.lo{ background:rgba(82,82,91,0.4); color:#a1a1aa; }
-  .fn-num{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#52525b; text-align:right; }
+  .fn-pill.med{ background:rgba(255,184,0,0.15); color:#FFB800; border:1px solid rgba(255,184,0,0.35); }
+  .fn-pill.lo{ background:rgba(82,82,91,0.3); color:#94A3B8; border:1px solid rgba(82,82,91,0.3); }
+  .fn-num{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#CBD5E1; text-align:right; }
   .fn-empty{ font-family:'JetBrains Mono',monospace; font-size:10px; color:#71717a; }
 
   footer.bar{ padding:9px 16px; border-top:1px solid var(--border); background:rgba(12,17,27,.7);
     font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); }
-
-  @media (max-width:700px){
-    header.top{ flex-wrap:wrap; }
-    main{ padding:10px; }
-    .score-grid{ grid-template-columns:repeat(3,1fr); }
-    .wo-cards{ grid-template-columns:1fr; }
-  }
 </style>
-<!-- Tomoko Pair Deep Dive - V4.4 Block 3 -->
 </head>
 <body>
 <div id="bg"></div>
@@ -167,6 +178,31 @@
   </header>
 
   <main>
+    <!-- MACRO & INTERMARKET CONFLUENCE -->
+    <div id="macro-confluence" class="panel">
+      <h3>
+        <span>⚡ Macro & Intermarket Confluence</span>
+        <span class="macro-conf-badge neut" id="mc-badge">EVALUATING...</span>
+      </h3>
+      <div class="conf-grid">
+        <div class="conf-box">
+          <div class="k">Broad Regime</div>
+          <div class="n" id="mc-regime">—</div>
+        </div>
+        <div class="conf-box">
+          <div class="k" id="mc-driver1-title">Real Yields (10Y TIPS)</div>
+          <div class="n" id="mc-driver1-val">—</div>
+        </div>
+        <div class="conf-box">
+          <div class="k" id="mc-driver2-title">DXY Momentum</div>
+          <div class="n" id="mc-driver2-val">—</div>
+        </div>
+      </div>
+      <div class="conf-desc" id="mc-rationale">
+        Synthesizing cross-asset macro drivers for this asset...
+      </div>
+    </div>
+
     <div id="overview" class="panel"><h3>Overview</h3><div class="ph">Loading…</div></div>
     <div id="score-breakdown" class="panel"><h3>Score Breakdown</h3><div class="ph">Loading…</div></div>
     <div id="key-levels" class="panel"><h3>Key Levels Map</h3><div class="ph">Loading…</div></div>
@@ -175,16 +211,15 @@
     <div id="info-feed" class="panel"><h3>Info Feed <span style="color:var(--muted)">— Last 4H</span></h3><div class="ph">Loading…</div></div>
   </main>
 
-  <footer class="bar">Tomoko Brain <b>V4.4 Block 3</b> // PAIR DEEP DIVE // Bot = Information. No brain = blowout.</footer>
+  <footer class="bar">Tomoko Brain <b>V5.0</b> // PAIR DEEP DIVE // Decision Support - Not a Signal</footer>
 </div>
 
 <script>
-const raw = location.pathname.split('/').filter(Boolean).pop() || 'EURUSD';
+const raw = location.pathname.split('/').filter(Boolean).pop() || 'XAUUSD';
 const symbol = raw.toUpperCase();
 const $ = id => document.getElementById(id);
 
 function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-
 function scoreColor(s){ if(s<40) return {bg:'#FF4D4D',fg:'#fff'}; if(s<70) return {bg:'#FFB800',fg:'#000'}; return {bg:'#00E5FF',fg:'#000'}; }
 function fmt(n,d){ if(n===undefined||n===null||isNaN(n)) return '—'; return Number(n).toFixed(d); }
 function isGold(s){ return String(s).indexOf('XAU')>=0; }
@@ -198,9 +233,15 @@ function biasBadge(tf, raw){
 }
 function safeCalValue(v){ if(v==null||v==='') return '—'; const s=String(v); if(s.indexOf('-922337203685')===0) return '—'; return s; }
 function truncEv(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'…' : s; }
-function relMinStr(relMin){
+function relMinStr(relMin, timeStr){
+  if(timeStr){
+    const d = parseEvTime(timeStr);
+    if(d){
+      relMin = (d.getTime() - Date.now()) / 60000;
+    }
+  }
   if(relMin==null||isNaN(relMin)) return '—';
-  const v=relMin;
+  const v=Math.round(relMin);
   if(v<0) return Math.abs(Math.floor(v/60))+'h ago';
   const days=Math.floor(v/1440), h=Math.floor((v%1440)/60), m=Math.floor(v%60);
   if(days>0) return 'in '+days+'d '+h+'h';
@@ -209,7 +250,12 @@ function relMinStr(relMin){
 }
 function parseEvTime(s){
   if(!s) return null;
-  const m=String(s).match(/(\d{4})[.-](\d{2})[.-](\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
+  const str = String(s).trim();
+  if(str.indexOf('T') >= 0 || str.indexOf('Z') >= 0){
+    const d = new Date(str.endsWith('Z') || str.includes('+') ? str : str + 'Z');
+    if(!isNaN(d.getTime())) return d;
+  }
+  const m = str.match(/(\d{4})[.-](\d{2})[.-](\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
   if(!m) return null;
   return new Date(Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +(m[6]||0)));
 }
@@ -219,7 +265,53 @@ function calTime(s){
   const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   return days[d.getDay()]+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
 }
+function getImportance(ev){
+  if(!ev) return { pri: 1, label: 'LOW', cls: 'lo', icon: '🟡' };
+  const imp = String(ev.importance || '').toUpperCase().trim();
+  const pri = Number(ev.priority != null ? ev.priority : (imp === 'HIGH' ? 3 : (imp === 'MEDIUM' || imp === 'MED' || imp === 'MODERATE') ? 2 : 1));
+  if(imp === 'HIGH' || pri >= 3) {
+    return { pri: 3, label: 'HIGH', cls: 'hi', icon: '🔴' };
+  }
+  if(imp === 'MEDIUM' || imp === 'MED' || imp === 'MODERATE' || pri === 2) {
+    return { pri: 2, label: 'MED', cls: 'med', icon: '🟠' };
+  }
+  return { pri: 1, label: 'LOW', cls: 'lo', icon: '🟡' };
+}
 function priceTxt(s,p){ return isGold(s)? fmt(p,3) : fmt(p,5); }
+
+/* Render Macro Confluence Box */
+function renderMacroConfluence(conf, matrix){
+  if(!conf) return;
+  const badge = $('mc-badge');
+  badge.textContent = conf.status || 'NEUTRAL';
+  badge.className = 'macro-conf-badge ' + (conf.class || 'neut');
+
+  $('mc-regime').textContent = conf.regime || 'BALANCED';
+  $('mc-rationale').textContent = conf.rationale || 'Macro conditions evaluated.';
+
+  if(matrix){
+    const tips = matrix.TIPS_HYBRID || {};
+    const dxy = matrix.DXY || {};
+    const us10y = matrix.US10Y || {};
+
+    if(isGold(symbol)){
+      $('mc-driver1-title').textContent = '10Y Real Yield (TIPS)';
+      $('mc-driver1-val').textContent = fmt(tips.real_yield_pct, 2) + '% (' + (tips.yield_pressure || 'STEADY') + ')';
+      $('mc-driver2-title').textContent = 'DXY Momentum';
+      $('mc-driver2-val').textContent = fmt(dxy.price, 2) + ' (' + (dxy.change_pct>=0?'+':'') + fmt(dxy.change_pct,2) + '%)';
+    } else if(symbol === 'USDJPY'){
+      $('mc-driver1-title').textContent = 'US 10Y Yield Spread';
+      $('mc-driver1-val').textContent = fmt(us10y.price, 2) + '% (' + (us10y.change_pct>=0?'+':'') + fmt(us10y.change_pct*100,0) + ' bps)';
+      $('mc-driver2-title').textContent = 'DXY Momentum';
+      $('mc-driver2-val').textContent = fmt(dxy.price, 2) + ' (' + (dxy.change_pct>=0?'+':'') + fmt(dxy.change_pct,2) + '%)';
+    } else {
+      $('mc-driver1-title').textContent = 'DXY Index';
+      $('mc-driver1-val').textContent = fmt(dxy.price, 2) + ' ' + arrow(dxy.trend);
+      $('mc-driver2-title').textContent = '10Y Nominal Yield';
+      $('mc-driver2-val').textContent = fmt(us10y.price, 2) + '%';
+    }
+  }
+}
 
 function renderOverview(scan){
   const h4 = scan.h4 || {}, h1 = scan.h1 || {};
@@ -320,8 +412,9 @@ function renderFundamental(scan, currencies){
   let banner = '';
   if(blk.length){
     const ev0 = blk[0];
-    sub = `${src} • ${cnt} events • ${String(ev0.time||'').slice(5,16)} ${esc(ev0.event)} [HIGH] AVOID ${esc(ev0.currency)} • Risk: RISK-OFF`;
-    banner = `<div style="min-height:36px;display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;background:rgba(255,184,0,0.10);border:1px solid rgba(255,184,0,0.20);border-radius:8px;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;color:#FFB800">⛔ ${String(ev0.time||'').slice(5,16)} ${esc(ev0.event)} HIGH (${esc(ev0.currency)}) - STAY OUT</div>`;
+    const ev0Time = calTime(ev0.time);
+    sub = `${src} • ${cnt} events • ${esc(ev0Time)} ${esc(ev0.event)} [HIGH] AVOID ${esc(ev0.currency)} • Risk: RISK-OFF`;
+    banner = `<div style="min-height:36px;display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;background:rgba(255,184,0,0.10);border:1px solid rgba(255,184,0,0.20);border-radius:8px;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;color:#FFB800">⛔ ${esc(ev0Time)} ${esc(ev0.event)} HIGH (${esc(ev0.currency)}) - STAY OUT</div>`;
   }
   const events = news.upcoming_events || [];
   let tbl = '<div class="cal-wrap"><table><thead><tr>' +
@@ -330,14 +423,12 @@ function renderFundamental(scan, currencies){
     '</tr></thead><tbody>';
   if(events.length){
     for(const ev of events.slice(0,8)){
-      const pri = ev.priority||0;
-      const pcls = pri>=3?'hi':pri===2?'med':'lo';
-      const plabel = pri>=3?'HIGH':pri===2?'MED':'LOW';
-      tbl += `<tr${pri>=2?' class="hi"':''}>` +
-        `<td class="cal-time">${esc(calTime(ev.time))}<span class="cal-rel">${relMinStr(ev._rel_min)}</span></td>` +
+      const imp = getImportance(ev);
+      tbl += `<tr${imp.pri>=3?' class="hi"':''}>` +
+        `<td class="cal-time">${esc(calTime(ev.time))}<span class="cal-rel">${relMinStr(ev._rel_min, ev.time)}</span></td>` +
         `<td class="cal-cur">${esc(ev.currency)}</td>` +
         `<td class="cal-event" title="${esc(ev.event)}">${esc(truncEv(ev.event,26))}</td>` +
-        `<td class="cal-p"><span class="fn-pill ${pcls}">${plabel}</span></td>` +
+        `<td class="cal-p"><span class="fn-pill ${imp.cls}">${imp.label}</span></td>` +
         `<td class="fn-num${safeCalValue(ev.actual)!=='—'?'':''}">${esc(safeCalValue(ev.actual))}</td>` +
         `<td class="fn-num">${esc(safeCalValue(ev.forecast))}</td>` +
         `<td class="fn-num">${esc(safeCalValue(ev.previous))}</td>` +
@@ -395,6 +486,16 @@ async function poll(){
   }finally{
     pollInFlight = false;
   }
+
+  // Also fetch Macro Confluence
+  try{
+    const mr = await fetch('/api/pair/' + symbol + '/macro_confluence');
+    if(mr.ok){
+      const mdata = await mr.json();
+      renderMacroConfluence(mdata.confluence, mdata.matrix);
+    }
+  }catch(e){}
+
   setTimeout(poll, 10000);
 }
 

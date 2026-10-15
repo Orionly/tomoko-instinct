@@ -31,6 +31,7 @@ from core.watchout_zones import calculate_watchout_zones
 from core.intermarket_engine import IntermarketEngine
 from core.performance_tracker import PerformanceTracker
 from core.context_feed import ContextFeed
+from core.macro_intelligence_engine import MacroIntelligenceEngine
 from core.news_engine import NewsEngine, WAITING_SOURCE
 import config
 
@@ -593,6 +594,37 @@ def get_pair_deep(symbol: str):
     })
 
 
+_macro_engine = None
+
+def get_macro_engine():
+    global _macro_engine
+    if _macro_engine is None:
+        _macro_engine = MacroIntelligenceEngine()
+    return _macro_engine
+
+
+@app.get("/api/macro_intel")
+def get_macro_intel():
+    """Returns the full 6-pillar macro matrix, hybrid TIPS, and synthesized insight."""
+    try:
+        return get_macro_engine().get_full_intelligence()
+    except Exception as e:
+        return {"error": str(e), "matrix": {}, "insight": {}, "sessions": {}}
+
+
+@app.get("/api/pair/{symbol}/macro_confluence")
+def get_pair_macro_confluence(symbol: str):
+    """Per-pair macro confluence and driver attribution."""
+    try:
+        engine = get_macro_engine()
+        matrix = engine.get_macro_matrix()
+        insight = engine.synthesize_macro_insight(matrix)
+        conf = engine.get_pair_macro_confluence(symbol, matrix, insight)
+        return sanitize_for_json({"confluence": conf, "matrix": matrix})
+    except Exception as e:
+        return {"error": str(e), "confluence": {"symbol": symbol, "status": "NEUTRAL", "class": "neut", "rationale": "Offline"}}
+
+
 @app.get("/", response_class=HTMLResponse)
 def root():
     html_path = os.path.join(os.path.dirname(__file__), "..", "ui", "web_dashboard.html")
@@ -600,10 +632,10 @@ def root():
     with open(html_path, "r", encoding="utf-8") as f:
         content = f.read()
     # Force version
-    content = content.replace("V4.4 Block 1", "V4.4 Block 3").replace("V4.4 Block 2", "V4.4 Block 3")
+    content = content.replace("V4.4 Block 1", "V5.0").replace("V4.4 Block 2", "V5.0").replace("V4.4 Block 3", "V5.0")
     return HTMLResponse(content=content, headers={
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0",
-        "X-Tomoko-Version": "V4.4 Block 3"
+        "X-Tomoko-Version": "V5.0"
     })

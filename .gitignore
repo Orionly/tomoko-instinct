@@ -8,6 +8,9 @@ logs/
 .vscode/.idea/
 *.recovered
 *.backup-*
+*_backup*
+*_preview*
+ui/*_preview.html
 RECOVERY_REPORT*.txt
 diagnostic_prompt1.py
 # Generated at startup by Main.py.sync_static() - source of truth is ui/

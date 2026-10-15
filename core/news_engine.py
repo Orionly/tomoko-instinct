@@ -141,9 +141,11 @@ class NewsEngine:
             ev_dt = _parse_event_time(ev.get("time", ""))
             countdown = int((ev_dt - now_utc).total_seconds() / 60) if ev_dt else None
             next_events.append({
-                "time": ev.get("time", ""),
+                "time": ev_dt.strftime("%Y-%m-%dT%H:%M:%SZ") if ev_dt else ev.get("time", ""),
                 "event": ev.get("event", "High Impact"),
                 "impact": "HIGH",
+                "importance": "HIGH",
+                "priority": 3,
                 "currency": ev.get("currency", ""),
                 "countdown_min": countdown,
             })

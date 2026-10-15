@@ -68,10 +68,31 @@ def _socket_server(port):
             print(e)
             continue
 
+def get_broker_utc_offset_hours():
+    """Calculates broker's offset from UTC in hours (e.g. 3.0 for UTC+3)."""
+    try:
+        tick = mt5.symbol_info_tick("EURUSD")
+        if tick and tick.time > 0:
+            broker_dt = datetime.fromtimestamp(tick.time, timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            diff = (broker_dt - now_utc).total_seconds() / 3600.0
+            return round(diff)
+    except Exception:
+        pass
+    return 3.0  # default VT Markets / Forex broker offset (EEST)
+
+
 def _parse_event_time(time_str):
-    """Parse event time string, trying multiple formats. Returns timezone-aware UTC datetime or None."""
+    """Parse event time string from EA (broker server time), converting to true UTC datetime."""
     if not time_str:
         return None
+    s = str(time_str).strip()
+    if s.endswith("Z") or "+00:00" in s:
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
     formats = [
         "%Y.%m.%d %H:%M:%S",
         "%Y.%m.%d %H:%M",
@@ -80,9 +101,12 @@ def _parse_event_time(time_str):
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d %H:%M",
     ]
+    offset = get_broker_utc_offset_hours()
     for fmt in formats:
         try:
-            return datetime.strptime(str(time_str).strip(), fmt).replace(tzinfo=timezone.utc)
+            dt_broker = datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+            # Subtract broker offset to convert from broker server time to true UTC
+            return dt_broker - timedelta(hours=offset)
         except (ValueError, TypeError):
             continue
     return None
@@ -93,36 +117,59 @@ parse_event_time = _parse_event_time
 
 
 def _normalize_importance(importance):
-    """Map importance string to numeric: HIGH->2, MEDIUM->1, LOW->0."""
+    """Map importance string or numeric to standard integer priority:
+    HIGH->3, MEDIUM->2, LOW->1, NONE->0.
+    """
     if importance is None:
         return 0
     if isinstance(importance, (int, float)):
         try:
-            return int(importance)
+            val = int(importance)
+            if val >= 3:
+                return 3
+            if val == 2:
+                return 2
+            if val == 1:
+                return 1
+            return 0
         except (ValueError, TypeError):
             return 0
     if isinstance(importance, str):
         upper = importance.upper().strip()
         if upper == "HIGH":
+            return 3
+        elif upper in ("MEDIUM", "MED", "MODERATE"):
             return 2
-        elif upper == "MEDIUM":
-            return 1
         elif upper == "LOW":
+            return 1
+        elif upper == "NONE":
             return 0
     return 0
 
 
+def _importance_label(priority):
+    if priority >= 3:
+        return "HIGH"
+    elif priority == 2:
+        return "MEDIUM"
+    elif priority == 1:
+        return "LOW"
+    return "NONE"
+
+
 def _normalize_event(ev):
-    """Normalize a calendar event: ensure time, event, currency, importance fields."""
+    """Normalize a calendar event: ensure time, event, currency, importance, priority fields."""
     if not isinstance(ev, dict):
         return None
     time_val = ev.get("time") or ev.get("release_time")
     event_name = ev.get("event") or ev.get("name")
-    importance = ev.get("importance") or ev.get("priority")
+    imp_raw = ev.get("importance") or ev.get("priority")
+    priority = _normalize_importance(imp_raw)
     normalized = dict(ev)
     normalized["time"] = time_val
     normalized["event"] = event_name
-    normalized["importance"] = importance
+    normalized["importance"] = _importance_label(priority)
+    normalized["priority"] = priority
     return normalized
 
 
@@ -414,16 +461,9 @@ class MT5Bridge:
             # Normalize each event
             normalized_events = []
             for ev in data.get("calendar", []):
-                if not isinstance(ev, dict):
-                    continue
-                time_val = ev.get("time") or ev.get("release_time")
-                event_name = ev.get("event") or ev.get("name")
-                importance = ev.get("importance") or ev.get("priority")
-                normalized = dict(ev)
-                normalized["time"] = time_val
-                normalized["event"] = event_name
-                normalized["importance"] = importance
-                normalized_events.append(normalized)
+                norm = _normalize_event(ev)
+                if norm:
+                    normalized_events.append(norm)
 
             if "source" not in data:
                 data["source"] = "ea_file"
@@ -508,7 +548,13 @@ class MT5Bridge:
             if ev_time < window_start or ev_time > window_end:
                 continue
             rel_min = int((ev_time - now).total_seconds() / 60)
-            filtered.append({**ev, "_rel_min": rel_min})
+            priority = _normalize_importance(ev.get("importance") or ev.get("priority"))
+            e = dict(ev)
+            e["time"] = ev_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            e["_rel_min"] = rel_min
+            e["priority"] = priority
+            e["importance"] = _importance_label(priority)
+            filtered.append(e)
 
         filtered.sort(key=lambda e: e.get("time", ""))
         total = len(filtered)
@@ -530,7 +576,7 @@ class MT5Bridge:
         return filtered[:20]  # return more for global calendar
 
     def is_news_clean(self, symbol, minutes_before=60, minutes_after=30):
-        """Check HIGH news (priority>=2) for symbol's currencies within proximity window.
+        """Check HIGH news (priority>=3) for symbol's currencies within proximity window.
 
         Trading gate: blocks only when a HIGH event is imminent (<=minutes_before away).
         """
@@ -541,7 +587,8 @@ class MT5Bridge:
         now = datetime.now(timezone.utc)
         blocking = []
         for ev in cal.get("calendar", []):
-            if _normalize_importance(ev.get("importance")) < 2:  # only HIGH = 2 (red)
+            priority = _normalize_importance(ev.get("importance") or ev.get("priority"))
+            if priority < 3:  # only HIGH = 3 (red)
                 continue
             if ev.get("currency") not in wanted:
                 continue
@@ -551,7 +598,12 @@ class MT5Bridge:
                     continue
                 diff = (ev_time - now).total_seconds() / 60
                 if -minutes_after <= diff <= minutes_before:
-                    blocking.append(ev)
+                    e = dict(ev)
+                    e["time"] = ev_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    e["_rel_min"] = int(diff)
+                    e["priority"] = priority
+                    e["importance"] = _importance_label(priority)
+                    blocking.append(e)
             except Exception:
                 continue
         return len(blocking) == 0, blocking
@@ -585,8 +637,12 @@ class MT5Bridge:
             if ev_time < start or ev_time > end:
                 continue
             rel_min = (ev_time - now).total_seconds() / 60
+            priority = _normalize_importance(ev.get("importance") or ev.get("priority"))
             e = dict(ev)
+            e["time"] = ev_time.strftime("%Y-%m-%dT%H:%M:%SZ")
             e["_rel_min"] = safe_float(rel_min)
+            e["priority"] = priority
+            e["importance"] = _importance_label(priority)
             filtered.append(e)
 
         filtered = sorted(filtered, key=lambda x: x.get("time", ""))[:15]
