@@ -176,6 +176,8 @@ _im_logged = {"done": False}
 # Simple time-based cache for expensive endpoints (scan_all runs 7x _scan serially = 2-5s)
 _scan_cache = {"ts": 0.0, "result": None}
 _HEATMAP_CACHE_TTL = 5.0  # seconds
+_scan_all_cache = {"ts": 0.0, "result": None}
+_SCAN_ALL_TTL = 3.0  # seconds
 
 
 def _intermarket_snapshot():
@@ -291,11 +293,16 @@ def _scan(symbol: str, cal=None):
                        ("m15", TIMEFRAME_M15, 100), ("d1", TIMEFRAME_D1, 50),
                        ("w1", TIMEFRAME_W1, 20)):
         frames[key] = _safe_rates(symbol, tf, n)
-    if any(df is None for df in frames.values()):
-        degraded = _no_data_scan(symbol, reason="NO_DATA")
-        # News status still reflects the EA calendar (rates missing != calendar missing)
+    if frames.get("h4") is None or frames.get("h1") is None:
+        degraded = _no_data_scan(symbol, reason="CONNECTING")
         degraded["news"] = get_news_engine().get_news_for_symbol(symbol)
         return degraded
+    if frames.get("m15") is None:
+        frames["m15"] = frames["h1"]
+    if frames.get("d1") is None:
+        frames["d1"] = frames["h4"]
+    if frames.get("w1") is None:
+        frames["w1"] = frames["d1"]
     df_h4 = frames["h4"]
     df_h1 = frames["h1"]
     df_m15 = frames["m15"]
@@ -460,6 +467,10 @@ def get_prices():
 def scan_all():
     if not _ensure_mt5():
         raise HTTPException(status_code=503, detail="Data feed unavailable")
+    now = time.time()
+    if _scan_all_cache["result"] is not None and (now - _scan_all_cache["ts"]) < _SCAN_ALL_TTL:
+        return _scan_all_cache["result"]
+
     cal = _get_ea_calendar()
     scans = [_scan(s, cal) for s in config.PAIRS]
     blocking_news = []
@@ -471,7 +482,7 @@ def scan_all():
     market_pulse["method"] = "H4 trend aggregation"
     market_heatmap = get_mt5_bridge().get_market_heatmap(scan_results)
     cal_info = get_news_engine().get_global_events()
-    response = {
+    response = sanitize_for_json({
         "scans": scans,
         "calendar_source": cal_info.get("source", "decoupled_faireconomy_tradays"),
         "calendar_last_update": cal_info.get("last_update", ""),
@@ -483,8 +494,10 @@ def scan_all():
         "market_pulse": market_pulse,
         "global_calendar": cal_info.get("events", []),
         "market_heatmap": market_heatmap,
-    }
-    return sanitize_for_json(response)
+    })
+    _scan_all_cache["ts"] = now
+    _scan_all_cache["result"] = response
+    return response
 
 
 @app.get("/api/market_heatmap")

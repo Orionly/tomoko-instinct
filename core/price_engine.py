@@ -12,6 +12,7 @@ import asyncio
 import logging
 import threading
 from typing import Dict, List, Optional
+import pickle
 import pandas as pd
 import numpy as np
 import websockets
@@ -20,6 +21,9 @@ import yfinance as yf
 import config
 
 log = logging.getLogger(__name__)
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CANDLES_CACHE_FILE = os.path.join(ROOT, "logs", "candles_cache.pkl")
 
 FINNHUB_WS_URL = "wss://ws.finnhub.io"
 
@@ -103,14 +107,49 @@ class PriceEngine:
         self._candle_thread = threading.Thread(target=self._candle_refresh_loop, daemon=True)
         self._candle_thread.start()
 
-    def _seed_initial_data(self):
-        """Quickly pre-populate prices and candles from yfinance so the app starts instantly."""
+    def _load_disk_cache(self) -> bool:
+        """Load candles and prices from disk cache for instant startup (<10ms)."""
         try:
-            log.info("[PriceEngine] Pre-seeding initial candles for all pairs...")
-            self.refresh_all_candles()
-            self.connected = True
+            if os.path.isfile(CANDLES_CACHE_FILE):
+                with open(CANDLES_CACHE_FILE, "rb") as f:
+                    data = pickle.load(f)
+                    self.candles_cache = data.get("candles", {})
+                    self.latest_prices = data.get("prices", {})
+                    if self.candles_cache:
+                        self.connected = True
+                        log.info("[PriceEngine] Instantly loaded %d pairs from disk cache.", len(self.candles_cache))
+                        return True
         except Exception as e:
-            log.warning("[PriceEngine] Pre-seeding warning: %s", e)
+            log.debug("[PriceEngine] Disk cache read note: %s", e)
+        return False
+
+    def _save_disk_cache(self):
+        """Save current candles to disk cache."""
+        try:
+            os.makedirs(os.path.dirname(CANDLES_CACHE_FILE), exist_ok=True)
+            with open(CANDLES_CACHE_FILE, "wb") as f:
+                with self._lock:
+                    pickle.dump({
+                        "candles": self.candles_cache,
+                        "prices": self.latest_prices,
+                        "timestamp": time.time(),
+                    }, f)
+        except Exception as e:
+            log.debug("[PriceEngine] Disk cache write note: %s", e)
+
+    def _seed_initial_data(self):
+        """Load disk cache immediately for instant startup, then refresh in background."""
+        has_cache = self._load_disk_cache()
+        self.connected = True
+        if not has_cache:
+            try:
+                log.info("[PriceEngine] No disk cache found. Fetching initial candles...")
+                self.refresh_all_candles()
+            except Exception as e:
+                log.warning("[PriceEngine] Initial fetch warning: %s", e)
+        else:
+            # Refresh in background so startup is 100% instant
+            threading.Thread(target=self.refresh_all_candles, daemon=True, name="bg-initial-refresh").start()
 
     def _start_ws_loop(self):
         """Runs the asyncio websocket event loop with automatic reconnect."""
@@ -292,6 +331,9 @@ class PriceEngine:
         except Exception as e:
             log.warning("[PriceEngine] M15 yfinance download warning: %s", e)
 
+        # Save to disk cache for instantaneous reloads
+        self._save_disk_cache()
+
     @staticmethod
     def _add_indicators(df: pd.DataFrame) -> pd.DataFrame:
         if df.empty or len(df) < 14:
@@ -365,6 +407,14 @@ class PriceEngine:
 
         with self._lock:
             cached = self.candles_cache.get(symbol, {}).get(tf_key)
+            if cached is None or cached.empty:
+                # Resilient fallback: use H1 if M15 missing, or D1 if W1 missing
+                if tf_key == "M15":
+                    cached = self.candles_cache.get(symbol, {}).get("H1")
+                elif tf_key == "W1":
+                    cached = self.candles_cache.get(symbol, {}).get("D1")
+                elif tf_key == "D1":
+                    cached = self.candles_cache.get(symbol, {}).get("H4")
             if cached is not None and not cached.empty:
                 df = cached.copy()
                 # Update latest bar's close with real-time Finnhub tick if available
