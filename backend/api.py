@@ -529,10 +529,10 @@ def market_heatmap():
 
 
 @app.get("/api/global_calendar")
-def global_calendar(hours: int = 168):
-    """Global calendar straight from the EA dump. Missing EA file => empty + waiting_for_ea."""
+def global_calendar(hours: int = 168, hours_back: int = 720):
+    """Global calendar from decoupled news engine with 30-day archive support."""
     try:
-        cal = get_news_engine().get_global_events(hours_ahead=hours)
+        cal = get_news_engine().get_global_events(hours_ahead=hours, hours_back=hours_back)
     except Exception as exc:
         print(f"global calendar failed: {exc}")
         cal = {"events": [], "count": 0, "source": WAITING_SOURCE,

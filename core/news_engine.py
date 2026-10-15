@@ -92,7 +92,10 @@ class NewsEngine:
             with open(self.cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 with self._lock:
-                    self.events = data.get("events", [])
+                    loaded = data.get("events", [])
+                    now_ts = int(datetime.now(timezone.utc).timestamp())
+                    cutoff_ts = now_ts - (30 * 86400)
+                    self.events = [ev for ev in loaded if ev.get("timestamp", 0) >= cutoff_ts]
                     last_str = data.get("last_fetch_time")
                     if last_str:
                         self.last_fetch_time = datetime.fromisoformat(last_str)
@@ -157,7 +160,11 @@ class NewsEngine:
             return {"status": "cached", "count": len(self.events)}
 
         log.info("[NewsEngine] Refreshing weekly macroeconomic calendar...")
-        ff_raw = self.fetch_forex_factory()
+        try:
+            ff_raw = self.fetch_forex_factory()
+        except Exception as e:
+            log.warning("[NewsEngine] ForexFactory fetch failed: %s. Keeping cached events.", e)
+            return {"status": "cached_fallback", "count": len(self.events), "error": str(e)}
 
         now = datetime.now(timezone.utc)
         date_from = now - timedelta(days=2)
@@ -237,12 +244,36 @@ class NewsEngine:
                 "actual_checked_count": 0,
             })
 
+        # 30-Day Persistence Archive Merge
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        cutoff_ts = now_ts - (30 * 86400)
+
         with self._lock:
-            self.events = normalized_events
+            event_map = {}
+            # Keep historical events from cache within 30 days
+            for ev in self.events:
+                if ev.get("timestamp", 0) >= cutoff_ts:
+                    key = (ev.get("currency"), ev.get("time"), ev.get("event"))
+                    event_map[key] = ev
+
+            # Merge fresh incoming events
+            for ev in normalized_events:
+                key = (ev.get("currency"), ev.get("time"), ev.get("event"))
+                if key in event_map:
+                    existing = event_map[key]
+                    if not ev.get("actual") and existing.get("actual"):
+                        ev["actual"] = existing.get("actual")
+                        ev["impact_direction"] = existing.get("impact_direction", 0)
+                    if not ev.get("tradays_id") and existing.get("tradays_id"):
+                        ev["tradays_id"] = existing.get("tradays_id")
+                    ev["actual_checked_count"] = max(ev.get("actual_checked_count", 0), existing.get("actual_checked_count", 0))
+                event_map[key] = ev
+
+            self.events = sorted(event_map.values(), key=lambda x: x.get("timestamp", 0))
             self.last_fetch_time = datetime.now(timezone.utc)
             self._save_cache()
 
-        log.info("[NewsEngine] Calendar sync complete: %d events cached.", len(self.events))
+        log.info("[NewsEngine] Calendar sync complete: %d events cached (30-day retention).", len(self.events))
         return {"status": "refreshed", "count": len(self.events)}
 
     def fetch_actual_values(self, event_ids: List[int]) -> Dict[int, Dict]:
@@ -350,9 +381,10 @@ class NewsEngine:
 
         return (len(blocking) == 0), blocking
 
-    def get_upcoming_events(self, symbol: str, hours_ahead: int = 168) -> List[Dict]:
+    def get_upcoming_events(self, symbol: str, hours_ahead: int = 168, hours_back: int = 720) -> List[Dict]:
         currencies = None if symbol == "ALL" else CURRENCY_MAP.get(symbol, [])
         now_ts = int(datetime.now(timezone.utc).timestamp())
+        min_ts = now_ts - (hours_back * 3600)
         max_ts = now_ts + (hours_ahead * 3600)
 
         with self._lock:
@@ -360,13 +392,13 @@ class NewsEngine:
                 {**ev, "_rel_min": int((ev.get("timestamp", 0) - now_ts) / 60)}
                 for ev in self.events
                 if (not currencies or ev.get("currency") in currencies)
-                and (now_ts - 3600 <= ev.get("timestamp", 0) <= max_ts)
+                and (min_ts <= ev.get("timestamp", 0) <= max_ts)
             ]
 
         return sorted(upcoming, key=lambda x: x.get("timestamp", 0))
 
-    def get_global_events(self, hours_ahead: int = 168) -> Dict:
-        events = self.get_upcoming_events("ALL", hours_ahead=hours_ahead)
+    def get_global_events(self, hours_ahead: int = 168, hours_back: int = 720) -> Dict:
+        events = self.get_upcoming_events("ALL", hours_ahead=hours_ahead, hours_back=hours_back)
         last_str = self.last_fetch_time.strftime("%Y.%m.%d %H:%M") if self.last_fetch_time else ""
         return {
             "events": events,
@@ -376,10 +408,10 @@ class NewsEngine:
             "last_update": last_str,
         }
 
-    def get_news_for_symbol(self, symbol: str, hours_ahead: int = 168) -> Dict:
+    def get_news_for_symbol(self, symbol: str, hours_ahead: int = 168, hours_back: int = 720) -> Dict:
         total = len(self.events)
         is_clean, blocking = self.is_news_clean(symbol)
-        upcoming = self.get_upcoming_events(symbol, hours_ahead=hours_ahead)
+        upcoming = self.get_upcoming_events(symbol, hours_ahead=hours_ahead, hours_back=hours_back)
         risk = "RISK-OFF" if blocking else "RISK-ON"
         last_str = self.last_fetch_time.strftime("%Y.%m.%d %H:%M") if self.last_fetch_time else ""
 

@@ -153,6 +153,16 @@
   .fn-num.green{ color:#00FF88; font-weight:700; }
   .fn-num.red{ color:#FF5A79; font-weight:700; }
   .fn-empty{ font-family:'JetBrains Mono',monospace; font-size:10px; color:#71717a; }
+  .cal-wrap tbody tr.past-row{ background:rgba(255,255,255,0.015); border-left:3px solid rgba(148,163,184,0.25); }
+  .cal-wrap tbody tr.past-row.beat{ border-left:3px solid #10B981 !important; }
+  .cal-wrap tbody tr.past-row.miss{ border-left:3px solid #EF4444 !important; }
+  .cal-wrap tbody tr.past-row.inline{ border-left:3px solid #64748B !important; }
+  .cal-rel.released{ color:#94A3B8; font-size:9.5px; }
+  .fn-perf{ font-size:8px; font-weight:800; padding:1px 4px; border-radius:3px; display:inline-block; margin-left:3px; font-family:'JetBrains Mono',monospace; }
+  .fn-perf.beat{ background:rgba(16,185,129,0.18); color:#10B981; border:1px solid rgba(16,185,129,0.35); }
+  .fn-perf.miss{ background:rgba(239,68,68,0.18); color:#EF4444; border:1px solid rgba(239,68,68,0.35); }
+  .fn-perf.inline{ background:rgba(148,163,184,0.15); color:#94A3B8; border:1px solid rgba(148,163,184,0.25); }
+  .fn-perf.archived{ background:rgba(255,255,255,0.05); color:#64748B; border:1px solid rgba(255,255,255,0.08); }
 
   footer.bar{ padding:9px 16px; border-top:1px solid var(--border); background:rgba(12,17,27,.7);
     font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); }
@@ -235,6 +245,21 @@ function biasBadge(tf, raw){
 }
 function safeCalValue(v){ if(v==null||v==='') return '—'; const s=String(v); if(s.indexOf('-922337203685')===0) return '—'; return s; }
 function truncEv(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'…' : s; }
+function parseCalNum(val){
+  if(val == null || val === '') return null;
+  const s = String(val).replace(/[%kMB,\s]/gi, '');
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+function calcDeviation(actual, forecast, impactDir){
+  const a = parseCalNum(actual);
+  const f = parseCalNum(forecast);
+  if(a == null || f == null) return null;
+  const diff = a - f;
+  if(Math.abs(diff) < 0.0001) return 'inline';
+  if(impactDir === 2) return diff < 0 ? 'beat' : 'miss';
+  return diff > 0 ? 'beat' : 'miss';
+}
 function relMinStr(relMin, timeStr){
   if(timeStr){
     const d = parseEvTime(timeStr);
@@ -421,23 +446,38 @@ function renderFundamental(scan, currencies){
   const events = news.upcoming_events || [];
   let tbl = '<div class="cal-wrap"><table><thead><tr>' +
     '<th style="width:110px">Time</th><th style="width:35px">Cur</th><th>Event</th>' +
-    '<th style="width:40px">P</th><th style="width:55px">Actual</th><th style="width:55px">Fore</th><th style="width:55px">Prev</th>' +
+    '<th style="width:40px">P</th><th style="width:75px;text-align:right">Actual</th><th style="width:55px;text-align:right">Fore</th><th style="width:55px;text-align:right">Prev</th>' +
     '</tr></thead><tbody>';
   if(events.length){
-    for(const ev of events.slice(0,8)){
+    for(const ev of events.slice(0,14)){
       const imp = getImportance(ev);
+      const d = parseEvTime(ev.time);
+      const isPast = d ? (d.getTime() < Date.now()) : (ev._rel_min < 0);
       const actVal = safeCalValue(ev.actual);
-      let actClass = '';
-      if(actVal !== '—'){
-        if(ev.impact_direction === 1) actClass = ' green';
-        else if(ev.impact_direction === 2) actClass = ' red';
+      const dev = isPast ? calcDeviation(ev.actual, ev.forecast, ev.impact_direction) : null;
+      const rowCls = isPast ? ('past-row' + (dev ? ' ' + dev : '')) : (imp.pri >= 3 ? 'hi' : '');
+
+      let actHtml = '';
+      if(isPast){
+        if(actVal !== '—'){
+          let tag = dev === 'beat' ? '<span class="fn-perf beat">▲</span>' : dev === 'miss' ? '<span class="fn-perf miss">▼</span>' : dev === 'inline' ? '<span class="fn-perf inline">━</span>' : '';
+          let cls = dev === 'beat' ? ' green' : dev === 'miss' ? ' red' : '';
+          actHtml = `<span class="fn-num${cls}">${esc(actVal)}</span>${tag}`;
+        } else {
+          actHtml = '<span class="fn-perf archived">ARCH</span>';
+        }
+      } else {
+        actHtml = actVal !== '—' ? `<span class="fn-num">${esc(actVal)}</span>` : '<span class="fn-num" style="color:#555">—</span>';
       }
-      tbl += `<tr${imp.pri>=3?' class="hi"':''}>` +
-        `<td class="cal-time">${esc(calTime(ev.time))}<span class="cal-rel">${relMinStr(ev._rel_min, ev.time)}</span></td>` +
+
+      const relHtml = isPast ? `<span class="cal-rel released">✓ ${relMinStr(ev._rel_min, ev.time)}</span>` : `<span class="cal-rel">${relMinStr(ev._rel_min, ev.time)}</span>`;
+
+      tbl += `<tr class="${rowCls}">` +
+        `<td class="cal-time">${esc(calTime(ev.time))}${relHtml}</td>` +
         `<td class="cal-cur">${esc(ev.currency)}</td>` +
-        `<td class="cal-event" title="${esc(ev.event)}">${esc(truncEv(ev.event,26))}</td>` +
+        `<td class="cal-event" title="${esc(ev.event)}">${esc(truncEv(ev.event,24))}</td>` +
         `<td class="cal-p"><span class="fn-pill ${imp.cls}">${imp.label}</span></td>` +
-        `<td class="fn-num${actClass}">${esc(actVal)}</td>` +
+        `<td style="text-align:right">${actHtml}</td>` +
         `<td class="fn-num">${esc(safeCalValue(ev.forecast))}</td>` +
         `<td class="fn-num">${esc(safeCalValue(ev.previous))}</td>` +
         `</tr>`;
