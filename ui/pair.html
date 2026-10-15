@@ -31,8 +31,13 @@
   #app{ position:relative; z-index:10; display:flex; flex-direction:column; min-height:100vh; }
 
   header.top{ min-height:56px; display:flex; align-items:center; justify-content:space-between;
-    padding:10px 16px; border-bottom:1px solid var(--border);
-    background:linear-gradient(180deg, rgba(18,24,36,0.9), rgba(14,18,26,0.9)); backdrop-filter:blur(12px); gap:12px; }
+    padding:10px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; gap:8px;
+    background:linear-gradient(180deg, rgba(18,24,36,0.9), rgba(14,18,26,0.9)); backdrop-filter:blur(12px); }
+  @media(max-width:650px){
+    header.top{ flex-direction:column; align-items:flex-start; gap:8px; padding:10px 12px; }
+    .brand{ width:100%; justify-content:space-between; }
+    .meta{ width:100%; justify-content:space-between; font-size:10px; flex-wrap:wrap; gap:6px; }
+  }
   .brand{ display:flex; align-items:center; gap:10px; }
   .back-btn{ display:inline-flex; align-items:center; gap:6px; background:transparent;
     border:1px solid var(--border); color:var(--cyan); font-family:'JetBrains Mono',monospace;
@@ -105,6 +110,7 @@
 
   /* Watchout Cards */
   .wo-cards{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media(max-width:650px){ .wo-cards{ grid-template-columns:1fr; gap:10px; } }
   .wo-card{ border-radius:10px; padding:14px; font-family:'JetBrains Mono',monospace; }
   .wo-card.buy{ border:1px solid rgba(0,255,136,0.30); background:rgba(0,255,136,0.08); }
   .wo-card.sell{ border:1px solid rgba(255,59,92,0.30); background:rgba(255,59,92,0.08); }
@@ -124,6 +130,11 @@
   .lvl-row .dot2{ position:absolute; top:-3px; width:12px; height:12px; border-radius:9999px; background:var(--cyan); border:2px solid #0A0E14; box-shadow:0 0 8px var(--cyan); transform:translateX(-50%); }
   .lvl-row .val{ width:84px; text-align:right; color:var(--cyan); font-weight:700; font-size:12px; }
   .lvl-row.cur .dot2{ background:var(--gold); box-shadow:0 0 8px var(--gold); }
+  @media(max-width:480px){
+    .lvl-row{ font-size:10.5px; gap:6px; }
+    .lvl-row .name{ width:85px; font-size:10.5px; }
+    .lvl-row .val{ width:65px; font-size:10.5px; }
+  }
 
   /* Fundamental & Calendar */
   .fn-badge{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; padding:4px 10px; border-radius:6px; }
@@ -132,10 +143,10 @@
   .fn-sub{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#71717a; margin-bottom:10px; line-height:1.5; }
   .fn-sub.warn{ color:#FFB800; }
   .fn-bias{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#CBD5E1; margin-bottom:10px; }
-  .cal-wrap{ max-height:280px; overflow-y:auto; border-radius:8px; border:1px solid #1A2234; }
-  .cal-wrap::-webkit-scrollbar{ width:6px; }
+  .cal-wrap{ max-height:280px; overflow-x:auto; overflow-y:auto; border-radius:8px; border:1px solid #1A2234; -webkit-overflow-scrolling:touch; }
+  .cal-wrap::-webkit-scrollbar{ width:6px; height:6px; }
   .cal-wrap::-webkit-scrollbar-thumb{ background:#1f2937; border-radius:3px; }
-  .cal-wrap table{ width:100%; border-collapse:collapse; }
+  .cal-wrap table{ width:100%; min-width:540px; border-collapse:collapse; }
   .cal-wrap thead th{ position:sticky; top:0; z-index:1; background:#0C111B; font-family:'JetBrains Mono',monospace;
     font-size:9px; color:#71717a; text-transform:uppercase; letter-spacing:.05em; padding:6px 5px; text-align:left; border-bottom:1px solid #1A2234; }
   .cal-wrap tbody tr{ height:38px; border-top:1px solid #1A2234; transition:background .15s; }
