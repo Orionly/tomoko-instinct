@@ -26,7 +26,7 @@ import os
 MIN_SIZES = {
     "Main.py": 500,
     "backend/api.py": 1000,
-    "core/mt5_bridge.py": 500,
+    "core/price_engine.py": 500,
     "ui/web_dashboard.html": 1000,
     "config.py": 100,
 }

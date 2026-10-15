@@ -445,6 +445,12 @@ class PriceEngine:
     def get_currencies(self, symbol: str) -> List[str]:
         return CURRENCY_MAP.get(symbol, ["USD"])
 
+    def get_prices_from_ea(self) -> Dict:
+        """Compatibility method: returns latest live prices."""
+        with self._lock:
+            return {k: dict(v) for k, v in self.latest_prices.items()}
+
+
     @staticmethod
     def _safe_num(v):
         try:

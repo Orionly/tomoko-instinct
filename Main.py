@@ -43,7 +43,6 @@ import config
 # Pre-flight manifest: path -> minimum acceptable size in bytes.
 # Smaller files mean a bad overwrite (e.g. rescued 0-byte file), so abort.
 REQUIRED_FILES = {
-    "core/mt5_bridge.py": 500,
     "core/price_engine.py": 500,
     "core/news_engine.py": 500,
     "backend/api.py": 1000,

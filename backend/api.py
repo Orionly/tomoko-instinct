@@ -20,8 +20,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 from datetime import datetime, timezone
 
-from core.price_engine import calculate_currency_strength, sanitize_for_json, safe_float
-from core.mt5_bridge import MT5Bridge, ea_calendar, ea_quotes, _socket_server, _parse_event_time
+from core.price_engine import PriceEngine, calculate_currency_strength, sanitize_for_json, safe_float
 from core.regime_engine import RegimeEngine
 from core.levels_engine import LevelsEngine
 from core.brain_score import (calculate_brain_score, get_manual_action,
@@ -32,47 +31,38 @@ from core.intermarket_engine import IntermarketEngine
 from core.performance_tracker import PerformanceTracker
 from core.context_feed import ContextFeed
 from core.macro_intelligence_engine import MacroIntelligenceEngine
-from core.news_engine import NewsEngine, WAITING_SOURCE
+from core.news_engine import NewsEngine, WAITING_SOURCE, _parse_event_time
 import config
 
 tracker = PerformanceTracker()
 
-# --- Lazy MT5 bridge singleton ---------------------------------------------- #
-# connect() must NOT run at import time: if the MT5 terminal is closed the API
-# should still start and answer /api/scan_all with a 503 JSON instead of dying.
-# Endpoints call _ensure_mt5() to (re)connect once per cooldown window.
-_mt5_bridge = None
-_mt5_retry_state = {"last_attempt": 0.0}
-_MT5_RETRY_COOLDOWN = 15.0  # seconds between reconnect attempts while MT5 is down
-
-_ctx_feed = None
+# --- Decoupled PriceEngine singleton --------------------------------------- #
+_price_engine = None
 
 
-def get_mt5_bridge():
-    global _mt5_bridge
-    if _mt5_bridge is None:
-        _mt5_bridge = MT5Bridge()
-    return _mt5_bridge
+def get_price_engine():
+    global _price_engine
+    if _price_engine is None:
+        _price_engine = PriceEngine()
+    return _price_engine
+
+
+# Compatibility alias for internal callers
+get_mt5_bridge = get_price_engine
 
 
 def _ensure_mt5():
-    """Return True if decoupled PriceEngine or data feed is available."""
-    bridge = get_mt5_bridge()
-    try:
-        if bridge._get_pe() is not None:
-            return True
-    except Exception:
-        pass
-    if bridge.connected:
-        return True
-    return True
+    """Return True if decoupled PriceEngine data feed is available."""
+    pe = get_price_engine()
+    return pe.connected or len(pe.latest_prices) > 0
 
 
 def get_ctx_feed():
     global _ctx_feed
     if _ctx_feed is None:
-        _ctx_feed = ContextFeed(get_mt5_bridge())
+        _ctx_feed = ContextFeed(get_price_engine())
     return _ctx_feed
+
 
 
 _news_engine = None
@@ -149,19 +139,9 @@ TIMEFRAME_M15 = 15
 TIMEFRAME_D1 = 16408
 TIMEFRAME_W1 = 32769
 
-def start_socket_in_thread():
-    """Start the EA socket server in a background thread."""
-    try:
-        _socket_server(config.EA_SOCKET_PORT)
-    except Exception as exc:
-        print(f"[SOCKET] EA socket server error on port {config.EA_SOCKET_PORT}: {exc}")
-
-
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Log calendar source once at startup. Optionally start EA socket if enabled in config."""
-    if getattr(config, "ENABLE_EA_SOCKET", False):
-        threading.Thread(target=start_socket_in_thread, daemon=True, name="ea-socket-server").start()
+    """Log calendar source once at startup."""
     _get_ea_calendar()
     yield
 
