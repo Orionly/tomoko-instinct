@@ -70,8 +70,9 @@ def _yf_fetch(ticker):
 
 
 class ContextFeed:
-    def __init__(self, mt5_bridge):
-        self.mt5 = mt5_bridge
+    def __init__(self, data_engine=None):
+        self.engine = data_engine
+        self.mt5 = data_engine
         self.tickers = {
             "DXY": "DX-Y.NYB",
             "US10Y": "^TNX",

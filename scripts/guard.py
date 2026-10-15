@@ -9,7 +9,7 @@ accidental 0-byte / truncated overwrites of mission-critical files.
 Guarded files and their minimum sizes:
     Main.py                 -> 500  bytes
     backend/api.py          -> 1000 bytes
-    core/mt5_bridge.py      -> 500  bytes
+    core/price_engine.py    -> 500  bytes
     ui/web_dashboard.html   -> 1000 bytes
     config.py               -> 100  bytes
 

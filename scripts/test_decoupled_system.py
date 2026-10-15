@@ -18,7 +18,6 @@ if ROOT not in sys.path:
 import config
 from fastapi.testclient import TestClient
 from backend.api import app
-from core.mt5_bridge import MT5Bridge
 from core.news_engine import NewsEngine
 from core.price_engine import PriceEngine
 
@@ -43,10 +42,9 @@ def test_full_system():
 
     # 2. Indicators & Rates
     print("\n[2/4] Testing Multi-Timeframe Indicator Engine (H4, H1, M15)...")
-    bridge = MT5Bridge()
     for sym in ["EURUSD", "XAUUSD"]:
-        df_h1 = bridge.get_rates(sym, 16385, 50)
-        df_h4 = bridge.get_rates(sym, 16388, 50)
+        df_h1 = pe.get_rates(sym, 16385, 50)
+        df_h4 = pe.get_rates(sym, 16388, 50)
         assert not df_h1.empty, f"H1 rates for {sym} empty!"
         assert not df_h4.empty, f"H4 rates for {sym} empty!"
         last = df_h1.iloc[-1]
@@ -54,7 +52,7 @@ def test_full_system():
 
     # 3. News Engine
     print("\n[3/4] Testing Decoupled NewsEngine...")
-    ne = NewsEngine(bridge)
+    ne = NewsEngine()
     cal = ne.get_global_events(hours_ahead=168)
     events = cal.get("events", [])
     print(f"Calendar source: {cal.get('source')} | Total events: {len(events)}")

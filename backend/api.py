@@ -47,14 +47,13 @@ def get_price_engine():
     return _price_engine
 
 
-# Compatibility alias for internal callers
-get_mt5_bridge = get_price_engine
-
-
-def _ensure_mt5():
+def _ensure_data_feed():
     """Return True if decoupled PriceEngine data feed is available."""
     pe = get_price_engine()
     return pe.connected or len(pe.latest_prices) > 0
+
+
+_ensure_mt5 = _ensure_data_feed
 
 
 def get_ctx_feed():
@@ -69,10 +68,10 @@ _news_engine = None
 
 
 def get_news_engine():
-    """Single news gate for web + desktop: EA calendar only, no external feeds."""
+    """Single news gate for web + desktop: decoupled calendar only, no external feeds."""
     global _news_engine
     if _news_engine is None:
-        _news_engine = NewsEngine(get_mt5_bridge())
+        _news_engine = NewsEngine(get_price_engine())
     return _news_engine
 
 # Calendar module globals - ensure same module instances, not new instances
@@ -161,7 +160,7 @@ _SCAN_ALL_TTL = 3.0  # seconds
 def _intermarket_snapshot():
     """Get DXY/US10Y/VIX snapshot; never prints per-scan, returns neutral fallback."""
     try:
-        snap = IntermarketEngine(get_mt5_bridge()).get_snapshot()
+        snap = IntermarketEngine(get_price_engine()).get_snapshot()
         dxy_change = safe_float((snap.get("DXY") or {}).get("chg", 0.0))
         us10y_change = safe_float((snap.get("US10Y") or {}).get("chg", 0.0))
         vix_dir = (snap.get("VIX") or {}).get("dir", "FLAT")
@@ -215,7 +214,7 @@ def _zone_label(watchout_zones):
 def _safe_rates(symbol, timeframe, count):
     """Fetch rates, returning None on any failure / empty frame (never raises)."""
     try:
-        df = get_mt5_bridge().get_rates(symbol, timeframe, count)
+        df = get_price_engine().get_rates(symbol, timeframe, count)
     except Exception:
         return None
     if df is None or df.empty:
@@ -425,15 +424,15 @@ def get_context():
 @app.get("/api/prices")
 def get_prices():
     """Live prices from autonomous PriceEngine."""
-    if not _ensure_mt5():
+    if not _ensure_data_feed():
         raise HTTPException(status_code=503, detail="Data feed unavailable")
     result = {}
     for s in config.PAIRS:
-        p = get_mt5_bridge().get_price(s)
+        p = get_price_engine().get_price(s)
         if p:
             result[s] = p
     # EA fallback for any missing
-    ea_prices = get_mt5_bridge().get_prices_from_ea()
+    ea_prices = get_price_engine().get_prices_from_ea()
     for s in config.PAIRS:
         if s not in result or result[s] is None:
             if s in ea_prices:
@@ -443,7 +442,7 @@ def get_prices():
 
 @app.get("/api/scan_all")
 def scan_all():
-    if not _ensure_mt5():
+    if not _ensure_data_feed():
         raise HTTPException(status_code=503, detail="Data feed unavailable")
     now = time.time()
     if _scan_all_cache["result"] is not None and (now - _scan_all_cache["ts"]) < _SCAN_ALL_TTL:
@@ -458,7 +457,7 @@ def scan_all():
     market_pulse = calculate_currency_strength(scan_results)
     market_pulse["timestamp"] = datetime.now().strftime("%Y.%m.%d %H:%M")
     market_pulse["method"] = "H4 trend aggregation"
-    market_heatmap = get_mt5_bridge().get_market_heatmap(scan_results)
+    market_heatmap = get_price_engine().get_market_heatmap(scan_results)
     cal_info = get_news_engine().get_global_events()
     response = sanitize_for_json({
         "scans": scans,
@@ -480,7 +479,7 @@ def scan_all():
 
 @app.get("/api/market_heatmap")
 def market_heatmap():
-    if not _ensure_mt5():
+    if not _ensure_data_feed():
         raise HTTPException(status_code=503, detail="Data feed unavailable")
     now = time.time()
     # Return cached result if fresh enough (avoids re-running 7x _scan = 1.8s)
@@ -495,7 +494,7 @@ def market_heatmap():
     cal = _get_ea_calendar()
     scans = [_scan(s, cal) for s in config.PAIRS]
     scan_results = {s["symbol"]: s for s in scans}
-    hm = get_mt5_bridge().get_market_heatmap(scan_results)
+    hm = get_price_engine().get_market_heatmap(scan_results)
     _scan_cache["ts"] = now
     _scan_cache["result"] = hm
     return sanitize_for_json({
@@ -548,13 +547,13 @@ def serve_pair(symbol: str):
 def get_pair_deep(symbol: str):
     """Per-pair deep dive: full scan for the symbol, its heatmap row, and its filtered calendar."""
     symbol = symbol.upper()
-    if not _ensure_mt5():
+    if not _ensure_data_feed():
         raise HTTPException(status_code=503, detail="Data feed unavailable")
     scan = _scan(symbol)  # reuses existing scan pipeline; degraded scan if no data
-    heatmap = get_mt5_bridge().get_market_heatmap({symbol: scan})
+    heatmap = get_price_engine().get_market_heatmap({symbol: scan})
     heatmap_row = heatmap[0] if heatmap else None
     upcoming = get_news_engine().get_upcoming_events(symbol, hours_ahead=168)
-    currencies = get_mt5_bridge().get_currencies(symbol)
+    currencies = get_price_engine().get_currencies(symbol)
     return sanitize_for_json({
         "symbol": symbol,
         "currencies": currencies,
