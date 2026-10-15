@@ -778,7 +778,7 @@ function degradedCard(symbol, reason){
   return {
     symbol, price:null, score:0,
     score_breakdown:{structural:0,volatility:0,levels:0,intermarket:0,news:0},
-    action:'WAIT', real_action:'WAIT', reason:reason || 'NO DATA - waiting for MT5',
+    action:'WAIT', real_action:'WAIT', reason:reason || 'Connecting to data feed...',
     h4:{gate:'INSIDE',direction:'FLAT',adx:0,atr_ratio:0,dist_ema21_atr:0,ema20:0,ema50:0,ema21:0,atr:0,close:0},
     h1:{dist_ema21_atr:0,is_pullback:false,rsi:50,bias:'Neutral',close:0},
     h1_bias:'Neutral', h4_bias:'Neutral', m15_bias:'Neutral',
@@ -826,8 +826,8 @@ async function poll(){
     const r = await fetch('/api/scan_all');
     const data = await r.json();
     if(r.status === 503 || (!Array.isArray(data.scans) && !data.symbol)){
-      const reason = (data && data.detail) ? String(data.detail) : 'NO DATA - waiting for MT5';
-      const banner = r.status === 503 ? 'MT5 NOT CONNECTED - API in degraded mode' : 'NO DATA - waiting for MT5';
+      const reason = (data && data.detail) ? String(data.detail) : 'Connecting to data feed...';
+      const banner = r.status === 503 ? 'DATA FEED CONNECTING - Retrying...' : 'OFFLINE - Reconnecting to Brain API...';
       enterDegradedMode(banner, r.status !== 503, reason);
     } else {
       leaveDegradedMode();
@@ -852,7 +852,7 @@ async function poll(){
       } catch(e){}
     }
   }catch(e){
-    enterDegradedMode('NO DATA - waiting for MT5', true, 'NO DATA - waiting for MT5');
+    enterDegradedMode('OFFLINE - Reconnecting to Brain API...', true, 'Connecting to data feed...');
   }
 
   // 2. /api/context

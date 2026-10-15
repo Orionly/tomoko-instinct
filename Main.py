@@ -43,6 +43,8 @@ import config
 # Smaller files mean a bad overwrite (e.g. rescued 0-byte file), so abort.
 REQUIRED_FILES = {
     "core/mt5_bridge.py": 500,
+    "core/price_engine.py": 500,
+    "core/news_engine.py": 500,
     "backend/api.py": 1000,
     "ui/web_dashboard.html": 1000,
 }
@@ -50,10 +52,8 @@ REQUIRED_FILES = {
 # Host/ports centralized in config.py (single source of truth - no hardcoding)
 HOST = config.API_HOST
 PORT = config.API_PORT
-BRIDGE_PORT = config.EA_SOCKET_PORT
 SUPERVISOR_INTERVAL = 3  # seconds
 HEALTH_CHECK_WAIT = 3    # seconds granted to a child to prove it is alive
-PREFIX_MT5 = "MT5_BRIDGE"
 PREFIX_BRAIN = "BRAIN_API"
 
 
@@ -166,7 +166,7 @@ def launch_engine(dev_mode):
     ]
     if dev_mode:
         api_cmd.append("--reload")
-    log("INFO", f"Launching Brain Engine (API:{PORT} + EA Bridge:{BRIDGE_PORT}): {' '.join(api_cmd)}")
+    log("INFO", f"Launching Decoupled Brain Engine (API:{PORT}): {' '.join(api_cmd)}")
     proc_api = popen_no_window(api_cmd)
     spawn_reader(proc_api, PREFIX_BRAIN)
     return proc_api
@@ -268,7 +268,7 @@ def main():
         sys.exit(1)
 
     log("INFO", f"BRAIN LIVE: http://localhost:{PORT}/ (pid {proc_api.pid})")
-    log("INFO", f"EA SOCKET BRIDGE ACTIVE (port {BRIDGE_PORT}, embedded in Brain engine)")
+    log("INFO", f"AUTONOMOUS DATA ENGINE ACTIVE (Finnhub WebSocket + FairEconomy Macro Calendar)")
     log("INFO", f"Supervisor active (poll every {SUPERVISOR_INTERVAL}s). "
                 "Ctrl+C to stop.")
     threading.Thread(target=open_browser, daemon=True).start()

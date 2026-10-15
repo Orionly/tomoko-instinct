@@ -406,7 +406,7 @@ function renderFundamental(scan, currencies){
   const news = scan.news || {};
   const fund = scan.fundamental || {};
   const isClean = news.is_clean === true;
-  const src = news.source || 'mt5_terminal_calendar';
+  const src = news.source || 'decoupled_macro_calendar';
   const cnt = news.count != null ? news.count : (news.total_events != null ? news.total_events : 0);
   const blk = news.blocking || [];
   const badge = isClean ? '<span class="fn-badge clean">is_clean TRUE</span>' : '<span class="fn-badge blocked">is_clean FALSE</span>';

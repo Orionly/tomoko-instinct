@@ -55,24 +55,16 @@ def get_mt5_bridge():
 
 
 def _ensure_mt5():
-    """Return True if decoupled PriceEngine or MT5 is available."""
+    """Return True if decoupled PriceEngine or data feed is available."""
     bridge = get_mt5_bridge()
     try:
-        if bridge._get_pe().connected:
+        if bridge._get_pe() is not None:
             return True
     except Exception:
         pass
     if bridge.connected:
         return True
-    now = time.time()
-    if now - _mt5_retry_state["last_attempt"] >= _MT5_RETRY_COOLDOWN:
-        _mt5_retry_state["last_attempt"] = now
-        try:
-            if bridge.connect():
-                return True
-        except Exception:
-            pass
-    return False
+    return True
 
 
 def get_ctx_feed():
@@ -104,11 +96,10 @@ def _report_calendar_once(source, count):
     if _cal_log_state["source"] == source:
         return
     _cal_log_state["source"] = source
-    if source == "mt5_calendar_missing":
-        print(f"EA Calendar MISSING ({source}) - news will not block. "
-              f"Start TomokoDataPump EA to dump tomoko_calendar_raw.json")
+    if source == "calendar_unavailable":
+        print(f"Calendar unavailable ({source}) - news will not block.")
     else:
-        print(f"EA Calendar: {source} {count} events")
+        print(f"Macro Calendar: {source} {count} events")
 
 
 def _get_ea_calendar():
@@ -141,9 +132,9 @@ def _build_news_bar_text(blocking_events, cal):
         parts.append(f"{t} {ev.get('event', '')} [HIGH] AVOID {ev.get('currency', '')}")
     if parts:
         return " • ".join(parts) + " • Risk: RISK-OFF"
-    src = cal.get("source", "mt5_calendar_missing")
-    if src == "mt5_calendar_missing":
-        return f"EA calendar unavailable (mt5_calendar_missing) • Risk: RISK-ON"
+    src = cal.get("source", "calendar_unavailable")
+    if src == "calendar_unavailable":
+        return f"Calendar unavailable • Risk: RISK-ON"
     return (f"No HIGH news in 60min • Calendar: {src} ({cal.get('count', 0)} events) "
             f"• {cal.get('last_update', '')} • Risk: RISK-ON")
 
@@ -287,11 +278,11 @@ def _no_data_scan(symbol, reason="NO_DATA"):
 
 def _scan(symbol: str, cal=None):
     if not _ensure_mt5():
-        return _no_data_scan(symbol, reason="MT5_NOT_CONNECTED")
+        return _no_data_scan(symbol, reason="CONNECTING")
 
     if cal is None:
         cal = _get_ea_calendar()
-    cal_source = cal.get("source", "mt5_calendar_missing")
+    cal_source = cal.get("source", "calendar_unavailable")
     cal_count = cal.get("count", 0)
     cal_total = len(cal.get("calendar", []))
 
@@ -437,7 +428,7 @@ def get_context():
         cal = _get_ea_calendar()
         return sanitize_for_json({
             "context": ctx, "risk": risk, "session": session,
-            "calendar_source": cal.get("source", "mt5_calendar_missing"),
+            "calendar_source": cal.get("source", "calendar_unavailable"),
             "calendar_last_update": cal.get("last_update", ""),
             "calendar_events": cal.get("calendar", [])[:30],
             "count": cal.get("count", 0),
@@ -448,9 +439,9 @@ def get_context():
 
 @app.get("/api/prices")
 def get_prices():
-    """Live prices: MT5 tick first, EA fallback."""
+    """Live prices from autonomous PriceEngine."""
     if not _ensure_mt5():
-        raise HTTPException(status_code=503, detail="MT5 terminal not connected")
+        raise HTTPException(status_code=503, detail="Data feed unavailable")
     result = {}
     for s in config.PAIRS:
         p = get_mt5_bridge().get_price(s)
@@ -468,7 +459,7 @@ def get_prices():
 @app.get("/api/scan_all")
 def scan_all():
     if not _ensure_mt5():
-        raise HTTPException(status_code=503, detail="MT5 terminal not connected")
+        raise HTTPException(status_code=503, detail="Data feed unavailable")
     cal = _get_ea_calendar()
     scans = [_scan(s, cal) for s in config.PAIRS]
     blocking_news = []
@@ -499,7 +490,7 @@ def scan_all():
 @app.get("/api/market_heatmap")
 def market_heatmap():
     if not _ensure_mt5():
-        raise HTTPException(status_code=503, detail="MT5 terminal not connected")
+        raise HTTPException(status_code=503, detail="Data feed unavailable")
     now = time.time()
     # Return cached result if fresh enough (avoids re-running 7x _scan = 1.8s)
     if _scan_cache["result"] is not None and (now - _scan_cache["ts"]) < _HEATMAP_CACHE_TTL:
@@ -567,7 +558,7 @@ def get_pair_deep(symbol: str):
     """Per-pair deep dive: full scan for the symbol, its heatmap row, and its filtered calendar."""
     symbol = symbol.upper()
     if not _ensure_mt5():
-        raise HTTPException(status_code=503, detail="MT5 terminal not connected")
+        raise HTTPException(status_code=503, detail="Data feed unavailable")
     scan = _scan(symbol)  # reuses existing scan pipeline; degraded scan if no data
     heatmap = get_mt5_bridge().get_market_heatmap({symbol: scan})
     heatmap_row = heatmap[0] if heatmap else None
