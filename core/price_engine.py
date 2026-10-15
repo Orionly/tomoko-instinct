@@ -442,29 +442,182 @@ class PriceEngine:
                 }
         return data
 
-    def get_balance(self) -> float:
-        return getattr(config, "BALANCE_USC", 567.11)
-
     def get_currencies(self, symbol: str) -> List[str]:
         return CURRENCY_MAP.get(symbol, ["USD"])
 
+    @staticmethod
+    def _safe_num(v):
+        try:
+            f = float(v)
+            return 0.0 if math.isnan(f) or math.isinf(f) else f
+        except (TypeError, ValueError):
+            return 0.0
+
     def get_market_heatmap(self, scan_results: Dict) -> List[Dict]:
-        """Calculates 7-pair heatmap matching MT5Bridge output."""
-        from core.mt5_bridge import MT5Bridge
-        # Can delegate to MT5Bridge static method or duplicate lightweight logic
-        rows = []
-        for sym, sc in scan_results.items():
-            h4 = sc.get("h4", {})
-            h1 = sc.get("h1", {})
-            score = sc.get("score", 50)
-            color = "green" if score >= 65 else ("red" if score < 45 else "yellow")
-            rows.append({
-                "pair": sym,
-                "score": score,
+        """Build H4/H1/M15 alignment heatmap from scan results.
+        Returns one row per pair with trend direction per timeframe, alignment classification,
+        score, action, color. Sorted strongest-alignment first, then score desc. Sanitized for JSON.
+        """
+        heatmap = []
+        for symbol, data in scan_results.items():
+            score = self._safe_num(data.get("score", 0))
+            action = data.get("action", "WAIT")
+
+            # H4 trend
+            h4_dir = ""
+            h4_block = data.get("h4")
+            if isinstance(h4_block, dict):
+                h4_dir = str(h4_block.get("direction", "")).upper()
+            h4_str = "BULL" if h4_dir == "UP" else "BEAR" if h4_dir == "DOWN" else "FLAT"
+
+            # H1 trend
+            h1_raw = str(data.get("h1_bias", "")).upper()
+            if "BULL" in h1_raw:
+                h1_str = "BULL"
+            elif "BEAR" in h1_raw:
+                h1_str = "BEAR"
+            else:
+                h1_str = "FLAT"
+
+            # M15 trend
+            m15_raw = str(data.get("m15_bias", data.get("M15_bias", ""))).upper()
+            if "BULL" in m15_raw:
+                m15_str = "BULL"
+            elif "BEAR" in m15_raw:
+                m15_str = "BEAR"
+            else:
+                m15_str = "FLAT"
+
+            trends = [h4_str, h1_str, m15_str]
+            bull = sum(1 for t in trends if "BULL" in t)
+            bear = sum(1 for t in trends if "BEAR" in t)
+
+            if bull == 3:
+                align, color = "3/3 BULL", "green"
+            elif bear == 3:
+                align, color = "3/3 BEAR", "red"
+            elif bull == 2:
+                align, color = "2/3 BULL", "yellow-green"
+            elif bear == 2:
+                align, color = "2/3 BEAR", "orange"
+            else:
+                align, color = "MIXED", "gray"
+
+            dist = self._safe_num(
+                data.get("h4", {}).get("dist_ema21_atr", 0)
+                if isinstance(data.get("h4"), dict)
+                else data.get("dist_ema21_atr", 0)
+            )
+
+            heatmap.append({
+                "pair": symbol,
+                "score": float(score),
+                "h4": h4_str,
+                "h1": h1_str,
+                "m15": m15_str,
+                "alignment": align,
+                "dist": float(dist),
+                "action": action,
                 "color": color,
-                "h4": h4.get("direction", "NEUTRAL"),
-                "h1": h1.get("bias", "Neutral"),
-                "m15": sc.get("m15_bias", "Neutral"),
-                "alignment": f"{sc.get('m15_bias', '')} align",
+                "bull_count": bull,
+                "bear_count": bear,
             })
-        return rows
+
+        heatmap.sort(
+            key=lambda x: (
+                3 if x["alignment"] in ("3/3 BULL", "3/3 BEAR") else
+                2 if x["alignment"] in ("2/3 BULL", "2/3 BEAR") else 0,
+                x["score"],
+            ),
+            reverse=True,
+        )
+        return sanitize_for_json(heatmap)
+
+
+def safe_float(v, default=0.0) -> float:
+    """Safely convert value to float, filtering out None, NaN, and Inf."""
+    if v is None:
+        return default
+    try:
+        f = float(v)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return f
+    except (TypeError, ValueError):
+        return default
+
+
+def sanitize_for_json(obj):
+    """Recursively sanitize data structures for JSON serialization (clean NaN/Inf)."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return 0.0
+        return obj
+    elif isinstance(obj, dict):
+        clean = {}
+        for k, v in obj.items():
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                v = 0.0
+            clean[k] = sanitize_for_json(v) if isinstance(v, (dict, list)) else v
+        return clean
+    elif isinstance(obj, list):
+        return [sanitize_for_json(x) for x in obj]
+    return obj
+
+
+def calculate_currency_strength(scan_results: dict) -> dict:
+    """Calculate Market Pulse currency strength meters (USD, EUR, GBP, JPY, XAU) from pair scan results."""
+    currency_pairs = {
+        "USD": [("EURUSD", False), ("GBPUSD", False), ("USDJPY", True), ("XAUUSD", False)],
+        "EUR": [("EURUSD", True), ("EURJPY", True), ("EURGBP", True)],
+        "GBP": [("GBPUSD", True), ("GBPJPY", True), ("EURGBP", False)],
+        "JPY": [("USDJPY", False), ("GBPJPY", False), ("EURJPY", False)],
+        "XAU": [("XAUUSD", True)],
+    }
+    result = {}
+    for currency, pairs in currency_pairs.items():
+        score = 0.0
+        bull_count = 0
+        total = len(pairs)
+        has_data = False
+        for pair_name, direct in pairs:
+            scan = scan_results.get(pair_name)
+            if not scan:
+                continue
+            h4 = scan.get("h4", {})
+            if not h4:
+                continue
+            direction = h4.get("direction", "NEUTRAL")
+            dist = safe_float(h4.get("dist_ema21_atr"), 0.0)
+            has_data = True
+            if direction in ("UP", "BULLISH", "BULL"):
+                contrib = 1.0 + min(dist, 3.0) * 0.15 if direct else -1.0 - min(dist, 3.0) * 0.15
+                score += contrib
+                if direct:
+                    bull_count += 1
+            elif direction in ("DOWN", "BEARISH", "BEAR"):
+                contrib = -1.0 - min(dist, 3.0) * 0.15 if direct else 1.0 + min(dist, 3.0) * 0.15
+                score += contrib
+                if not direct:
+                    bull_count += 1
+            else:
+                score += 0.0
+
+        if not has_data:
+            continue
+
+        score = safe_float(round(score, 2), 0.0)
+        label = "Strong" if score > 1.0 else "Weak" if score < -1.0 else "Neutral" if abs(score) < 0.5 else ("Mixed" if score > 0 else "Weak")
+        direction = "up" if score > 0.5 else "down" if score < -0.5 else "neutral"
+        color = "green" if score > 0.5 else "red" if score < -0.5 else "yellow"
+
+        result[currency] = {
+            "strength": score,
+            "direction": direction,
+            "label": label,
+            "bull_ratio": f"{bull_count}/{total}",
+            "color": color
+        }
+
+    return sanitize_for_json(result)
+

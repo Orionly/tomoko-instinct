@@ -25,6 +25,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 import config
+from core.price_engine import safe_float, sanitize_for_json, calculate_currency_strength
 
 # Library logger: silent unless the app configures logging (no stdout noise on
 # import/connect). WARNING+ still reaches stderr via logging's lastResort handler.
@@ -33,17 +34,20 @@ log = logging.getLogger(__name__)
 # Global dictionary for calendar events keyed by event_id
 ea_calendar_dict = {}
 
-ACCOUNT_CENT_MODE = False  # VT Standard = 100k contract size, not Cent
+ACCOUNT_CENT_MODE = False  # Legacy
 
 LIGHT_SYMBOLS = config.PAIRS
 
 ea_quotes = {}
 ea_calendar = []
 ea_connected = False
-_bridge_port = config.EA_SOCKET_PORT
+_bridge_port = getattr(config, "EA_SOCKET_PORT", 18001)
 
 def _socket_server(port):
     global _bridge_port
+    if not getattr(config, "ENABLE_EA_SOCKET", False):
+        log.debug("[SOCKET] EA socket bridge disabled by config (ENABLE_EA_SOCKET=False)")
+        return
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -185,35 +189,6 @@ CURRENCY_MAP = {
 }
 
 
-def safe_float(v, default=0.0):
-    if v is None:
-        return default
-    try:
-        f = float(v)
-        if math.isnan(f) or math.isinf(f):
-            return default
-        return f
-    except (TypeError, ValueError):
-        return default
-
-
-def sanitize_for_json(obj):
-    import math
-    if isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
-            return 0.0
-        return obj
-    elif isinstance(obj, dict):
-        clean = {}
-        for k, v in obj.items():
-            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-                v = 0.0
-            clean[k] = sanitize_for_json(v) if isinstance(v, (dict, list)) else v
-        return clean
-    elif isinstance(obj, list):
-        return [sanitize_for_json(x) for x in obj]
-    return obj
-
 
 def _socket_handle_client(conn, addr):
     global ea_quotes, ea_calendar, ea_connected, ea_calendar_dict
@@ -309,6 +284,9 @@ class MT5Bridge:
         # Common Files is same for all terminals
 
     def connect(self):
+        if getattr(config, "AUTONOMOUS_MODE", True):
+            self.connected = True
+            return True
         if mt5 is None:
             self.connected = False
             return False
@@ -322,7 +300,7 @@ class MT5Bridge:
         self.connected = True
         acc = mt5.account_info()
         if acc:
-            log.debug("[MT5] Connected to %s Balance %s %s via %s", acc.server, acc.balance, acc.currency, config.MT5_TERMINAL_PATH)
+            log.debug("[MT5] Connected to %s via %s", acc.server, config.MT5_TERMINAL_PATH)
         terminal_info = mt5.terminal_info()
         if terminal_info:
             log.debug("[MT5] Terminal path: %s Name: %s", terminal_info.path, terminal_info.name)
@@ -354,14 +332,7 @@ class MT5Bridge:
         return self._price_engine
 
     def get_balance(self):
-        if self.connected and mt5 is not None:
-            try:
-                info = mt5.account_info()
-                if info and info.balance > 0:
-                    return info.balance
-            except Exception:
-                pass
-        return getattr(config, "BALANCE_USC", 567.11)
+        return 0.0
 
     def get_price(self, symbol):
         global ea_quotes
@@ -801,76 +772,6 @@ class MT5Bridge:
         return sanitize_for_json(heatmap)
 
     
-
-
-def calculate_currency_strength(scan_results: dict) -> dict:
-    import math
-    currency_pairs = {
-        "USD": [("EURUSD", False), ("GBPUSD", False), ("USDJPY", True), ("XAUUSD", False)],
-        "EUR": [("EURUSD", True), ("EURJPY", True), ("EURGBP", True)],
-        "GBP": [("GBPUSD", True), ("GBPJPY", True), ("EURGBP", False)],
-        "JPY": [("USDJPY", False), ("GBPJPY", False), ("EURJPY", False)],
-        "XAU": [("XAUUSD", True)],
-    }
-    result = {}
-    print(f"[MARKET_PULSE] scan_results keys: {list(scan_results.keys())}")
-    for currency, pairs in currency_pairs.items():
-        score = 0.0
-        bull_count = 0
-        total = len(pairs)
-        has_data = False
-        for pair_name, direct in pairs:
-            scan = scan_results.get(pair_name)
-            if not scan:
-                print(f" {currency} {pair_name} MISSING scan")
-                continue
-            h4 = scan.get("h4", {})
-            if not h4:
-                print(f" {currency} {pair_name} MISSING h4")
-                continue
-            direction = h4.get("direction", "NEUTRAL")
-            dist = safe_float(h4.get("dist_ema21_atr"), 0.0)
-            print(f" {currency} {pair_name} dir={direction} dist={dist} direct={direct}")
-            # count any valid h4 as data
-            has_data = True
-            if direction in ("UP", "BULLISH", "BULL"):
-                contrib = 1.0 + min(dist, 3.0) * 0.15 if direct else -1.0 - min(dist, 3.0) * 0.15
-                score += contrib
-                if direct:
-                    bull_count += 1
-            elif direction in ("DOWN", "BEARISH", "BEAR"):
-                contrib = -1.0 - min(dist, 3.0) * 0.15 if direct else 1.0 + min(dist, 3.0) * 0.15
-                score += contrib
-                if not direct:
-                    bull_count += 1
-            else:
-                # NEUTRAL still counts
-                score += 0.0
-
-        if not has_data:
-            print(f"[MARKET_PULSE] {currency} NO DATA skip")
-            continue
-
-        # Force score to be valid float
-        score = safe_float(round(score, 2), 0.0)
-        print(f"[MARKET_PULSE] {currency} final score={score} bull={bull_count}/{total}")
-
-        label = "Strong" if score > 1.0 else "Weak" if score < -1.0 else "Neutral" if abs(score) < 0.5 else ("Mixed" if score > 0 else "Weak")
-        direction = "up" if score > 0.5 else "down" if score < -0.5 else "neutral"
-        color = "green" if score > 0.5 else "red" if score < -0.5 else "yellow"
-
-        result[currency] = {
-            "strength": score,
-            "direction": direction,
-            "label": label,
-            "bull_ratio": f"{bull_count}/{total}",
-            "color": color
-        }
-
-    print(f"[MARKET_PULSE] Calculated raw: { {k: v['strength'] for k, v in result.items()} }")
-    cleaned = sanitize_for_json(result)
-    print(f"[MARKET_PULSE] Calculated cleaned: {cleaned}")
-    return cleaned
 
 
 def _find_available_port(start_port=config.EA_SOCKET_PORT, max_attempts=5):

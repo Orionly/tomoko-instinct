@@ -445,13 +445,14 @@ function renderFundamental(scan, currencies){
   const src = news.source || 'decoupled_macro_calendar';
   const cnt = news.count != null ? news.count : (news.total_events != null ? news.total_events : 0);
   const blk = news.blocking || [];
-  const badge = isClean ? '<span class="fn-badge clean">is_clean TRUE</span>' : '<span class="fn-badge blocked">is_clean FALSE</span>';
-  let sub = `${src} • ${cnt} events • Risk: ${isClean?'RISK-ON':'RISK-OFF'}`;
+  const badge = isClean ? '<span class="fn-badge clean">NO HIGH IMPACT RISK</span>' : '<span class="fn-badge blocked">HIGH IMPACT EVENT</span>';
+  const srcLabel = (src === 'decoupled_macro_calendar' || !src) ? 'Macro Calendar' : (src === 'mt5_terminal_calendar' ? 'MT5 Calendar' : src);
+  let sub = `${srcLabel} • ${cnt} events • Risk: ${isClean?'RISK-ON':'RISK-OFF'}`;
   let banner = '';
   if(blk.length){
     const ev0 = blk[0];
     const ev0Time = calTime(ev0.time);
-    sub = `${src} • ${cnt} events • ${esc(ev0Time)} ${esc(ev0.event)} [HIGH] AVOID ${esc(ev0.currency)} • Risk: RISK-OFF`;
+    sub = `${srcLabel} • ${cnt} events • ${esc(ev0Time)} ${esc(ev0.event)} [HIGH] AVOID ${esc(ev0.currency)} • Risk: RISK-OFF`;
     banner = `<div style="min-height:36px;display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;background:rgba(255,184,0,0.10);border:1px solid rgba(255,184,0,0.20);border-radius:8px;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;color:#FFB800">⛔ ${esc(ev0Time)} ${esc(ev0.event)} HIGH (${esc(ev0.currency)}) - STAY OUT</div>`;
   }
   const events = news.upcoming_events || [];
@@ -498,7 +499,7 @@ function renderFundamental(scan, currencies){
     tbl += `<tr><td colspan="7" class="fn-empty" style="text-align:center;padding:12px">No upcoming events for ${(Array.isArray(currencies)? currencies.join('/') : (currencies || '—'))}</td></tr></tbody></table></div>`;
   }
   $('fundamental').innerHTML =
-    `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.12em">is_clean</span>${badge}</div>` +
+    `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.12em">NEWS FILTER</span>${badge}</div>` +
     `<div class="fn-sub${blk.length?' warn':''}">${sub}</div>` +
     banner +
     `<div class="fn-bias">${esc(fund.bias||'—')}</div>` +

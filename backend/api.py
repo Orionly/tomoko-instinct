@@ -20,7 +20,8 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 from datetime import datetime, timezone
 
-from core.mt5_bridge import MT5Bridge, calculate_currency_strength, sanitize_for_json, safe_float, ea_calendar, ea_quotes, _socket_server, _parse_event_time
+from core.price_engine import calculate_currency_strength, sanitize_for_json, safe_float
+from core.mt5_bridge import MT5Bridge, ea_calendar, ea_quotes, _socket_server, _parse_event_time
 from core.regime_engine import RegimeEngine
 from core.levels_engine import LevelsEngine
 from core.brain_score import (calculate_brain_score, get_manual_action,
@@ -158,12 +159,9 @@ def start_socket_in_thread():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Start EA socket server + log calendar source once at startup.
-
-    MT5 is intentionally NOT connected here - connect lazily per request so the
-    API boots even when the terminal is closed.
-    """
-    threading.Thread(target=start_socket_in_thread, daemon=True, name="ea-socket-server").start()
+    """Log calendar source once at startup. Optionally start EA socket if enabled in config."""
+    if getattr(config, "ENABLE_EA_SOCKET", False):
+        threading.Thread(target=start_socket_in_thread, daemon=True, name="ea-socket-server").start()
     _get_ea_calendar()
     yield
 

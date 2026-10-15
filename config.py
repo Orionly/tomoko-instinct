@@ -2,25 +2,23 @@
 PROJECT_NAME = "Tomoko"
 VERSION = "V1-Brain-Scanner-Desktop"
 
-# Account
-ACCOUNT_MICRO = True
-BALANCE_USC = 567.11  # 567.11 USC = $5.67
-BALANCE_THRESHOLD = 1000
+# Mode
+AUTONOMOUS_MODE = True
+ENABLE_EA_SOCKET = False  # Set to True only if using legacy MQL5 EA on port 18001
+EA_SOCKET_HOST = "127.0.0.1"
+EA_SOCKET_PORT = 18001
 
-# Trading Universe - VT Markets Standard (no c suffix)
-PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "EURGBP", "XAUUSD"]  # 7 pairs
+# Trading Universe (7 pairs)
+PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "EURGBP", "XAUUSD"]
 
-# MT5 terminal (single source of truth for broker paths/ports - no hardcoding elsewhere)
+# Broker paths (Optional / Legacy)
 MT5_PATHS = {
     "VT": r"C:\Program Files\VT Markets (Pty) MT5 Terminal\terminal64.exe",
     "HFM": r"C:\Program Files\HFM Metatrader 5\terminal64.exe",
 }
 ACTIVE_BROKER = "VT"
-MT5_TERMINAL_PATH = MT5_PATHS[ACTIVE_BROKER]
+MT5_TERMINAL_PATH = MT5_PATHS.get(ACTIVE_BROKER, "")
 
-# EA socket bridge (TomokoDataPump EA talks to this)
-EA_SOCKET_HOST = "127.0.0.1"
-EA_SOCKET_PORT = 18001
 
 # Finnhub API Key for Decoupled Live WebSocket
 FINNHUB_API_KEY = "db8aja9r01qmvbh6ojdgdb8aja9r01qmvbh6oje0"
