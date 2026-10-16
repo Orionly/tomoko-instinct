@@ -14,7 +14,7 @@
     --bull:#00FF88; --bear:#FF5A79; --neut:#FFB800;
   }
   *{ box-sizing:border-box; -webkit-font-smoothing:antialiased; }
-  html,body{ margin:0; background:var(--bg); color:var(--text); font-family:'Inter',system-ui,sans-serif; }
+  html,body{ margin:0; background:var(--bg); color:var(--text); font-family:'Inter',system-ui,sans-serif; transition:padding-top 0.25s ease; }
   .mono{ font-family:'JetBrains Mono',ui-monospace,monospace; }
 
   #bg{ position:fixed; inset:0; pointer-events:none; z-index:0;
@@ -135,22 +135,17 @@
     font-weight:700; color:#fff; background:#FF4D4D; border:1px solid var(--border); border-radius:8px;
     text-align:center; letter-spacing:.03em; }
 
-  main{ display:flex; gap:14px; padding:14px 16px; align-items:flex-start; flex:1; }
-  #grid-wrap{ flex:3 1 0; }
-  #grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  main{ display:flex; gap:14px; padding:14px 16px; align-items:flex-start; flex:1; width:100%; box-sizing:border-box; }
+  #grid-wrap{ flex:1 1 0; min-width:0; width:100%; }
+  #grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(290px, 1fr)); gap:12px; width:100%; }
 
-  @media (min-width:1600px) { #grid{ grid-template-columns:repeat(4,1fr); } }
-  @media (min-width:1200px) and (max-width:1599px) { #grid{ grid-template-columns:repeat(3,1fr); } }
-  @media (min-width:768px) and (max-width:1199px) { #grid{ grid-template-columns:repeat(2,1fr); } }
   @media (max-width:767px) {
-    #grid{ display:grid; grid-template-columns:1fr; gap:10px; width:100%; }
+    #grid{ grid-template-columns:1fr; gap:10px; width:100%; }
     .card{ min-width:0; width:100%; }
     main{ flex-direction:column; padding:10px 12px; }
   }
   @media (max-width:480px) {
     .card{ padding:11px; }
-    .chead{ flex-wrap:wrap; gap:6px; }
-    .align-wrap{ margin-left:0; width:100%; justify-content:space-between; margin-top:4px; }
   }
 
   .card{ position:relative; background:var(--glass); border:1px solid var(--border); border-radius:14px;
@@ -159,11 +154,12 @@
     background:linear-gradient(90deg, var(--cyan), transparent); opacity:.5; }
   .card:hover{ transform:translateY(-3px); border-color:var(--cyan); box-shadow:0 10px 30px rgba(0,0,0,.5); }
   .card.sel{ border-color:var(--cyan); box-shadow:0 0 0 1px var(--cyan); }
-  .chead{ display:flex; align-items:center; gap:8px; }
+  .chead{ display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+  .chead-left{ display:flex; align-items:center; gap:8px; flex:none; }
   .sym{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--cyan); font-size:14px; }
   .price{ font-family:'JetBrains Mono',monospace; font-size:13px; color:#CBD5E1; }
 
-  .align-wrap{ margin-left:auto; display:flex; align-items:center; gap:6px; }
+  .align-wrap{ margin-left:auto; display:flex; align-items:center; gap:5px; flex:none; }
   .align-dot{ width:10px; height:10px; border-radius:9999px; border:2px solid rgba(255,255,255,0.15); flex:none; }
   .align-dot.lvl-HIGH{ background:var(--bull); box-shadow:0 0 16px rgba(0,255,136,0.6); animation:alignmentPulse 2s infinite; }
   .align-dot.lvl-MEDIUM{ background:var(--neut); box-shadow:0 0 14px rgba(255,184,0,0.5); }
@@ -203,9 +199,7 @@
   .section-subheader{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px; }
   
   /* Filter Tab Bar (Option B) */
-  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; gap:10px; flex-wrap:wrap; }
-  .cal-tabs{ display:flex; align-items:center; gap:6px; background:rgba(12, 17, 27, 0.85); padding:4px; border-radius:10px; border:1px solid rgba(255, 255, 255, 0.08); overflow-x:auto; max-width:100%; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
-  .cal-tabs::-webkit-scrollbar{ display:none; }
+  .cal-tabs{ display:flex; align-items:center; gap:6px; background:rgba(12, 17, 27, 0.85); padding:5px 6px; border-radius:10px; border:1px solid rgba(255, 255, 255, 0.08); flex-wrap:wrap; max-width:100%; }
   .cal-tab{
     background:transparent; border:1px solid transparent; color:#94A3B8;
     font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; letter-spacing:0.04em;
@@ -361,12 +355,141 @@
   #logsModal table{ width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:10px; }
   #logsModal th, #logsModal td{ border:1px solid var(--border); padding:4px 6px; text-align:left; color:#CBD5E1; }
   #logsModal th{ color:var(--cyan); }
-  .x{ float:right; cursor:pointer; color:var(--muted); font-size:18px; } .x:hover{ color:#fff; }
+  /* Persistent Fixed Shock Banner */
+  .sticky-shock-banner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 99999;
+    background: linear-gradient(90deg, #991b1b 0%, #7f1d1d 50%, #b91c1c 100%);
+    border-bottom: 2px solid #ef4444; box-shadow: 0 4px 25px rgba(239, 68, 68, 0.55);
+    color: #fff; padding: 9px 18px; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; backdrop-filter: blur(8px);
+    animation: shockGlow 2.5s infinite alternate;
+  }
+  @keyframes shockGlow {
+    0% { box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4); }
+    100% { box-shadow: 0 4px 35px rgba(239, 68, 68, 0.8); }
+  }
+  .shock-content { display: flex; align-items: center; gap: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .shock-pulse-icon { animation: pulseDot 1.2s infinite; font-size: 12px; flex: none; }
+  .shock-tag {
+    font-weight: 800; letter-spacing: 0.08em; color: #fee2e2; background: rgba(0, 0, 0, 0.35);
+    padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(254, 226, 226, 0.4); flex: none;
+  }
+  .shock-text { font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .shock-pairs { display: inline-flex; gap: 5px; flex: none; }
+  .shock-pair-pill {
+    background: rgba(0, 0, 0, 0.45); color: #fca5a5; border: 1px solid rgba(252, 165, 165, 0.5);
+    padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700;
+  }
+  .shock-dismiss-btn {
+    background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #fff; padding: 4px 10px; border-radius: 5px; font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 700; cursor: pointer; transition: all .2s; flex: none;
+  }
+  .shock-dismiss-btn:hover { background: rgba(255, 255, 255, 0.35); }
+  @media (max-width: 850px) {
+    .shock-pairs { display: none !important; }
+  }
+
+  /* World News Section Styling */
+  .world-intel-container {
+    margin-top: 16px; background: #151821; border: 1px solid rgba(245, 158, 11, 0.28);
+    border-radius: 12px; padding: 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+  .speech-spotlight-card {
+    background: linear-gradient(135deg, rgba(30, 27, 75, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%);
+    border: 1px solid rgba(168, 85, 247, 0.45); border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.14); transition: all .2s ease;
+  }
+  .speech-spotlight-card:hover {
+    border-color: rgba(168, 85, 247, 0.75); box-shadow: 0 0 26px rgba(168, 85, 247, 0.28);
+  }
+  .speech-link-btn {
+    display: inline-flex; align-items: center; gap: 4px; color: #c084fc; text-decoration: none;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+    padding: 3px 9px; background: rgba(168, 85, 247, 0.18); border: 1px solid rgba(168, 85, 247, 0.4);
+    border-radius: 5px; transition: all .2s;
+  }
+  .speech-link-btn:hover {
+    background: rgba(168, 85, 247, 0.35); color: #fff; border-color: rgba(168, 85, 247, 0.8);
+  }
+  .speech-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .speech-speaker {
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 800; color: #c084fc;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .speech-occasion { font-size: 10px; color: #94a3b8; font-weight: 500; }
+  .speech-tone-badge {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 800; padding: 3px 10px;
+    border-radius: 6px; letter-spacing: 0.05em;
+  }
+  .speech-tone-badge.hawkish { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.45); color: #f87171; }
+  .speech-tone-badge.dovish { background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.45); color: #4ade80; }
+  .speech-tone-badge.protectionist { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.45); color: #fbbf24; }
+  .speech-tone-badge.balanced { background: rgba(0, 229, 255, 0.15); border: 1px solid rgba(0, 229, 255, 0.35); color: #38bdf8; }
+  .speech-takeaways { list-style: none; padding: 0; margin: 8px 0; font-family: 'Inter', sans-serif; font-size: 11.5px; line-height: 1.6; color: #e2e8f0; }
+  .speech-takeaways li { position: relative; padding-left: 18px; margin-bottom: 5px; }
+  .speech-takeaways li::before { content: '•'; position: absolute; left: 4px; color: #c084fc; font-weight: 800; }
+  .speech-footer {
+    display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07); flex-wrap: wrap; gap: 8px;
+  }
+  .speech-pairs-wrap { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .speech-pair-tag {
+    background: rgba(0, 229, 255, 0.12); border: 1px solid rgba(0, 229, 255, 0.3); color: #38bdf8;
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
+    cursor: pointer; transition: all .15s;
+  }
+  .speech-pair-tag:hover {
+    background: rgba(0, 229, 255, 0.3); color: #fff;
+  }
+  .speech-implication-tag { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #fcd34d; font-weight: 600; }
+
+  /* Wire Feed Table / List */
+  .world-feed-wrap {
+    max-height: 480px; overflow-y: auto; border-radius: 8px; border: 1px solid #1A2234; background: #0e121a;
+    -webkit-overflow-scrolling: touch;
+  }
+  .world-feed-wrap::-webkit-scrollbar { width: 6px; }
+  .world-feed-wrap::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 3px; }
+  .world-feed-item {
+    padding: 11px 14px; border-bottom: 1px solid #171b26; transition: background .15s; display: flex;
+    flex-direction: column; gap: 5px;
+  }
+  .world-feed-item:hover { background: #161d2b !important; }
+  .w-item-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; }
+  .w-item-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .w-severity { font-weight: 800; padding: 1px 6px; border-radius: 4px; font-size: 9px; letter-spacing: 0.04em; }
+  .w-severity.CRITICAL { background: rgba(239, 68, 68, 0.25); border: 1px solid rgba(239, 68, 68, 0.5); color: #f87171; }
+  .w-severity.HIGH { background: rgba(245, 158, 11, 0.25); border: 1px solid rgba(245, 158, 11, 0.5); color: #fbbf24; }
+  .w-severity.MEDIUM { background: rgba(0, 229, 255, 0.15); border: 1px solid rgba(0, 229, 255, 0.35); color: #38bdf8; }
+  .w-severity.MONITOR { background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.25); color: #94a3b8; }
+  .w-cat-pill { color: #94a3b8; background: rgba(255, 255, 255, 0.05); padding: 1px 6px; border-radius: 4px; }
+  .w-source { color: #64748b; }
+  .w-time { color: #64748b; }
+  .w-title { font-size: 12px; font-weight: 600; color: #f1f5f9; line-height: 1.45; text-decoration: none; cursor: pointer; }
+  .w-title:hover { color: #00e5ff; text-decoration: underline; }
+  .w-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .w-pairs-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .w-pair-pill {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+    background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.35); color: #a5b4fc;
+  }
+  .w-pair-pill.xau { background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.35); color: #fbbf24; }
+  .w-implication { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #38bdf8; font-style: italic; }
 </style>
 </head>
 <body>
 <div id="bg"></div>
-<div id="noise"></div>
+<div id="sticky-shock-banner" class="sticky-shock-banner" style="display:none;">
+  <div class="shock-content">
+    <span class="shock-pulse-icon">🔴</span>
+    <span class="shock-tag">GEOPOLITICAL SHOCK</span>
+    <span class="shock-divider">•</span>
+    <span id="shock-text" class="shock-text">—</span>
+    <span id="shock-pairs" class="shock-pairs"></span>
+  </div>
+  <button class="shock-dismiss-btn" onclick="dismissShockBanner()">✕ Dismiss</button>
+</div>
 
 <div id="app">
   <header class="top">
@@ -514,6 +637,43 @@
               <tr><td colspan="8" class="gc-empty">Loading macro calendar…</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- GLOBAL MACRO & GEOPOLITICAL INTELLIGENCE SECTION -->
+      <div id="world-intel-section" class="world-intel-container">
+        <div class="cal-header-row">
+          <div>
+            <div class="section-header" style="color:#F59E0B;">GLOBAL MACRO & GEOPOLITICAL INTELLIGENCE</div>
+            <div class="section-subheader">LIVE NARRATIVE WIRE • 30-DAY ARCHIVE • SPEECH BRIEFS • 7-PAIR ATTRIBUTION • <span id="world-intel-count">0</span> stories</div>
+          </div>
+          <div class="cal-badge-pill" style="border-color:rgba(245, 158, 11, 0.3); color:#FBBF24;">
+            <span class="pulse-dot" style="background:#F59E0B; box-shadow:0 0 6px #F59E0B;"></span> LIVE WIRE ACTIVE
+          </div>
+        </div>
+
+        <!-- Pinned Speech Spotlight -->
+        <div id="speech-spotlight-wrap" style="display:none; margin-bottom:14px;"></div>
+
+        <!-- Filter Toolbar -->
+        <div class="cal-toolbar">
+          <div class="cal-tabs" id="world-filter-tabs">
+            <button class="cal-tab active" data-filter="all" onclick="switchWorldTab('all')">ALL STORIES <span class="tab-count" id="wtab-cnt-all">0</span></button>
+            <button class="cal-tab" data-filter="market" onclick="switchWorldTab('market')">⚡ MARKET IMPACT ONLY <span class="tab-count" id="wtab-cnt-market">0</span></button>
+            <button class="cal-tab" data-filter="XAUUSD" onclick="switchWorldTab('XAUUSD')">🟡 XAUUSD <span class="tab-count" id="wtab-cnt-xau">0</span></button>
+            <button class="cal-tab" data-filter="USDJPY" onclick="switchWorldTab('USDJPY')">🔵 USDJPY <span class="tab-count" id="wtab-cnt-jpy">0</span></button>
+            <button class="cal-tab" data-filter="EURUSD" onclick="switchWorldTab('EURUSD')">🟣 EURUSD <span class="tab-count" id="wtab-cnt-eur">0</span></button>
+            <button class="cal-tab" data-filter="GBPUSD" onclick="switchWorldTab('GBPUSD')">🟢 GBPUSD <span class="tab-count" id="wtab-cnt-gbp">0</span></button>
+            <button class="cal-tab" data-filter="speeches" onclick="switchWorldTab('speeches')">🎙️ SPEECHES <span class="tab-count" id="wtab-cnt-speeches">0</span></button>
+            <button class="cal-tab" data-filter="shocks" onclick="switchWorldTab('shocks')">🔴 CRITICAL / HIGH <span class="tab-count" id="wtab-cnt-shocks">0</span></button>
+          </div>
+        </div>
+
+        <!-- Wire Feed Table / List -->
+        <div class="world-feed-wrap">
+          <div id="world-feed-list" class="world-feed-list">
+            <div class="gc-empty" style="padding:24px; text-align:center; color:var(--muted); font-family:'JetBrains Mono',monospace;">Loading global intelligence wire…</div>
+          </div>
         </div>
       </div>
 
@@ -748,8 +908,10 @@ function cardHTML(d){
   const actColor = (d.action && d.action.startsWith('LIMIT AT LIQ')) ? 'var(--gold)' : 'var(--text)';
   return `<div class="card ${d.symbol===SELECTED?'sel':''}" data-symbol="${d.symbol}">
     <div class="chead">
-      <div class="sym">${d.symbol}</div>
-      <div class="price">${priceTxt(d.symbol,d.price)}</div>
+      <div class="chead-left">
+        <div class="sym">${d.symbol}</div>
+        <div class="price">${priceTxt(d.symbol,d.price)}</div>
+      </div>
       <div class="align-wrap">
         <div class="align-dot lvl-${al.level}" title="${al.tooltip}"></div>
         <div class="align-tag lvl-${al.level}">${al.label}</div>
@@ -1228,10 +1390,240 @@ function tick(){
   if(el) el.textContent='live: '+new Date().toLocaleTimeString();
 }
 
+/* ================== WORLD NEWS & GEOPOLITICAL INTELLIGENCE ================== */
+let CURRENT_WORLD_TAB = 'all';
+let ALL_WORLD_ITEMS = [];
+let ALL_SPEECHES = [];
+let ACTIVE_SHOCKS = [];
+let DISMISSED_SHOCK_ID = null;
+
+function switchWorldTab(tab){
+  CURRENT_WORLD_TAB = tab;
+  document.querySelectorAll('#world-filter-tabs .cal-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.filter === tab);
+  });
+  renderFilteredWorldNews();
+}
+
+function dismissShockBanner(){
+  const banner = document.getElementById('sticky-shock-banner');
+  if(banner) banner.style.display = 'none';
+  document.body.style.paddingTop = '0px';
+  if(ACTIVE_SHOCKS.length > 0){
+    DISMISSED_SHOCK_ID = ACTIVE_SHOCKS[0].id || ACTIVE_SHOCKS[0].title;
+  }
+}
+
+function renderShockBanner(shocks){
+  const banner = document.getElementById('sticky-shock-banner');
+  if(!banner) return;
+  if(!shocks || !shocks.length){
+    banner.style.display = 'none';
+    document.body.style.paddingTop = '0px';
+    return;
+  }
+  const topShock = shocks[0];
+  const shockId = topShock.id || topShock.title;
+  if(DISMISSED_SHOCK_ID === shockId){
+    banner.style.display = 'none';
+    document.body.style.paddingTop = '0px';
+    return;
+  }
+  const textEl = document.getElementById('shock-text');
+  const pairsEl = document.getElementById('shock-pairs');
+  if(textEl) textEl.textContent = topShock.title || 'Breaking Macro Alert';
+  if(pairsEl){
+    const pairs = (topShock.impacted_pairs || []).filter(p => p !== 'GLOBAL');
+    pairsEl.innerHTML = pairs.map(p => `<span class="shock-pair-pill">${p}</span>`).join('');
+  }
+  banner.style.display = 'flex';
+  requestAnimationFrame(() => {
+    const h = banner.offsetHeight || 42;
+    document.body.style.paddingTop = h + 'px';
+  });
+}
+
+function renderSpeechSpotlight(speeches){
+  const wrap = document.getElementById('speech-spotlight-wrap');
+  if(!wrap) return;
+  if(!speeches || !speeches.length){
+    wrap.style.display = 'none';
+    return;
+  }
+  const sp = speeches[0];
+  let toneClass = 'balanced';
+  const toneStr = (sp.tone || '').toUpperCase();
+  if(toneStr.includes('HAWKISH')) toneClass = 'hawkish';
+  else if(toneStr.includes('DOVISH')) toneClass = 'dovish';
+  else if(toneStr.includes('PROTECTIONIST') || toneStr.includes('TARIFF')) toneClass = 'protectionist';
+
+  const pairBadges = (sp.impacted_pairs || []).filter(p => p !== 'GLOBAL').map(p => 
+    `<span class="speech-pair-tag" onclick="switchWorldTab('${p}'); event.stopPropagation();" title="Filter wire by ${p}">${p}</span>`
+  ).join(' ');
+
+  const takeawaysList = (sp.takeaways || []).map(t => `<li>${t}</li>`).join('');
+  const implicationText = (sp.implications && sp.implications.length) ? sp.implications.join(' • ') : '';
+  const speechLinkBtn = sp.link ? `<a class="speech-link-btn" href="${sp.link}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">READ SOURCE WIRE ↗</a>` : '';
+
+  wrap.innerHTML = `
+    <div class="speech-spotlight-card" ${sp.link ? `style="cursor:pointer;" onclick="window.open('${sp.link}', '_blank');"` : ''} title="${sp.link ? 'Click to open original speech source wire' : ''}">
+      <div class="speech-header">
+        <div class="speech-speaker">
+          <span>🎙️</span>
+          <span>${sp.speaker} <span class="speech-occasion">(${sp.title}) • ${sp.occasion}</span></span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          ${speechLinkBtn}
+          <div class="speech-tone-badge ${toneClass}">${sp.tone}</div>
+        </div>
+      </div>
+      <ul class="speech-takeaways">
+        ${takeawaysList}
+      </ul>
+      <div class="speech-footer">
+        <div class="speech-pairs-wrap">
+          <span style="font-size:10px; color:#94a3b8; font-family:'JetBrains Mono',monospace;">IMPACTED ASSETS:</span>
+          ${pairBadges || '<span class="speech-pair-tag">GLOBAL</span>'}
+        </div>
+        ${implicationText ? `<div class="speech-implication-tag">⚡ ${implicationText}</div>` : ''}
+      </div>
+    </div>
+  `;
+  wrap.style.display = 'block';
+}
+
+function renderFilteredWorldNews(){
+  const feed = document.getElementById('world-feed-list');
+  if(!feed) return;
+
+  let items = ALL_WORLD_ITEMS.slice();
+  if(CURRENT_WORLD_TAB === 'market'){
+    items = items.filter(it => it.impacted_pairs && it.impacted_pairs.some(p => p !== 'GLOBAL'));
+  } else if(CURRENT_WORLD_TAB === 'speeches'){
+    items = items.filter(it => it.category === 'Speeches' || (it.impacted_pairs && it.impacted_pairs.includes('Speeches')));
+  } else if(CURRENT_WORLD_TAB === 'shocks'){
+    items = items.filter(it => it.severity === 'CRITICAL' || it.severity === 'HIGH');
+  } else if(CURRENT_WORLD_TAB !== 'all'){
+    items = items.filter(it => it.impacted_pairs && it.impacted_pairs.includes(CURRENT_WORLD_TAB));
+  }
+
+  if(!items.length){
+    feed.innerHTML = `<div class="gc-empty" style="padding:24px; text-align:center;">No stories found for current filter: <b>${CURRENT_WORLD_TAB.toUpperCase()}</b></div>`;
+    return;
+  }
+
+  const htmlRows = items.map(it => {
+    const sev = it.severity || 'MONITOR';
+    const cat = it.category || 'Geopolitics';
+    const pairs = (it.impacted_pairs || []).filter(p => p !== 'GLOBAL');
+    const pairPills = pairs.map(p => `<span class="w-pair-pill ${p === 'XAUUSD' ? 'xau' : ''}">${p}</span>`).join('');
+    const timeAgo = formatTimeAgo(it.timestamp);
+    const impText = (it.implications && it.implications.length) ? it.implications[0] : '';
+    const linkAttr = it.link ? `href="${it.link}" target="_blank" rel="noopener noreferrer"` : 'href="#"';
+
+    return `
+      <div class="world-feed-item">
+        <div class="w-item-top">
+          <div class="w-item-meta">
+            <span class="w-severity ${sev}">${sev === 'CRITICAL' ? '🔴 CRITICAL' : sev}</span>
+            <span class="w-cat-pill">${cat}</span>
+            <span class="w-source">${it.source || ''}</span>
+          </div>
+          <div class="w-time">${timeAgo}</div>
+        </div>
+        <a class="w-title" ${linkAttr}>${it.title}</a>
+        ${(pairPills || impText) ? `
+          <div class="w-bottom">
+            <div class="w-pairs-row">${pairPills}</div>
+            ${impText ? `<div class="w-implication">⚡ ${impText}</div>` : ''}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  feed.innerHTML = htmlRows;
+}
+
+function formatTimeAgo(ts){
+  if(!ts) return '';
+  const diffSec = Math.floor(Date.now() / 1000) - ts;
+  if(diffSec < 60) return 'Just now';
+  const mins = Math.floor(diffSec / 60);
+  if(mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if(hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function updateWorldTabCounts(){
+  const allCount = ALL_WORLD_ITEMS.length;
+  const marketCount = ALL_WORLD_ITEMS.filter(it => it.impacted_pairs && it.impacted_pairs.some(p => p !== 'GLOBAL')).length;
+  const xauCount = ALL_WORLD_ITEMS.filter(it => it.impacted_pairs && it.impacted_pairs.includes('XAUUSD')).length;
+  const jpyCount = ALL_WORLD_ITEMS.filter(it => it.impacted_pairs && it.impacted_pairs.includes('USDJPY')).length;
+  const eurCount = ALL_WORLD_ITEMS.filter(it => it.impacted_pairs && it.impacted_pairs.includes('EURUSD')).length;
+  const gbpCount = ALL_WORLD_ITEMS.filter(it => it.impacted_pairs && it.impacted_pairs.includes('GBPUSD')).length;
+  const speechCount = ALL_WORLD_ITEMS.filter(it => it.category === 'Speeches').length;
+  const shocksCount = ALL_WORLD_ITEMS.filter(it => it.severity === 'CRITICAL' || it.severity === 'HIGH').length;
+
+  const setCnt = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+  setCnt('wtab-cnt-all', allCount);
+  setCnt('wtab-cnt-market', marketCount);
+  setCnt('wtab-cnt-xau', xauCount);
+  setCnt('wtab-cnt-jpy', jpyCount);
+  setCnt('wtab-cnt-eur', eurCount);
+  setCnt('wtab-cnt-gbp', gbpCount);
+  setCnt('wtab-cnt-speeches', speechCount);
+  setCnt('wtab-cnt-shocks', shocksCount);
+
+  const mainCnt = document.getElementById('world-intel-count');
+  if(mainCnt) mainCnt.textContent = allCount;
+}
+
+async function pollWorldNews(){
+  try{
+    const [newsRes, speechesRes, shocksRes] = await Promise.all([
+      fetch('/api/world_news?limit=250'),
+      fetch('/api/speeches?limit=25'),
+      fetch('/api/geopolitical_shocks?max_age_minutes=120')
+    ]);
+
+    if(newsRes.ok){
+      const data = await newsRes.json();
+      if(Array.isArray(data.items)){
+        ALL_WORLD_ITEMS = data.items;
+        updateWorldTabCounts();
+        renderFilteredWorldNews();
+      }
+    }
+
+    if(speechesRes.ok){
+      const sData = await speechesRes.json();
+      if(Array.isArray(sData.speeches)){
+        ALL_SPEECHES = sData.speeches;
+        renderSpeechSpotlight(ALL_SPEECHES);
+      }
+    }
+
+    if(shocksRes.ok){
+      const shData = await shocksRes.json();
+      if(Array.isArray(shData.shocks)){
+        ACTIVE_SHOCKS = shData.shocks;
+        renderShockBanner(ACTIVE_SHOCKS);
+      }
+    }
+  }catch(e){
+    console.warn('[WorldNews] Poll failed:', e);
+  }
+}
+
 pollMacro();
 poll();
+pollWorldNews();
 setInterval(pollMacro, 10000);
 setInterval(poll, 5000);
+setInterval(pollWorldNews, 15000);
 setInterval(tick, 1000);
 tick();
 </script>

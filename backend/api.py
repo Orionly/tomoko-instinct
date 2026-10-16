@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
+from typing import Optional
 from datetime import datetime, timezone
 
 from core.price_engine import PriceEngine, calculate_currency_strength, sanitize_for_json, safe_float
@@ -32,6 +33,7 @@ from core.performance_tracker import PerformanceTracker
 from core.context_feed import ContextFeed
 from core.macro_intelligence_engine import MacroIntelligenceEngine
 from core.news_engine import NewsEngine, WAITING_SOURCE, _parse_event_time
+from core.world_news_engine import get_world_news_engine
 import config
 
 tracker = PerformanceTracker()
@@ -596,6 +598,50 @@ def get_pair_macro_confluence(symbol: str):
         return sanitize_for_json({"confluence": conf, "matrix": matrix})
     except Exception as e:
         return {"error": str(e), "confluence": {"symbol": symbol, "status": "NEUTRAL", "class": "neut", "rationale": "Offline"}}
+
+
+@app.get("/api/world_news")
+def get_world_news(pair: Optional[str] = None, category: Optional[str] = None, severity: Optional[str] = None, limit: int = 150):
+    """Retrieve categorized world news and geopolitical headlines with pair attribution (30-day rolling archive)."""
+    try:
+        engine = get_world_news_engine()
+        items = engine.get_news(pair=pair, category=category, severity=severity, limit=limit)
+        return sanitize_for_json({
+            "count": len(items),
+            "items": items,
+            "last_update": engine.last_fetch_time.isoformat() if engine.last_fetch_time else None,
+        })
+    except Exception as e:
+        return {"count": 0, "items": [], "error": str(e)}
+
+
+@app.get("/api/speeches")
+def get_speeches(limit: int = 25):
+    """Retrieve executive speech briefs (Powell, Trump, Ueda, Lagarde, Bailey, etc.)."""
+    try:
+        engine = get_world_news_engine()
+        speeches = engine.get_speeches(limit=limit)
+        return sanitize_for_json({
+            "count": len(speeches),
+            "speeches": speeches,
+        })
+    except Exception as e:
+        return {"count": 0, "speeches": [], "error": str(e)}
+
+
+@app.get("/api/geopolitical_shocks")
+def get_geopolitical_shocks(max_age_minutes: int = 60):
+    """Retrieve active critical/high severity geopolitical shocks for sticky floating alert banner."""
+    try:
+        engine = get_world_news_engine()
+        shocks = engine.get_active_shocks(max_age_minutes=max_age_minutes)
+        return sanitize_for_json({
+            "active": len(shocks) > 0,
+            "count": len(shocks),
+            "shocks": shocks,
+        })
+    except Exception as e:
+        return {"active": False, "count": 0, "shocks": [], "error": str(e)}
 
 
 @app.get("/", response_class=HTMLResponse)

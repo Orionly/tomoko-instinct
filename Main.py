@@ -45,6 +45,7 @@ import config
 REQUIRED_FILES = {
     "core/price_engine.py": 500,
     "core/news_engine.py": 500,
+    "core/world_news_engine.py": 500,
     "backend/api.py": 1000,
     "ui/web_dashboard.html": 1000,
 }
