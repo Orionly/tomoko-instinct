@@ -55,7 +55,7 @@ def _ensure_data_feed():
     return pe.connected or len(pe.latest_prices) > 0
 
 
-_ensure_mt5 = _ensure_data_feed
+_ctx_feed = None
 
 
 def get_ctx_feed():
@@ -258,7 +258,7 @@ def _no_data_scan(symbol, reason="NO_DATA"):
 
 
 def _scan(symbol: str, cal=None):
-    if not _ensure_mt5():
+    if not _ensure_data_feed():
         return _no_data_scan(symbol, reason="CONNECTING")
 
     if cal is None:
@@ -420,7 +420,12 @@ def get_context():
             "count": cal.get("count", 0),
         })
     except Exception as e:
-        return {"context": {}, "risk": "NEUTRAL", "session": "LONDON", "error": str(e)}
+        now_dt = datetime.now(timezone.utc)
+        wday = now_dt.weekday()
+        c_min = now_dt.hour * 60 + now_dt.minute
+        is_wk = (wday == 5) or (wday == 4 and c_min >= 1260) or (wday == 6 and c_min < 1260)
+        fallback_session = "WEEKEND CLOSED" if is_wk else "LONDON"
+        return {"context": {}, "risk": "NEUTRAL", "session": fallback_session, "error": str(e)}
 
 
 @app.get("/api/prices")

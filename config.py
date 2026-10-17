@@ -4,20 +4,9 @@ VERSION = "V1-Brain-Scanner-Desktop"
 
 # Mode
 AUTONOMOUS_MODE = True
-ENABLE_EA_SOCKET = False  # Set to True only if using legacy MQL5 EA on port 18001
-EA_SOCKET_HOST = "127.0.0.1"
-EA_SOCKET_PORT = 18001
 
 # Trading Universe (7 pairs)
 PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "EURGBP", "XAUUSD"]
-
-# Broker paths (Optional / Legacy)
-MT5_PATHS = {
-    "VT": r"C:\Program Files\VT Markets (Pty) MT5 Terminal\terminal64.exe",
-    "HFM": r"C:\Program Files\HFM Metatrader 5\terminal64.exe",
-}
-ACTIVE_BROKER = "VT"
-MT5_TERMINAL_PATH = MT5_PATHS.get(ACTIVE_BROKER, "")
 
 
 # Finnhub API Key for Decoupled Live WebSocket

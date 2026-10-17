@@ -140,9 +140,39 @@ class MacroIntelligenceEngine:
     def get_sessions_intelligence(self, vix_price=18.0):
         """
         Calculates session state, pre-market windows, and expected volatility.
+        Includes full calendar day-of-week awareness for global FX market closures.
         """
         now = datetime.now(timezone.utc)
+        weekday = now.weekday()  # 0=Monday, 4=Friday, 5=Saturday, 6=Sunday
         cur_min = now.hour * 60 + now.minute
+
+        # Global FX institutional trading week:
+        # Closes Friday at 21:00 UTC (17:00 EST)
+        # Re-opens Sunday at 21:00 UTC (17:00 EST / Sydney Monday open)
+        is_weekend = (weekday == 5) or (weekday == 4 and cur_min >= 1260) or (weekday == 6 and cur_min < 1260)
+
+        if is_weekend:
+            # Calculate remaining minutes until Sunday 21:00 UTC
+            if weekday == 4:  # Friday post-21:00
+                mins_left = (1440 - cur_min) + 1440 + 1260
+            elif weekday == 5:  # Saturday
+                mins_left = (1440 - cur_min) + 1260
+            else:  # Sunday pre-21:00
+                mins_left = max(0, 1260 - cur_min)
+
+            h = mins_left // 60
+            m = mins_left % 60
+            time_str = f"{h}h {m}m" if m > 0 else f"{h}h"
+            reopen_note = f"Opens Sunday 21:00 UTC (in {time_str})"
+
+            return {
+                "macro_liquidity": f"WEEKEND MARKET CLOSE // OPENS SUN 21:00 UTC ({time_str})",
+                "overlap_active": False,
+                "is_weekend": True,
+                "tokyo": {"state": "CLOSED (WEEKEND)", "volatility": "OFFLINE", "note": reopen_note},
+                "london": {"state": "CLOSED (WEEKEND)", "volatility": "OFFLINE", "note": reopen_note},
+                "new_york": {"state": "CLOSED (WEEKEND)", "volatility": "OFFLINE", "note": reopen_note},
+            }
 
         def format_delta(target_min):
             diff = (target_min - cur_min) % 1440
@@ -220,6 +250,7 @@ class MacroIntelligenceEngine:
         return {
             "macro_liquidity": macro_liquidity,
             "overlap_active": overlap_active,
+            "is_weekend": False,
             "tokyo": {"state": tokyo_state, "volatility": tokyo_vol, "note": tokyo_note},
             "london": {"state": london_state, "volatility": london_vol, "note": london_note},
             "new_york": {"state": ny_state, "volatility": ny_vol, "note": ny_note},
@@ -228,6 +259,7 @@ class MacroIntelligenceEngine:
     def synthesize_macro_insight(self, matrix):
         """
         Synthesizes macro metrics into deterministic, professional decision-support context.
+        Directly connects detected market regime to actionable human trading guidance.
         """
         dxy = matrix.get("DXY", {})
         spx = matrix.get("SPX", {})
@@ -285,9 +317,45 @@ class MacroIntelligenceEngine:
         else:
             oil_impact = "Crude oil stable."
 
-        # 3. Decision Narrative for Human Traders
-        headline = f"10Y Real Yield at {real_yield:.2f}% ({yield_press.lower()} intraday). VIX at {vix_p:.1f} ({vix_chg:+.1f}%)."
-        decision_context = f"{gold_impact} {usd_impact} {oil_impact} S&P shift ({spx_chg:+.2f}%) indicates {'broad risk appetite' if spx_chg > 0 else 'defensive rotation'}."
+        # 3. Dynamic Regime-Driven Narrative
+        now_dt = datetime.now(timezone.utc)
+        wday = now_dt.weekday()
+        c_min = now_dt.hour * 60 + now_dt.minute
+        is_weekend_close = (wday == 5) or (wday == 4 and c_min >= 1260) or (wday == 6 and c_min < 1260)
+
+        if "RISK-OFF" in regime:
+            regime_thesis = (
+                f"Defensive flight-to-safety active under elevated VIX stress ({vix_p:.1f}, {vix_chg:+.1f}%). "
+                "Favors safe-haven resilience in Gold (XAUUSD) and JPY crosses while pressuring high-beta currencies (EUR, GBP). "
+                f"Equities in defensive rotation ({spx_chg:+.2f}%); avoid chasing aggressive intraday breakout momentum."
+            )
+        elif "RISK-ON" in regime:
+            regime_thesis = (
+                f"Broad liquidity expansion active with subdued market volatility (VIX {vix_p:.1f}). "
+                "Favorable macro backdrop supports equity flows and foreign currency relief (EURUSD, GBPUSD). "
+                "Aggressive USD bids softened; Gold driven by liquidity flows rather than crisis hedging."
+            )
+        elif "DOLLAR DOMINANCE" in regime:
+            regime_thesis = (
+                f"Aggressive US rates pressure (US10Y {us10y_chg:+.2f}%) and USD bid (DXY {dxy_chg:+.2f}%) dominating price action. "
+                "Strong macro headwinds for EURUSD, GBPUSD, and Gold upside. USDJPY supported by widening yield differentials."
+            )
+        elif "INFLATION SQUEEZE" in regime:
+            regime_thesis = (
+                f"Energy supply shock (WTI {oil_chg:+.2f}%) fueling bond yield spikes and stagflation friction. "
+                "Pressures energy-dependent currencies (EUR, JPY); supports tangible commodity hedges (XAUUSD)."
+            )
+        else:  # BALANCED / CONSOLIDATION
+            regime_thesis = (
+                "Intermarket forces in neutral consolidation. Yields and risk sentiment lack directional conviction. "
+                "Prioritize technical market structure and key session liquidity levels over aggressive macro momentum."
+            )
+
+        driver_context = f"{gold_impact} {usd_impact} {oil_impact}"
+        decision_context = f"{regime_thesis} {driver_context}".strip()
+
+        prefix = "[WEEKEND BENCHMARK] " if is_weekend_close else ""
+        headline = f"{prefix}10Y Real Yield at {real_yield:.2f}% ({yield_press.lower()} intraday). VIX at {vix_p:.1f} ({vix_chg:+.1f}%)."
 
         return {
             "regime": regime,
@@ -299,7 +367,8 @@ class MacroIntelligenceEngine:
             "usd_impact": usd_impact,
             "oil_impact": oil_impact,
             "yield_pressure": yield_press,
-            "vix_regime": "HIGH" if vix_p > 22 else "LOW" if vix_p < 15 else "NORMAL"
+            "vix_regime": "HIGH" if vix_p > 22 else "LOW" if vix_p < 15 else "NORMAL",
+            "is_weekend": is_weekend_close
         }
 
     def get_pair_macro_confluence(self, symbol, matrix=None, insight=None):

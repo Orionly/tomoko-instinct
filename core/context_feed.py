@@ -72,7 +72,6 @@ def _yf_fetch(ticker):
 class ContextFeed:
     def __init__(self, data_engine=None):
         self.engine = data_engine
-        self.mt5 = data_engine
         self.tickers = {
             "DXY": "DX-Y.NYB",
             "US10Y": "^TNX",
@@ -81,14 +80,6 @@ class ContextFeed:
             "OIL": "CL=F",
             "GOLD": "GC=F",
         }
-
-    def get_mt5_context_symbol(self, name):
-        # Try to get DXY etc from MT5 if broker has them
-        for cand in [name, name + "c", "US30", "SPX500", "VIX"]:
-            tick = mt5.symbol_info_tick(cand)
-            if tick:
-                return cand
-        return None
 
     def get_yfinance_price(self, ticker):
         res = _yf_fetch(ticker)
@@ -102,14 +93,14 @@ class ContextFeed:
 
     def get_context(self):
         result = {}
-        # Try MT5 first for GOLD (since we have XAU), then yfinance fallback
+        # Try live price engine first for GOLD (from XAUUSD), then yfinance fallback
         for key, yf_ticker in self.tickers.items():
             # Special: GOLD we already have from XAUUSD live feed
-            if key == "GOLD":
-                xau_price = self.mt5.get_price("XAUUSD")
+            if key == "GOLD" and self.engine:
+                xau_price = self.engine.get_price("XAUUSD")
                 if xau_price:
                     # Calculate change from daily rates
-                    df = self.mt5.get_rates("XAUUSD", "D1", 5)
+                    df = self.engine.get_rates("XAUUSD", "D1", 5)
                     if not df.empty and len(df) >= 2:
                         prev_close = _safe_num(df.iloc[-2]['close'])
                         last_close = _safe_num(df.iloc[-1]['close'])
@@ -142,11 +133,19 @@ class ContextFeed:
         return "NEUTRAL"
 
     def get_session(self):
-        hour = datetime.now(timezone.utc).hour
+        now = datetime.now(timezone.utc)
+        weekday = now.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+        cur_min = now.hour * 60 + now.minute
+        # Global FX institutional week: closes Friday 21:00 UTC, re-opens Sunday 21:00 UTC
+        is_weekend = (weekday == 5) or (weekday == 4 and cur_min >= 1260) or (weekday == 6 and cur_min < 1260)
+        if is_weekend:
+            return "WEEKEND CLOSED", ""
+
+        hour = now.hour
         if 0 <= hour < 8:
             return "TOKYO", "active" if hour < 2 else ""
         if 8 <= hour < 13:
             return "LONDON", "active"
         if 13 <= hour < 21:
             return "NY", "active"
-        return "SYDNEY", ""
+        return "SYDNEY", "active"

@@ -791,7 +791,14 @@ function updateSessions(sessions){
   }
 
   const liqEl = document.getElementById('macro-liquidity-label');
-  if(liqEl) liqEl.textContent = sessions.macro_liquidity || '';
+  if(liqEl){
+    liqEl.textContent = sessions.macro_liquidity || '';
+    if(sessions.is_weekend){
+      liqEl.style.color = '#F59E0B';
+    } else {
+      liqEl.style.color = '';
+    }
+  }
 }
 
 function renderMacroIntel(data){

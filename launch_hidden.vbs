@@ -1,2 +1,2 @@
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "cmd /c run_tomoko.bat", 0, False
+WshShell.Run "cmd /c start_tomoko.bat", 0, False

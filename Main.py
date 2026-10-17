@@ -17,11 +17,6 @@ Behavior:
 Usage:
   python Main.py            # production (no --reload)
   python Main.py --dev      # development (uvicorn --reload)
-
-Legacy mains were renamed (not deleted):
-  Main.py    -> desktop_legacy.py   (old Tkinter desktop launcher)
-  Tomoko.py  -> web_legacy.py       (old simple uvicorn launcher)
-  Tomoko.bat -> START_HERE_OLD.bat  (old no-supervisor batch launcher)
 """
 
 import os

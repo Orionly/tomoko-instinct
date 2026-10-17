@@ -57,7 +57,6 @@ def _yf_fetch(ticker):
 class IntermarketEngine:
     def __init__(self, data_engine=None):
         self.engine = data_engine
-        self.mt5 = data_engine
         self.tickers = {
             "DXY": "DX-Y.NYB",
             "US10Y": "^TNX",
@@ -69,11 +68,12 @@ class IntermarketEngine:
 
     def get_snapshot(self):
         out = {}
-        # GOLD from real MT5 feed
+        # GOLD from live price feed
         try:
-            g = self.mt5.get_price("XAUUSD")
-            if g:
-                out["GOLD"] = {"price": g['bid'], "chg": 0.0, "dir": "FLAT"}
+            if self.engine:
+                g = self.engine.get_price("XAUUSD")
+                if g:
+                    out["GOLD"] = {"price": g['bid'], "chg": 0.0, "dir": "FLAT"}
         except Exception:
             pass
         # Macro proxies from yfinance (cached 300s, rate-limit once)
