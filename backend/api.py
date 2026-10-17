@@ -109,7 +109,7 @@ def _get_ea_calendar():
 
 
 def _build_news_bar_text(blocking_events, cal):
-    """Global news bar from blocking HIGH events (60min before / 30min after)."""
+    """Global news radar message from blocking HIGH events (60min before / 30min after)."""
     parts, seen = [], set()
     for ev in blocking_events:
         key = (ev.get("time"), ev.get("event"), ev.get("currency"))
@@ -123,12 +123,8 @@ def _build_news_bar_text(blocking_events, cal):
             t = ev.get("time", "")
         parts.append(f"{t} {ev.get('event', '')} [HIGH] AVOID {ev.get('currency', '')}")
     if parts:
-        return " • ".join(parts) + " • Risk: RISK-OFF"
-    src = cal.get("source", "calendar_unavailable")
-    if src == "calendar_unavailable":
-        return f"Calendar unavailable • Risk: RISK-ON"
-    return (f"No HIGH news in 60min • Calendar: {src} ({cal.get('count', 0)} events) "
-            f"• {cal.get('last_update', '')} • Risk: RISK-ON")
+        return "🔴 HIGH NEWS IMPACT: " + " • ".join(parts)
+    return "🟢 NEWS RADAR: Clear • No high-impact releases scheduled in next 60m"
 
 
 def _clamp(v, lo=0, hi=100):

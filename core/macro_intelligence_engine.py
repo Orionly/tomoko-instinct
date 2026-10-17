@@ -323,29 +323,91 @@ class MacroIntelligenceEngine:
         c_min = now_dt.hour * 60 + now_dt.minute
         is_weekend_close = (wday == 5) or (wday == 4 and c_min >= 1260) or (wday == 6 and c_min < 1260)
 
+        vix_status = "ELEVATED" if (vix_p >= 20.0 or vix_chg > 4.0) else "LOW" if vix_p < 15.0 else "NORMAL"
+
         if "RISK-OFF" in regime:
+            playbook = "Buy Gold pullbacks; avoid chasing breakout momentum on high-beta EUR & GBP."
+            asset_biases = [
+                {"asset": "XAUUSD", "bias": "BULL", "reason": "Safe-haven resilience & yield softening"},
+                {"asset": "JPY", "bias": "BULL", "reason": "Defensive flight-to-safety flows"},
+                {"asset": "EUR / GBP", "bias": "BEAR", "reason": "High-beta equities under rotation"},
+                {"asset": "USD", "bias": "NEUT", "reason": "Softening real yields cap dollar upside"},
+            ]
+            driver_bullets = [
+                {"label": "VIX Volatility", "val": f"{vix_p:.1f} ({vix_chg:+.1f}%)", "tone": "stress"},
+                {"label": "10Y Real Yield", "val": f"{real_yield:.2f}% ({yield_press.lower()})", "tone": "good" if yield_press == "FALLING" else "warn"},
+                {"label": "Equity Tone", "val": f"S&P 500 {spx_chg:+.2f}%", "tone": "stress"},
+            ]
             regime_thesis = (
                 f"Defensive flight-to-safety active under elevated VIX stress ({vix_p:.1f}, {vix_chg:+.1f}%). "
                 "Favors safe-haven resilience in Gold (XAUUSD) and JPY crosses while pressuring high-beta currencies (EUR, GBP). "
                 f"Equities in defensive rotation ({spx_chg:+.2f}%); avoid chasing aggressive intraday breakout momentum."
             )
         elif "RISK-ON" in regime:
+            playbook = "Favor equity & foreign currency dip buys (EUR, GBP); fade safe-haven spikes."
+            asset_biases = [
+                {"asset": "EURUSD", "bias": "BULL", "reason": "Risk appetite & non-dollar relief"},
+                {"asset": "GBPUSD", "bias": "BULL", "reason": "Broad market liquidity expansion"},
+                {"asset": "XAUUSD", "bias": "NEUT", "reason": "Driven by flow rather than crisis bid"},
+                {"asset": "USD", "bias": "BEAR", "reason": "Capital rotating into risk-on assets"},
+            ]
+            driver_bullets = [
+                {"label": "VIX Volatility", "val": f"{vix_p:.1f} ({vix_chg:+.1f}%)", "tone": "good"},
+                {"label": "10Y Real Yield", "val": f"{real_yield:.2f}% ({yield_press.lower()})", "tone": "neutral"},
+                {"label": "Equity Tone", "val": f"S&P 500 {spx_chg:+.2f}%", "tone": "good"},
+            ]
             regime_thesis = (
                 f"Broad liquidity expansion active with subdued market volatility (VIX {vix_p:.1f}). "
                 "Favorable macro backdrop supports equity flows and foreign currency relief (EURUSD, GBPUSD). "
                 "Aggressive USD bids softened; Gold driven by liquidity flows rather than crisis hedging."
             )
         elif "DOLLAR DOMINANCE" in regime:
+            playbook = "Sell EURUSD & GBPUSD rallies; favor USDJPY longs on shallow pullbacks."
+            asset_biases = [
+                {"asset": "USD", "bias": "BULL", "reason": "Aggressive rates & DXY momentum dominating"},
+                {"asset": "USDJPY", "bias": "BULL", "reason": "Widening bond yield differentials"},
+                {"asset": "EURUSD", "bias": "BEAR", "reason": "Persistent dollar strength headwinds"},
+                {"asset": "XAUUSD", "bias": "BEAR", "reason": "Rising real yield opportunity cost"},
+            ]
+            driver_bullets = [
+                {"label": "Dollar Index", "val": f"DXY {dxy_chg:+.2f}%", "tone": "stress"},
+                {"label": "US 10Y Yield", "val": f"{us10y.get('price', 0):.2f}% ({us10y_chg:+.2f}%)", "tone": "stress"},
+                {"label": "10Y Real Yield", "val": f"{real_yield:.2f}% (rising)", "tone": "stress"},
+            ]
             regime_thesis = (
                 f"Aggressive US rates pressure (US10Y {us10y_chg:+.2f}%) and USD bid (DXY {dxy_chg:+.2f}%) dominating price action. "
                 "Strong macro headwinds for EURUSD, GBPUSD, and Gold upside. USDJPY supported by widening yield differentials."
             )
         elif "INFLATION SQUEEZE" in regime:
+            playbook = "Prioritize Gold (XAUUSD) hedges; exercise caution on energy-dependent EUR & JPY."
+            asset_biases = [
+                {"asset": "XAUUSD", "bias": "BULL", "reason": "Tangible hedge against headline CPI friction"},
+                {"asset": "EURUSD", "bias": "BEAR", "reason": "Energy terms-of-trade degradation"},
+                {"asset": "USDJPY", "bias": "BULL", "reason": "Energy import cost pressure on Yen"},
+                {"asset": "WTI OIL", "bias": "BULL", "reason": "Crude momentum fueling cost spikes"},
+            ]
+            driver_bullets = [
+                {"label": "WTI Crude Oil", "val": f"${oil.get('price', 0):.2f} ({oil_chg:+.2f}%)", "tone": "stress"},
+                {"label": "Inflation Outlook", "val": "Stagflationary friction", "tone": "warn"},
+                {"label": "Gold Hedge", "val": "Supported by tangible demand", "tone": "good"},
+            ]
             regime_thesis = (
                 f"Energy supply shock (WTI {oil_chg:+.2f}%) fueling bond yield spikes and stagflation friction. "
                 "Pressures energy-dependent currencies (EUR, JPY); supports tangible commodity hedges (XAUUSD)."
             )
         else:  # BALANCED / CONSOLIDATION
+            playbook = "Focus on session liquidity extremes and key structure; avoid chasing macro breakouts."
+            asset_biases = [
+                {"asset": "XAUUSD", "bias": "NEUT", "reason": "Consolidating within intraday ATR bounds"},
+                {"asset": "EURUSD", "bias": "NEUT", "reason": "Respecting technical range extremes"},
+                {"asset": "GBPUSD", "bias": "NEUT", "reason": "Balanced order flow ahead of catalysts"},
+                {"asset": "USDJPY", "bias": "NEUT", "reason": "Yields holding steady channel"},
+            ]
+            driver_bullets = [
+                {"label": "Market Volatility", "val": f"VIX {vix_p:.1f} (normal)", "tone": "neutral"},
+                {"label": "10Y Real Yield", "val": f"{real_yield:.2f}% (steady)", "tone": "neutral"},
+                {"label": "Trend Conviction", "val": "Consolidation mode", "tone": "neutral"},
+            ]
             regime_thesis = (
                 "Intermarket forces in neutral consolidation. Yields and risk sentiment lack directional conviction. "
                 "Prioritize technical market structure and key session liquidity levels over aggressive macro momentum."
@@ -363,11 +425,14 @@ class MacroIntelligenceEngine:
             "color": color,
             "headline": headline,
             "decision_context": decision_context,
+            "playbook": playbook,
+            "asset_biases": asset_biases,
+            "driver_bullets": driver_bullets,
             "gold_impact": gold_impact,
             "usd_impact": usd_impact,
             "oil_impact": oil_impact,
             "yield_pressure": yield_press,
-            "vix_regime": "HIGH" if vix_p > 22 else "LOW" if vix_p < 15 else "NORMAL",
+            "vix_regime": vix_status,
             "is_weekend": is_weekend_close
         }
 

@@ -55,81 +55,461 @@
   #live-time{ color:#9CA3AF; }
 
   /* ================== MACRO DECISION COCKPIT ================== */
-  #macro-cockpit{
-    margin:12px 16px 0;
-    background:linear-gradient(180deg, rgba(14,20,32,0.85), rgba(10,14,22,0.85));
-    border:1px solid var(--border);
-    border-radius:14px;
-    padding:14px 16px;
-    backdrop-filter:blur(12px);
-    box-shadow:0 8px 32px rgba(0,0,0,0.4);
+  /* ================== MACRO DECISION COCKPIT ================== */
+  #macro-cockpit {
+    margin: 12px 16px 0;
+    background: linear-gradient(180deg, rgba(16, 24, 40, 0.94) 0%, rgba(9, 13, 22, 0.96) 100%);
+    border: 1px solid rgba(0, 229, 255, 0.22);
+    border-radius: 14px;
+    padding: 16px 18px;
+    backdrop-filter: blur(16px);
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.7), 0 0 25px -5px rgba(0, 229, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    position: relative;
+    overflow: hidden;
   }
-  .cockpit-header{
-    display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;
-    font-family:'JetBrains Mono',monospace; font-size:11px; flex-wrap:wrap; gap:8px;
-  }
-  .cockpit-title{
-    color:var(--cyan); font-weight:800; letter-spacing:.12em; text-transform:uppercase;
-    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-  }
-  .cockpit-badge{
-    font-size:10px; padding:2px 8px; border-radius:4px; font-weight:700; white-space:nowrap;
-  }
-
-  .macro-grid{
-    display:grid; grid-template-columns:repeat(6, 1fr); gap:10px; margin-bottom:12px;
-  }
-  @media(max-width:1200px){ .macro-grid{ grid-template-columns:repeat(3, 1fr); } }
-  @media(max-width:700px){ .macro-grid{ grid-template-columns:repeat(2, 1fr); gap:8px; } }
-  @media(max-width:480px){
-    #macro-cockpit{ margin:8px 10px 0; padding:10px 12px; }
-    .macro-card{ padding:8px 10px; }
-    .mc-val{ font-size:14px; }
+  #macro-cockpit::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.7), transparent);
+    pointer-events: none;
   }
 
-  .macro-card{
-    background:rgba(18,24,36,0.65); border:1px solid var(--border); border-radius:10px;
-    padding:10px 12px; transition:border-color .15s, transform .15s;
+  .cockpit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    flex-wrap: wrap;
+    gap: 8px;
   }
-  .macro-card:hover{ border-color:rgba(0,229,255,0.4); transform:translateY(-1px); }
-  .mc-sym{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:var(--muted); margin-bottom:4px; display:flex; justify-content:space-between; }
-  .mc-val{ font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:800; color:var(--text); }
-  .mc-chg{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; margin-top:2px; }
-  .mc-sub{ font-family:'JetBrains Mono',monospace; font-size:9.5px; color:#9CA3AF; margin-top:4px; line-height:1.3; }
-
-  .insight-box{
-    background:rgba(12,17,27,0.75); border:1px solid #1E283C; border-radius:10px;
-    padding:12px 14px; display:flex; flex-direction:column; gap:6px;
+  .cockpit-title {
+    color: var(--cyan);
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 12.5px;
+    text-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
   }
-  .insight-top{ display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
-  .regime-pill{
-    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:800;
-    padding:4px 10px; border-radius:6px; letter-spacing:.05em; display:inline-flex; align-items:center; gap:6px;
+  .cockpit-badge {
+    font-size: 9.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    white-space: nowrap;
+    background: rgba(0, 229, 255, 0.12);
+    color: var(--cyan);
+    border: 1px solid rgba(0, 229, 255, 0.3);
   }
-  .regime-pill.bull{ background:rgba(0,255,136,0.15); color:var(--bull); border:1px solid rgba(0,255,136,0.4); }
-  .regime-pill.bear{ background:rgba(255,77,77,0.15); color:var(--red); border:1px solid rgba(255,77,77,0.4); }
-  .regime-pill.neut{ background:rgba(255,184,0,0.15); color:var(--gold); border:1px solid rgba(255,184,0,0.4); }
-
-  .insight-headline{ font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#F3F4F6; }
-  .insight-desc{ font-family:'Inter',sans-serif; font-size:11.5px; color:#94A3B8; line-height:1.5; }
-
-  .sessions-strip{
-    display:flex; gap:12px; margin-top:10px; padding-top:10px; border-top:1px solid rgba(26,34,52,0.8);
-    font-family:'JetBrains Mono',monospace; font-size:10.5px; flex-wrap:wrap; align-items:center;
+  .cockpit-sync {
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
   }
-  .sess-tag{ display:inline-flex; align-items:center; gap:6px; color:#94A3B8; }
-  .sess-tag b{ color:var(--text); }
-  .sess-tag.active b{ color:var(--cyan); }
-  .sess-status{ font-size:9.5px; padding:1px 6px; border-radius:4px; font-weight:700; }
-  .sess-status.act{ background:rgba(0,229,255,0.15); color:var(--cyan); border:1px solid rgba(0,229,255,0.3); }
-  .sess-status.pre{ background:rgba(255,184,0,0.12); color:var(--gold); border:1px solid rgba(255,184,0,0.3); }
-  .sess-status.cls{ background:rgba(113,113,122,0.15); color:#71717A; border:1px solid rgba(113,113,122,0.25); }
+  .cockpit-sync .sync-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #00FF88;
+    box-shadow: 0 0 8px #00FF88;
+    display: inline-block;
+    animation: pulseDot 2s infinite;
+  }
 
-  #news-bar{ margin:10px 16px 0; padding:7px 16px; font-family:'JetBrains Mono',monospace; font-size:11px;
-    color:var(--gold); border:1px solid var(--border); border-radius:8px; background:rgba(20,28,44,0.5); }
-  #news-bar.clean{ color:#9CA3AF; }
-  #news-bar.amber{ color:#FFB800; font-weight:700; }
-  #news-bar.block{ color:#FF4D4D; font-weight:700; }
+  .macro-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 1200px) { .macro-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 700px) { .macro-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; } }
+  @media (max-width: 480px) {
+    #macro-cockpit { margin: 8px 10px 0; padding: 12px 12px; }
+    .macro-card { padding: 10px; }
+    .mc-val { font-size: 16px; }
+  }
+
+  .macro-card {
+    background: linear-gradient(180deg, rgba(22, 30, 48, 0.7) 0%, rgba(12, 17, 28, 0.8) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 12px 14px;
+    transition: all .2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 12px rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+  }
+  .macro-card:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  /* Distinct Asset Top Accents */
+  #mc-dxy { border-top: 2px solid #00E5FF; }
+  #mc-us10y { border-top: 2px solid #818CF8; }
+  #mc-tips { border-top: 2px solid #38BDF8; background: linear-gradient(180deg, rgba(14, 35, 55, 0.7) 0%, rgba(10, 19, 32, 0.8) 100%); }
+  #mc-oil { border-top: 2px solid #F59E0B; }
+  #mc-spx { border-top: 2px solid #A78BFA; }
+  #mc-vix { border-top: 2px solid #FF5A79; }
+
+  /* VIX Alert Pulse */
+  .macro-card.vix-alert {
+    border-color: rgba(255, 90, 121, 0.5);
+    background: linear-gradient(180deg, rgba(50, 14, 25, 0.75) 0%, rgba(20, 8, 14, 0.85) 100%);
+    box-shadow: 0 0 15px rgba(255, 90, 121, 0.25), inset 0 1px 0 rgba(255, 90, 121, 0.3);
+    animation: vixStressGlow 3s infinite ease-in-out;
+  }
+  @keyframes vixStressGlow {
+    0%, 100% { box-shadow: 0 0 12px rgba(255, 90, 121, 0.2); }
+    50% { box-shadow: 0 0 22px rgba(255, 90, 121, 0.45); }
+  }
+
+  .mc-sym {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .mc-sym-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mc-icon {
+    font-size: 13px;
+  }
+  .mc-trend-badge {
+    font-size: 9px;
+    font-weight: 800;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--muted);
+  }
+
+  .mc-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px;
+    font-weight: 800;
+    color: #FFFFFF;
+    letter-spacing: -0.02em;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.12);
+    margin-bottom: 6px;
+  }
+  #mc-tips .mc-val { color: var(--cyan); text-shadow: 0 0 12px rgba(0, 229, 255, 0.35); }
+
+  .mc-chg-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mc-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .mc-pill.up {
+    background: rgba(0, 255, 136, 0.14);
+    color: #00FF88;
+    border: 1px solid rgba(0, 255, 136, 0.3);
+  }
+  .mc-pill.down {
+    background: rgba(255, 90, 121, 0.14);
+    color: #FF5A79;
+    border: 1px solid rgba(255, 90, 121, 0.3);
+  }
+  .mc-pill.stress {
+    background: rgba(239, 68, 68, 0.2);
+    color: #FCA5A5;
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+  }
+  .mc-pill.cyan {
+    background: rgba(0, 229, 255, 0.14);
+    color: var(--cyan);
+    border: 1px solid rgba(0, 229, 255, 0.3);
+  }
+  .mc-pill.neut {
+    background: rgba(255, 184, 0, 0.14);
+    color: var(--gold);
+    border: 1px solid rgba(255, 184, 0, 0.3);
+  }
+
+  .mc-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: #94A3B8;
+    margin-top: 6px;
+    line-height: 1.3;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ================== MACRO EXECUTIVE DECK ================== */
+  .macro-exec-deck {
+    display: grid;
+    grid-template-columns: 1fr 1.35fr 1fr;
+    gap: 12px;
+    margin-top: 10px;
+    align-items: stretch;
+  }
+  @media (max-width: 1050px) {
+    .macro-exec-deck {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+  }
+
+  .exec-card {
+    background: rgba(12, 17, 27, 0.75);
+    border: 1px solid #1E283C;
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .exec-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding-bottom: 6px;
+    margin-bottom: 2px;
+  }
+  .exec-card-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: 0.05em;
+  }
+  .exec-subtag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.04);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  /* Card 1: Regime & Drivers */
+  .regime-pill-large {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 800;
+    padding: 6px 12px;
+    border-radius: 6px;
+    letter-spacing: .06em;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+    justify-content: center;
+    width: 100%;
+  }
+  .regime-pill-large.bull {
+    background: rgba(0, 255, 136, 0.15); color: var(--bull); border: 1px solid rgba(0, 255, 136, 0.4);
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+  }
+  .regime-pill-large.bear {
+    background: rgba(255, 77, 77, 0.15); color: var(--red); border: 1px solid rgba(255, 77, 77, 0.4);
+    box-shadow: 0 0 10px rgba(255, 77, 77, 0.2);
+  }
+  .regime-pill-large.neut {
+    background: rgba(255, 184, 0, 0.15); color: var(--gold); border: 1px solid rgba(255, 184, 0, 0.4);
+    box-shadow: 0 0 10px rgba(255, 184, 0, 0.2);
+  }
+
+  .driver-bullets-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 4px;
+  }
+  .driver-bullet-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .driver-bullet-lbl { color: #94A3B8; }
+  .driver-bullet-val { font-weight: 700; color: #F3F4F6; }
+  .driver-bullet-val.stress { color: #FF5A79; }
+  .driver-bullet-val.good { color: #00FF88; }
+  .driver-bullet-val.warn { color: #FFB800; }
+
+  /* Card 2: Asset Biases & Playbook */
+  .asset-biases-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  @media (max-width: 600px) {
+    .asset-biases-grid { grid-template-columns: 1fr; }
+  }
+  .asset-bias-pill {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 5px;
+    padding: 5px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .bias-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .bias-asset { font-weight: 800; font-size: 11px; color: #fff; }
+  .bias-tag { font-size: 9.5px; font-weight: 800; padding: 1px 5px; border-radius: 3px; }
+  .bias-tag.bull { background: rgba(0, 255, 136, 0.16); color: #00FF88; border: 1px solid rgba(0, 255, 136, 0.3); }
+  .bias-tag.bear { background: rgba(255, 90, 121, 0.16); color: #FF5A79; border: 1px solid rgba(255, 90, 121, 0.3); }
+  .bias-tag.neut { background: rgba(255, 184, 0, 0.16); color: #FFB800; border: 1px solid rgba(255, 184, 0, 0.3); }
+  .bias-reason {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: #94A3B8;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .playbook-banner {
+    background: linear-gradient(90deg, rgba(0, 229, 255, 0.08), rgba(99, 102, 241, 0.08));
+    border: 1px solid rgba(0, 229, 255, 0.3);
+    border-radius: 6px;
+    padding: 6px 10px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .playbook-icon { font-size: 13px; line-height: 1.3; }
+  .playbook-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #E2E8F0;
+    line-height: 1.35;
+  }
+  .playbook-text b { color: var(--cyan); }
+
+  /* Card 3: Sessions & News Radar */
+  .sessions-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .sess-tag-box {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 5px;
+    padding: 5px 6px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .sess-tag-box.act {
+    border-color: rgba(0, 229, 255, 0.35);
+    background: rgba(0, 229, 255, 0.06);
+  }
+  .sess-tag-box .sess-name {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 2px;
+  }
+  .sess-tag-box.act .sess-name { color: var(--cyan); }
+  .sess-tag-box .sess-state {
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .sess-tag-box .sess-state.act { background: rgba(0, 229, 255, 0.15); color: var(--cyan); }
+  .sess-tag-box .sess-state.pre { background: rgba(255, 184, 0, 0.15); color: var(--gold); }
+  .sess-tag-box .sess-state.cls { background: rgba(113, 113, 122, 0.15); color: #71717A; }
+
+  .liquidity-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+  }
+  .liquidity-val {
+    font-weight: 700;
+    color: var(--cyan);
+  }
+
+  .news-radar-box {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+  }
+  .news-radar-box.clear {
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #86efac;
+    background: rgba(34, 197, 94, 0.06);
+  }
+  .news-radar-box.alert {
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.1);
+    font-weight: 700;
+  }
 
   #api-banner{ margin:10px 16px 0; padding:8px 16px; font-family:'JetBrains Mono',monospace; font-size:12px;
     font-weight:700; color:#fff; background:#FF4D4D; border:1px solid var(--border); border-radius:8px;
@@ -1017,81 +1397,205 @@
   <div id="macro-cockpit">
     <div class="cockpit-header">
       <div class="cockpit-title">
-        <span>⚡ MACRO ENVIRONMENT COCKPIT</span>
-        <span class="cockpit-badge" style="background:rgba(0,229,255,0.12);color:var(--cyan);border:1px solid rgba(0,229,255,0.3);">DECISION SUPPORT ONLY</span>
+        <span>⚡ GLOBAL MACRO INTELLIGENCE RADAR</span>
+        <span class="cockpit-badge">6 INTERMARKET PILLARS</span>
       </div>
-      <div style="color:var(--muted);" id="macro-sync-time">SYNC: --:--:--</div>
+      <div class="cockpit-sync">
+        <span class="sync-dot"></span>
+        <span>FEED SYNC: <span id="macro-sync-time">--:--:--</span></span>
+      </div>
     </div>
 
     <!-- 6 Core Macro Pillars -->
     <div class="macro-grid" id="macro-grid">
       <!-- DXY -->
       <div class="macro-card" id="mc-dxy">
-        <div class="mc-sym"><span>DXY</span><span class="mc-trend" id="dxy-trend">—</span></div>
+        <div class="mc-sym">
+          <span class="mc-sym-left"><span class="mc-icon">💵</span><span>DXY</span></span>
+          <span class="mc-trend-badge" id="dxy-trend">—</span>
+        </div>
         <div class="mc-val" id="dxy-val">—</div>
-        <div class="mc-chg" id="dxy-chg">—</div>
-        <div class="mc-sub">US Dollar Index</div>
+        <div class="mc-chg-row">
+          <span class="mc-pill down" id="dxy-pill">—</span>
+        </div>
+        <div class="mc-sub">
+          <span>US Dollar Index</span>
+          <span id="dxy-sub">Global Reserve</span>
+        </div>
       </div>
       <!-- US10Y -->
       <div class="macro-card" id="mc-us10y">
-        <div class="mc-sym"><span>US 10Y</span><span class="mc-trend" id="us10y-trend">—</span></div>
+        <div class="mc-sym">
+          <span class="mc-sym-left"><span class="mc-icon">📈</span><span>US 10Y</span></span>
+          <span class="mc-trend-badge" id="us10y-trend">—</span>
+        </div>
         <div class="mc-val" id="us10y-val">—</div>
-        <div class="mc-chg" id="us10y-chg">—</div>
-        <div class="mc-sub">Nominal Yield</div>
+        <div class="mc-chg-row">
+          <span class="mc-pill up" id="us10y-pill">—</span>
+        </div>
+        <div class="mc-sub">
+          <span>Nominal Yield</span>
+          <span id="us10y-sub">Sovereign Benchmark</span>
+        </div>
       </div>
       <!-- 10Y TIPS HYBRID -->
-      <div class="macro-card" id="mc-tips" style="border-color:rgba(0,229,255,0.3); background:rgba(0,229,255,0.04);">
-        <div class="mc-sym"><span style="color:var(--cyan)">10Y TIPS (REAL)</span><span class="mc-trend" id="tips-trend">—</span></div>
-        <div class="mc-val" id="tips-val" style="color:var(--cyan)">—</div>
-        <div class="mc-chg" id="tips-press">—</div>
-        <div class="mc-sub" id="tips-sub">Benchmark Yield (FRED)</div>
+      <div class="macro-card" id="mc-tips">
+        <div class="mc-sym">
+          <span class="mc-sym-left"><span class="mc-icon">💎</span><span style="color:var(--cyan)">10Y TIPS (REAL)</span></span>
+          <span class="mc-trend-badge" id="tips-trend">—</span>
+        </div>
+        <div class="mc-val" id="tips-val">—</div>
+        <div class="mc-chg-row">
+          <span class="mc-pill cyan" id="tips-pill">—</span>
+        </div>
+        <div class="mc-sub">
+          <span id="tips-sub">Benchmark Yield (FRED)</span>
+        </div>
       </div>
       <!-- WTI OIL -->
       <div class="macro-card" id="mc-oil">
-        <div class="mc-sym"><span>WTI OIL</span><span class="mc-trend" id="oil-trend">—</span></div>
+        <div class="mc-sym">
+          <span class="mc-sym-left"><span class="mc-icon">🛢️</span><span>WTI OIL</span></span>
+          <span class="mc-trend-badge" id="oil-trend">—</span>
+        </div>
         <div class="mc-val" id="oil-val">—</div>
-        <div class="mc-chg" id="oil-chg">—</div>
-        <div class="mc-sub">Crude Oil (CL=F)</div>
+        <div class="mc-chg-row">
+          <span class="mc-pill up" id="oil-pill">—</span>
+        </div>
+        <div class="mc-sub">
+          <span>Crude Oil (CL=F)</span>
+          <span id="oil-sub">Energy Shock</span>
+        </div>
       </div>
       <!-- S&P 500 -->
       <div class="macro-card" id="mc-spx">
-        <div class="mc-sym"><span>S&P 500</span><span class="mc-trend" id="spx-trend">—</span></div>
+        <div class="mc-sym">
+          <span class="mc-sym-left"><span class="mc-icon">📊</span><span>S&P 500</span></span>
+          <span class="mc-trend-badge" id="spx-trend">—</span>
+        </div>
         <div class="mc-val" id="spx-val">—</div>
-        <div class="mc-chg" id="spx-chg">—</div>
-        <div class="mc-sub">US Equity Benchmark</div>
+        <div class="mc-chg-row">
+          <span class="mc-pill down" id="spx-pill">—</span>
+        </div>
+        <div class="mc-sub">
+          <span>US Equity Benchmark</span>
+          <span id="spx-sub">Risk Appetite</span>
+        </div>
       </div>
       <!-- VIX -->
       <div class="macro-card" id="mc-vix">
-        <div class="mc-sym"><span>VIX</span><span class="mc-trend" id="vix-trend">—</span></div>
+        <div class="mc-sym">
+          <span class="mc-sym-left"><span class="mc-icon">⚠️</span><span>VIX INDEX</span></span>
+          <span class="mc-trend-badge" id="vix-trend">—</span>
+        </div>
         <div class="mc-val" id="vix-val">—</div>
-        <div class="mc-chg" id="vix-chg">—</div>
-        <div class="mc-sub">Volatility Index</div>
+        <div class="mc-chg-row">
+          <span class="mc-pill stress" id="vix-pill">—</span>
+        </div>
+        <div class="mc-sub">
+          <span>Volatility Index</span>
+          <span id="vix-sub">Fear Gauge</span>
+        </div>
       </div>
     </div>
 
-    <!-- Macro Regime & Human Insight Box -->
-    <div class="insight-box">
-      <div class="insight-top">
-        <div class="regime-pill" id="regime-pill">REGIME: LOADING...</div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);" id="regime-sub">—</div>
+    <!-- 3-CARD MACRO EXECUTIVE DECK -->
+    <div class="macro-exec-deck" id="macro-exec-deck">
+      <!-- CARD 1: REGIME & KEY DRIVERS -->
+      <div class="exec-card" id="macro-col-regime">
+        <div class="exec-card-header">
+          <div class="exec-card-title">
+            <span>🛡️</span>
+            <span>REGIME & ENVIRONMENT</span>
+          </div>
+          <span class="exec-subtag" id="regime-sub">SYNTHESIZING</span>
+        </div>
+        <div>
+          <div class="regime-pill-large neut" id="regime-pill">REGIME: EVALUATING...</div>
+        </div>
+        <div class="driver-bullets-list" id="regime-drivers-list">
+          <div class="driver-bullet-item">
+            <span class="driver-bullet-lbl">Market Volatility:</span>
+            <span class="driver-bullet-val" id="drv-vix">—</span>
+          </div>
+          <div class="driver-bullet-item">
+            <span class="driver-bullet-lbl">10Y Real Yield:</span>
+            <span class="driver-bullet-val" id="drv-tips">—</span>
+          </div>
+          <div class="driver-bullet-item">
+            <span class="driver-bullet-lbl">Equity Benchmark:</span>
+            <span class="driver-bullet-val" id="drv-spx">—</span>
+          </div>
+        </div>
       </div>
-      <div class="insight-headline" id="insight-headline">Evaluating multi-asset yields and risk appetite...</div>
-      <div class="insight-desc" id="insight-desc">Real yield and correlation engines synthesizing. Human decision-support context will appear here.</div>
-    </div>
 
-    <!-- Active Sessions Strip -->
-    <div class="sessions-strip" id="sessions-strip">
-      <div class="sess-tag" id="sess-tokyo"><span>TOKYO</span><span class="sess-status" id="tokyo-status">--</span></div>
-      <span style="opacity:0.3">•</span>
-      <div class="sess-tag" id="sess-london"><span>LONDON</span><span class="sess-status" id="london-status">--</span></div>
-      <span style="opacity:0.3">•</span>
-      <div class="sess-tag" id="sess-ny"><span>NEW YORK</span><span class="sess-status" id="ny-status">--</span></div>
-      <span style="opacity:0.3">•</span>
-      <div style="color:var(--muted);font-size:10.5px;">Liquidity: <span id="macro-liquidity-label" style="color:var(--cyan);font-weight:700;">MODERATE ASIAN SESSION</span></div>
+      <!-- CARD 2: ASSET IMPACT & PLAYBOOK -->
+      <div class="exec-card" id="macro-col-playbook">
+        <div class="exec-card-header">
+          <div class="exec-card-title">
+            <span>🎯</span>
+            <span>ASSET FLOWS & ACTION PLAYBOOK</span>
+          </div>
+          <span class="exec-subtag">TACTICAL BIAS</span>
+        </div>
+        <div class="asset-biases-grid" id="macro-asset-biases">
+          <div class="asset-bias-pill">
+            <div class="bias-top"><span class="bias-asset">XAUUSD</span><span class="bias-tag neut">EVAL</span></div>
+            <div class="bias-reason">Analyzing yield & safe-haven flow...</div>
+          </div>
+          <div class="asset-bias-pill">
+            <div class="bias-top"><span class="bias-asset">EUR / GBP</span><span class="bias-tag neut">EVAL</span></div>
+            <div class="bias-reason">Analyzing beta & risk sentiment...</div>
+          </div>
+          <div class="asset-bias-pill">
+            <div class="bias-top"><span class="bias-asset">USD</span><span class="bias-tag neut">EVAL</span></div>
+            <div class="bias-reason">Analyzing rate differentials...</div>
+          </div>
+          <div class="asset-bias-pill">
+            <div class="bias-top"><span class="bias-asset">JPY</span><span class="bias-tag neut">EVAL</span></div>
+            <div class="bias-reason">Analyzing safe-haven resilience...</div>
+          </div>
+        </div>
+        <div class="playbook-banner">
+          <span class="playbook-icon">⚡</span>
+          <div class="playbook-text" id="macro-playbook-text"><b>PLAYBOOK:</b> Synthesizing real yield and volatility catalysts...</div>
+        </div>
+      </div>
+
+      <!-- CARD 3: SESSIONS & NEWS RADAR -->
+      <div class="exec-card" id="macro-col-sessions">
+        <div class="exec-card-header">
+          <div class="exec-card-title">
+            <span>⏱️</span>
+            <span>SESSIONS & NEWS RADAR</span>
+          </div>
+          <span class="exec-subtag" id="macro-sync-badge">LIVE RADAR</span>
+        </div>
+        <div class="sessions-row">
+          <div class="sess-tag-box" id="sess-box-tokyo">
+            <span class="sess-name">TOKYO</span>
+            <span class="sess-state cls" id="tokyo-status">--</span>
+          </div>
+          <div class="sess-tag-box" id="sess-box-london">
+            <span class="sess-name">LONDON</span>
+            <span class="sess-state cls" id="london-status">--</span>
+          </div>
+          <div class="sess-tag-box" id="sess-box-ny">
+            <span class="sess-name">NEW YORK</span>
+            <span class="sess-state cls" id="ny-status">--</span>
+          </div>
+        </div>
+        <div class="liquidity-line">
+          <span>MARKET LIQUIDITY:</span>
+          <span class="liquidity-val" id="macro-liquidity-label">MODERATE</span>
+        </div>
+        <div class="news-radar-box clear" id="macro-news-radar">
+          <span id="news-radar-icon">🟢</span>
+          <span id="news-radar-text" style="flex:1;">NEWS RADAR: Clear (No high-impact releases in 60m)</span>
+        </div>
+      </div>
     </div>
   </div>
-
-  <div id="news-bar" class="clean">SESSION: <span id="session">--</span> • <span id="news-next">loading…</span></div>
 
   <main>
     <div id="grid-wrap">
@@ -1394,35 +1898,30 @@ function updateSessions(sessions){
   const lon = sessions.london || {};
   const ny = sessions.new_york || {};
   
-  const tokEl = document.getElementById('tokyo-status');
-  if(tokEl){
-    tokEl.textContent = tok.state || '--';
-    tokEl.className = 'sess-status ' + (tok.state && tok.state.startsWith('ACTIVE') ? 'act' : tok.state && tok.state.startsWith('PRE') ? 'pre' : 'cls');
-    tokEl.title = tok.note || '';
-  }
+  const updateBox = (boxId, statusId, s) => {
+    const box = document.getElementById(boxId);
+    const el = document.getElementById(statusId);
+    if(el){
+      const stateStr = s.state || '--';
+      el.textContent = stateStr;
+      const isAct = stateStr.startsWith('ACTIVE');
+      const isPre = stateStr.startsWith('PRE');
+      el.className = 'sess-state ' + (isAct ? 'act' : isPre ? 'pre' : 'cls');
+      el.title = s.note || '';
+      if(box){
+        box.className = 'sess-tag-box ' + (isAct ? 'act' : '');
+      }
+    }
+  };
 
-  const lonEl = document.getElementById('london-status');
-  if(lonEl){
-    lonEl.textContent = lon.state || '--';
-    lonEl.className = 'sess-status ' + (lon.state && lon.state.startsWith('ACTIVE') ? 'act' : lon.state && lon.state.startsWith('PRE') ? 'pre' : 'cls');
-    lonEl.title = lon.note || '';
-  }
-
-  const nyEl = document.getElementById('ny-status');
-  if(nyEl){
-    nyEl.textContent = ny.state || '--';
-    nyEl.className = 'sess-status ' + (ny.state && ny.state.startsWith('ACTIVE') ? 'act' : ny.state && ny.state.startsWith('PRE') ? 'pre' : 'cls');
-    nyEl.title = ny.note || '';
-  }
+  updateBox('sess-box-tokyo', 'tokyo-status', tok);
+  updateBox('sess-box-london', 'london-status', lon);
+  updateBox('sess-box-ny', 'ny-status', ny);
 
   const liqEl = document.getElementById('macro-liquidity-label');
   if(liqEl){
     liqEl.textContent = sessions.macro_liquidity || '';
-    if(sessions.is_weekend){
-      liqEl.style.color = '#F59E0B';
-    } else {
-      liqEl.style.color = '';
-    }
+    liqEl.style.color = sessions.is_weekend ? '#F59E0B' : 'var(--cyan)';
   }
 }
 
@@ -1432,65 +1931,169 @@ function renderMacroIntel(data){
   const m = data.matrix;
   const ins = data.insight || {};
 
-  // DXY
+  // 1. Six Macro Pillars (DXY, US10Y, TIPS, OIL, SPX, VIX)
   const dxy = m.DXY || {};
-  document.getElementById('dxy-val').textContent = fmt(dxy.price, 2);
-  const dxyChg = document.getElementById('dxy-chg');
-  dxyChg.textContent = (dxy.change_pct >= 0 ? '+' : '') + fmt(dxy.change_pct, 2) + '% ' + arrow(dxy.trend);
-  dxyChg.style.color = dxy.change_pct >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('dxy-trend').textContent = dxy.trend || '—';
+  const dxyVal = document.getElementById('dxy-val');
+  if(dxyVal) dxyVal.textContent = fmt(dxy.price, 2);
+  const dxyPill = document.getElementById('dxy-pill');
+  if(dxyPill){
+    const chg = dxy.change_pct != null ? dxy.change_pct : 0;
+    const sign = chg >= 0 ? '+' : '';
+    const desc = chg >= 0.05 ? 'USD FIRM' : chg <= -0.05 ? 'USD SOFTENING' : 'FLAT';
+    dxyPill.className = 'mc-pill ' + (chg >= 0.05 ? 'up' : chg <= -0.05 ? 'down' : 'neut');
+    dxyPill.textContent = `${sign}${fmt(chg, 2)}% ${desc}`;
+  }
+  const dxyTrend = document.getElementById('dxy-trend');
+  if(dxyTrend) dxyTrend.textContent = dxy.trend || '—';
 
-  // US10Y
   const us10y = m.US10Y || {};
-  document.getElementById('us10y-val').textContent = fmt(us10y.price, 2) + '%';
-  const us10yChg = document.getElementById('us10y-chg');
-  us10yChg.textContent = (us10y.change_pct >= 0 ? '+' : '') + fmt(us10y.change_pct * 100, 0) + ' bps ' + arrow(us10y.trend);
-  us10yChg.style.color = us10y.change_pct >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('us10y-trend').textContent = us10y.trend || '—';
+  const us10yVal = document.getElementById('us10y-val');
+  if(us10yVal) us10yVal.textContent = fmt(us10y.price, 2) + '%';
+  const us10yPill = document.getElementById('us10y-pill');
+  if(us10yPill){
+    const chgBps = us10y.change_pct != null ? us10y.change_pct * 100 : 0;
+    const sign = chgBps >= 0 ? '+' : '';
+    const desc = chgBps >= 0.5 ? 'RISING' : chgBps <= -0.5 ? 'EASING' : 'FLAT';
+    us10yPill.className = 'mc-pill ' + (chgBps >= 0.5 ? 'up' : chgBps <= -0.5 ? 'down' : 'neut');
+    us10yPill.textContent = `${sign}${fmt(chgBps, 0)} bps ${desc}`;
+  }
+  const us10yTrend = document.getElementById('us10y-trend');
+  if(us10yTrend) us10yTrend.textContent = us10y.trend || '—';
 
-  // 10Y TIPS HYBRID
   const tips = m.TIPS_HYBRID || {};
-  document.getElementById('tips-val').textContent = fmt(tips.real_yield_pct, 2) + '%';
-  const tipsPress = document.getElementById('tips-press');
-  tipsPress.textContent = 'YIELD: ' + (tips.yield_pressure || 'STEADY');
-  tipsPress.style.color = tips.yield_pressure === 'FALLING' ? 'var(--bull)' : tips.yield_pressure === 'RISING' ? 'var(--red)' : 'var(--gold)';
-  document.getElementById('tips-sub').textContent = 'Live TIP: $' + fmt(tips.live_etf_price, 2) + ' (' + (tips.live_etf_change >= 0 ? '+' : '') + fmt(tips.live_etf_change, 2) + '%)';
-  document.getElementById('tips-trend').textContent = arrow(tips.live_etf_trend);
+  const tipsVal = document.getElementById('tips-val');
+  if(tipsVal) tipsVal.textContent = fmt(tips.real_yield_pct, 2) + '%';
+  const tipsPill = document.getElementById('tips-pill');
+  if(tipsPill){
+    const press = tips.yield_pressure || 'STEADY';
+    tipsPill.className = 'mc-pill ' + (press === 'FALLING' ? 'up' : press === 'RISING' ? 'down' : 'cyan');
+    tipsPill.textContent = press === 'FALLING' ? '▼ REAL YIELD: FALLING' : press === 'RISING' ? '▲ REAL YIELD: RISING' : '● REAL YIELD: STEADY';
+  }
+  const tipsSub = document.getElementById('tips-sub');
+  if(tipsSub){
+    tipsSub.textContent = 'Live TIP: $' + fmt(tips.live_etf_price, 2) + ' (' + (tips.live_etf_change >= 0 ? '+' : '') + fmt(tips.live_etf_change, 2) + '%)';
+  }
+  const tipsTrend = document.getElementById('tips-trend');
+  if(tipsTrend) tipsTrend.textContent = arrow(tips.live_etf_trend);
 
-  // OIL
   const oil = m.OIL || {};
-  document.getElementById('oil-val').textContent = '$' + fmt(oil.price, 2);
-  const oilChg = document.getElementById('oil-chg');
-  oilChg.textContent = (oil.change_pct >= 0 ? '+' : '') + fmt(oil.change_pct, 2) + '% ' + arrow(oil.trend);
-  oilChg.style.color = oil.change_pct >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('oil-trend').textContent = oil.trend || '—';
+  const oilVal = document.getElementById('oil-val');
+  if(oilVal) oilVal.textContent = '$' + fmt(oil.price, 2);
+  const oilPill = document.getElementById('oil-pill');
+  if(oilPill){
+    const chg = oil.change_pct != null ? oil.change_pct : 0;
+    const sign = chg >= 0 ? '+' : '';
+    const desc = chg >= 0.5 ? 'SURGING' : chg <= -0.5 ? 'RETREATING' : 'STEADY';
+    oilPill.className = 'mc-pill ' + (chg >= 0.5 ? 'up' : chg <= -0.5 ? 'down' : 'neut');
+    oilPill.textContent = `${sign}${fmt(chg, 2)}% ${desc}`;
+  }
+  const oilTrend = document.getElementById('oil-trend');
+  if(oilTrend) oilTrend.textContent = oil.trend || '—';
 
-  // S&P 500
   const spx = m.SPX || {};
-  document.getElementById('spx-val').textContent = fmt(spx.price, 0);
-  const spxChg = document.getElementById('spx-chg');
-  spxChg.textContent = (spx.change_pct >= 0 ? '+' : '') + fmt(spx.change_pct, 2) + '% ' + arrow(spx.trend);
-  spxChg.style.color = spx.change_pct >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('spx-trend').textContent = spx.trend || '—';
+  const spxVal = document.getElementById('spx-val');
+  if(spxVal) spxVal.textContent = fmt(spx.price, 0);
+  const spxPill = document.getElementById('spx-pill');
+  if(spxPill){
+    const chg = spx.change_pct != null ? spx.change_pct : 0;
+    const sign = chg >= 0 ? '+' : '';
+    const desc = chg >= 0.3 ? 'RISK-ON' : chg <= -0.3 ? 'DEFENSIVE' : 'BALANCED';
+    spxPill.className = 'mc-pill ' + (chg >= 0.3 ? 'up' : chg <= -0.3 ? 'down' : 'neut');
+    spxPill.textContent = `${sign}${fmt(chg, 2)}% ${desc}`;
+  }
+  const spxTrend = document.getElementById('spx-trend');
+  if(spxTrend) spxTrend.textContent = spx.trend || '—';
 
-  // VIX
   const vix = m.VIX || {};
-  document.getElementById('vix-val').textContent = fmt(vix.price, 1);
-  const vixChg = document.getElementById('vix-chg');
-  vixChg.textContent = (vix.change_pct >= 0 ? '+' : '') + fmt(vix.change_pct, 2) + '% ' + arrow(vix.trend);
-  vixChg.style.color = vix.price > 20 ? 'var(--red)' : vix.price < 15 ? 'var(--green)' : 'var(--gold)';
-  document.getElementById('vix-trend').textContent = vix.trend || '—';
+  const vixVal = document.getElementById('vix-val');
+  if(vixVal) vixVal.textContent = fmt(vix.price, 1);
+  const vixPill = document.getElementById('vix-pill');
+  const mcVix = document.getElementById('mc-vix');
+  const isVixStress = (vix.price >= 20 || vix.change_pct >= 4.0);
+  if(vixPill){
+    const chg = vix.change_pct != null ? vix.change_pct : 0;
+    const sign = chg >= 0 ? '+' : '';
+    if(isVixStress){
+      vixPill.className = 'mc-pill stress';
+      vixPill.textContent = `⚡ ${sign}${fmt(chg, 1)}% VOL STRESS`;
+    } else if(vix.price < 15){
+      vixPill.className = 'mc-pill up';
+      vixPill.textContent = `🟢 ${sign}${fmt(chg, 1)}% COMPLACENT`;
+    } else {
+      vixPill.className = 'mc-pill neut';
+      vixPill.textContent = `● ${sign}${fmt(chg, 1)}% NORMAL`;
+    }
+  }
+  if(mcVix){
+    if(isVixStress){
+      mcVix.classList.add('vix-alert');
+    } else {
+      mcVix.classList.remove('vix-alert');
+    }
+  }
+  const vixTrend = document.getElementById('vix-trend');
+  if(vixTrend) vixTrend.textContent = vix.trend || '—';
 
-  // Regime and Insight
+  // 2. Card 1: Regime & Key Drivers
   const rPill = document.getElementById('regime-pill');
-  rPill.textContent = 'REGIME: ' + (ins.regime || 'BALANCED');
-  rPill.className = 'regime-pill ' + (ins.regime_class || 'neut');
+  if(rPill){
+    rPill.textContent = (ins.regime || 'BALANCED');
+    rPill.className = 'regime-pill-large ' + (ins.regime_class || 'neut');
+  }
 
-  document.getElementById('regime-sub').textContent = 'VIX: ' + (ins.vix_regime || 'NORMAL') + ' VOLATILITY';
-  document.getElementById('insight-headline').textContent = ins.headline || 'Macro drivers synthesized.';
-  document.getElementById('insight-desc').textContent = ins.decision_context || '';
+  const rSub = document.getElementById('regime-sub');
+  if(rSub){
+    const vStat = ins.vix_regime || (vix.price >= 20 ? 'ELEVATED' : 'NORMAL');
+    rSub.textContent = vStat + ' VOLATILITY';
+  }
+
+  const drvVix = document.getElementById('drv-vix');
+  if(drvVix){
+    drvVix.textContent = fmt(vix.price, 1) + ' (' + (vix.change_pct >= 0 ? '+' : '') + fmt(vix.change_pct, 1) + '%)';
+    drvVix.className = 'driver-bullet-val ' + (vix.price >= 20 ? 'stress' : vix.price < 15 ? 'good' : 'warn');
+  }
+
+  const drvTips = document.getElementById('drv-tips');
+  if(drvTips){
+    drvTips.textContent = fmt(tips.real_yield_pct, 2) + '% (' + (tips.yield_pressure || 'steady').toLowerCase() + ')';
+    drvTips.className = 'driver-bullet-val ' + (tips.yield_pressure === 'FALLING' ? 'good' : tips.yield_pressure === 'RISING' ? 'stress' : 'warn');
+  }
+
+  const drvSpx = document.getElementById('drv-spx');
+  if(drvSpx){
+    drvSpx.textContent = 'S&P 500 ' + (spx.change_pct >= 0 ? '+' : '') + fmt(spx.change_pct, 2) + '%';
+    drvSpx.className = 'driver-bullet-val ' + (spx.change_pct < -0.5 ? 'stress' : spx.change_pct > 0.5 ? 'good' : 'warn');
+  }
+
+  // 3. Card 2: Asset Biases & Playbook
+  const assetBiasesContainer = document.getElementById('macro-asset-biases');
+  if(assetBiasesContainer){
+    const biases = (ins.asset_biases && ins.asset_biases.length > 0) ? ins.asset_biases : [
+      { asset: 'XAUUSD', bias: 'BULL', reason: 'Safe-haven resilience & yield softening' },
+      { asset: 'JPY', bias: 'BULL', reason: 'Defensive flight-to-safety flows' },
+      { asset: 'EUR / GBP', bias: 'BEAR', reason: 'High-beta equities under rotation' },
+      { asset: 'USD', bias: 'NEUT', reason: 'Softening real yields cap dollar upside' }
+    ];
+    assetBiasesContainer.innerHTML = biases.map(ab => {
+      const bClass = ab.bias === 'BULL' ? 'bull' : ab.bias === 'BEAR' ? 'bear' : 'neut';
+      const bText = ab.bias === 'BULL' ? '▲ BULLISH' : ab.bias === 'BEAR' ? '▼ BEARISH' : '● NEUTRAL';
+      return `
+        <div class="asset-bias-pill">
+          <div class="bias-top"><span class="bias-asset">${ab.asset}</span><span class="bias-tag ${bClass}">${bText}</span></div>
+          <div class="bias-reason" title="${ab.reason || ''}">${ab.reason || '—'}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  const playbookEl = document.getElementById('macro-playbook-text');
+  if(playbookEl){
+    const pb = ins.playbook || 'Buy Gold pullbacks; avoid chasing breakout momentum on high-beta EUR & GBP.';
+    playbookEl.innerHTML = `<b>PLAYBOOK:</b> ${pb}`;
+  }
+
+  // 4. Card 3: Sessions & Sync Time
   if(data.sessions) updateSessions(data.sessions);
-
   const sync = document.getElementById('macro-sync-time');
   if(sync) sync.textContent = 'SYNCED: ' + new Date().toLocaleTimeString();
 
@@ -1748,20 +2351,38 @@ function renderCards(){
 }
 
 function renderNews(){
-  const bar = document.getElementById('news-bar');
-  if(!bar) return;
-  const sess = (window._SESSION||'LONDON');
+  const sess = (window._SESSION || 'LONDON');
   const blocking = window._BLOCKING_NEWS || [];
-  const src = window._NEWS_SOURCE || window._CALENDAR_SOURCE || 'n/a';
-  const lastUpdate = window._CALENDAR_LAST_UPDATE || '';
-  const evCount = window._NEWS_COUNT != null ? window._NEWS_COUNT : (window._CALENDAR_EVENTS || []).length;
-  const risk = window._RISK || 'NEUTRAL';
+  
+  // 1. Update top header session status
+  const ss = document.getElementById('session-status');
+  if(ss) ss.textContent = 'SESSION: ' + sess;
 
-  const text = window._NEWS_BAR_TEXT
-    || `No HIGH news in 60min • Calendar: ${src} (${evCount} events) • ${lastUpdate} • Risk: ${risk}`;
+  // 2. Update Card 3 News Radar
+  const radarBox = document.getElementById('macro-news-radar');
+  const radarIcon = document.getElementById('news-radar-icon');
+  const radarText = document.getElementById('news-radar-text');
+  
+  if(radarBox && radarText){
+    if(blocking.length > 0){
+      radarBox.className = 'news-radar-box alert';
+      if(radarIcon) radarIcon.textContent = '🔴';
+      const ev0 = blocking[0];
+      radarText.textContent = `HIGH NEWS IMPACT: ${ev0.event || 'High impact event'} [${ev0.currency || ''}]`;
+    } else {
+      radarBox.className = 'news-radar-box clear';
+      if(radarIcon) radarIcon.textContent = '🟢';
+      radarText.textContent = 'NEWS RADAR: Clear • No high-impact releases in next 60m';
+    }
+  }
 
-  bar.className = (blocking.length > 0) ? 'amber' : 'clean';
-  bar.innerHTML = `SESSION: <span id="session">${sess}</span> • <span id="news-next">${text}</span>`;
+  // Fallback if #news-bar exists in DOM
+  const bar = document.getElementById('news-bar');
+  if(bar){
+    const text = window._NEWS_BAR_TEXT || (blocking.length > 0 ? 'HIGH NEWS BLOCKING' : 'No HIGH news in 60min');
+    bar.className = (blocking.length > 0) ? 'amber' : 'clean';
+    bar.innerHTML = `SESSION: <span>${sess}</span> • <span>${text}</span>`;
+  }
 }
 
 
