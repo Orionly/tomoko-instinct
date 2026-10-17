@@ -67,6 +67,7 @@ class RegimeEngine:
             m15_bias = "Neutral"
         h4_bias = "Bullish" if h4['direction'] == "UP" and h4['gate'] == "OPEN" else "Bearish" if h4['direction'] == "DOWN" and h4['gate'] == "OPEN" else "Neutral"
         h1_bias = "Bullish" if h1['close_vs_ema'] == "ABOVE" and h1['rsi'] > 50 else "Bearish" if h1['close_vs_ema'] == "BELOW" and h1['rsi'] < 50 else "Neutral"
+        h1['bias'] = h1_bias
         return {
             "H4": h4,
             "H1": h1,

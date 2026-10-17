@@ -290,7 +290,11 @@ def _scan(symbol: str, cal=None):
 
     regime = RegimeEngine(config).evaluate_mtf_trend(df_h4, df_h1, df_m15)
     levels = LevelsEngine().get_key_levels(df_d1, df_w1, df_h1)
+    daily_open = safe_float(df_d1["open"].iloc[-1]) if (df_d1 is not None and len(df_d1) > 0) else 0.0
     price = safe_float(df_h1["close"].iloc[-1])
+    if daily_open <= 0.0:
+        daily_open = price
+    levels["daily_open"] = daily_open
     h4 = regime["H4"]
     adx = safe_float(h4.get("adx", 0))
     atr_ratio = safe_float(h4.get("atr_ratio", 0))
@@ -393,6 +397,7 @@ def _scan(symbol: str, cal=None):
         "h4_bias": regime["H4_bias"],
         "m15_bias": regime["M15_bias"],
         "levels": levels,  # includes weekly_open, daily_high, liq_high, liq_low
+        "daily_open": daily_open,
         "weekly_open": levels["weekly_open"],
         "fundamental": fund,
         "news": news,

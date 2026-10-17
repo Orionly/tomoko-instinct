@@ -460,14 +460,36 @@ class PriceEngine:
             return 0.0
 
     def get_market_heatmap(self, scan_results: Dict) -> List[Dict]:
-        """Build H4/H1/M15 alignment heatmap from scan results.
-        Returns one row per pair with trend direction per timeframe, alignment classification,
-        score, action, color. Sorted strongest-alignment first, then score desc. Sanitized for JSON.
+        """Build momentum & alignment heatmap from scan results.
+        Calculates pips change, percent change, and daily range from D1 open.
         """
         heatmap = []
         for symbol, data in scan_results.items():
             score = self._safe_num(data.get("score", 0))
             action = data.get("action", "WAIT")
+            price = self._safe_num(data.get("price", 0))
+            daily_open = self._safe_num(data.get("daily_open", data.get("levels", {}).get("daily_open", price)))
+            if daily_open <= 0:
+                daily_open = price
+
+            # Pip and % change
+            pct_change = 0.0
+            pips_change = 0.0
+            is_gold = bool("XAU" in symbol.upper() or "GOLD" in symbol.upper())
+            if daily_open > 0 and price > 0:
+                pct_change = round(((price - daily_open) / daily_open) * 100.0, 2)
+                diff = price - daily_open
+                if "JPY" in symbol.upper():
+                    pips_change = round(diff / 0.01, 1)
+                elif is_gold:
+                    pips_change = round(diff, 2)
+                else:
+                    pips_change = round(diff / 0.0001, 1)
+
+            lv = data.get("levels", {})
+            today_high = self._safe_num(lv.get("today_high", lv.get("daily_high", price)))
+            today_low = self._safe_num(lv.get("today_low", lv.get("daily_low", price)))
+            atr = self._safe_num(lv.get("atr", data.get("atr", 0)))
 
             # H4 trend
             h4_dir = ""
@@ -517,6 +539,14 @@ class PriceEngine:
 
             heatmap.append({
                 "pair": symbol,
+                "price": float(price),
+                "daily_open": float(daily_open),
+                "pct_change": float(pct_change),
+                "pips_change": float(pips_change),
+                "today_high": float(today_high),
+                "today_low": float(today_low),
+                "atr": float(atr),
+                "is_gold": is_gold,
                 "score": float(score),
                 "h4": h4_str,
                 "h1": h1_str,
@@ -624,6 +654,15 @@ def calculate_currency_strength(scan_results: dict) -> dict:
             "bull_ratio": f"{bull_count}/{total}",
             "color": color
         }
+
+    # Calculate top gainer and top loser among fiat currencies
+    fiat_items = [(c, d["strength"]) for c, d in result.items() if c != "XAU" and isinstance(d, dict) and "strength" in d]
+    if fiat_items:
+        fiat_items.sort(key=lambda x: x[1], reverse=True)
+        top_g = fiat_items[0]
+        top_l = fiat_items[-1]
+        result["_top_gainer"] = {"currency": top_g[0], "strength": top_g[1]}
+        result["_top_loser"] = {"currency": top_l[0], "strength": top_l[1]}
 
     return sanitize_for_json(result)
 

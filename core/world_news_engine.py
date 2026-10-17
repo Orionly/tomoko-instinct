@@ -23,6 +23,13 @@ from typing import Dict, List, Optional, Any
 
 log = logging.getLogger(__name__)
 
+# Safe import of FinBERT ONNX news classifier
+try:
+    from core.news_classifier import analyze_news_item
+except Exception as _nc_err:
+    analyze_news_item = None
+    log.warning("[WorldNewsEngine] FinBERT AI News Classifier unavailable: %s", _nc_err)
+
 CACHE_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "logs",
@@ -60,6 +67,11 @@ RSS_FEEDS = [
         "name": "Al Jazeera English (Middle East / Chokepoints)",
         "category": "geopolitics",
         "url": "https://www.aljazeera.com/xml/rss/all.xml",
+    },
+    {
+        "name": "Truth Social Wire (Google News)",
+        "category": "policy",
+        "url": "https://news.google.com/rss/search?q=%22Truth+Social%22+AND+(Trump+OR+tariff+OR+sanctions+OR+dollar+OR+Fed)&hl=en-US&gl=US&ceid=US:en",
     },
 ]
 
@@ -105,7 +117,10 @@ DE_ESCALATION_PHRASES = [
     "lift sanction", "lifts sanction", "lifting sanction", "lifted sanction", "lift sanctions", "lifts sanctions", "lifting sanctions", "lifted sanctions",
     "suspend", "suspends", "suspending", "suspended", "suspension",
     "ease sanction", "eases sanction", "easing sanction", "eased sanction", "ease sanctions", "eases sanctions", "easing sanctions",
-    "delay tariff", "delays tariff", "delaying tariff", "pause tariff", "pauses tariff", "exempt", "exemption",
+    "delay tariff", "delays tariff", "delaying tariff",
+    "pause", "pauses", "pausing", "paused",
+    "freeze", "freezes", "shelve", "shelves",
+    "exempt", "exemption",
     "on hold", "puts on hold", "put on hold", "halts", "halting",
     "ceasefire", "peace deal", "peace talk", "peace talks", "truce", "thaw", "thaws",
     "lessen strain", "lessens strain", "de-escalat", "end war", "ends war", "sanctions relief",
@@ -197,43 +212,50 @@ class WorldNewsEngine:
         if not os.path.exists(self.cache_file):
             return False
         try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
-                with self._lock:
-                    loaded_items = data.get("items", [])
-                    re_enriched = []
-                    for it in loaded_items:
-                        if it.get("timestamp", 0) >= cutoff_ts:
-                            en = self._enrich_item(it)
-                            re_enriched.append(en if en else it)
-                    self.items = re_enriched
+            with open(self.cache_file, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            try:
+                data = json.loads(content, strict=False)
+            except Exception:
+                # If corrupt/truncated, perform a clean sync
+                log.warning("[WorldNewsEngine] Cache syntax invalid, triggering fresh sync.")
+                return False
 
-                    loaded_speeches = data.get("speeches", [])
-                    cleaned_speeches = []
-                    for sp in loaded_speeches:
-                        if sp.get("timestamp", 0) < cutoff_ts:
-                            continue
-                        sp_title_lower = (sp.get("takeaways", [""])[0] if sp.get("takeaways") else "").lower()
-                        if any(bad in sp_title_lower for bad in ["free speech", "hate speech", "speech fight", "creeps out", "savages trump"]):
-                            continue
-                        # Update speaker title & former official status
-                        for k, info in KNOWN_SPEAKERS.items():
-                            if info["name"].lower() == sp.get("speaker", "").lower():
-                                sp["title"] = info["title"]
-                                if info.get("is_former"):
-                                    sp["tone"] = "COMMENTARY (FORMER OFFICIAL)"
-                                    sp["occasion"] = f"Retrospective / Commentary ({sp.get('occasion', '').split('(')[-1]}"
-                                    sp["implications"] = ["Fed: Historical / Former Policy Commentary"]
-                                break
-                        cleaned_speeches.append(sp)
-                    self.speeches = cleaned_speeches
-                    last_str = data.get("last_fetch_time")
-                    if last_str:
-                        self.last_fetch_time = datetime.fromisoformat(last_str)
-                log.info("[WorldNewsEngine] Loaded %d news items, %d speeches from 30-day cache.",
-                         len(self.items), len(self.speeches))
-                return True
+            cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
+            with self._lock:
+                loaded_items = data.get("items", [])
+                re_enriched = []
+                for it in loaded_items:
+                    if it.get("timestamp", 0) >= cutoff_ts:
+                        en = self._enrich_item(it)
+                        re_enriched.append(en if en else it)
+                self.items = re_enriched
+
+                loaded_speeches = data.get("speeches", [])
+                cleaned_speeches = []
+                for sp in loaded_speeches:
+                    if sp.get("timestamp", 0) < cutoff_ts:
+                        continue
+                    sp_title_lower = (sp.get("takeaways", [""])[0] if sp.get("takeaways") else "").lower()
+                    if any(bad in sp_title_lower for bad in ["free speech", "hate speech", "speech fight", "creeps out", "savages trump"]):
+                        continue
+                    # Update speaker title & former official status
+                    for k, info in KNOWN_SPEAKERS.items():
+                        if info["name"].lower() == sp.get("speaker", "").lower():
+                            sp["title"] = info["title"]
+                            if info.get("is_former"):
+                                sp["tone"] = "COMMENTARY (FORMER OFFICIAL)"
+                                sp["occasion"] = f"Retrospective / Commentary ({sp.get('occasion', '').split('(')[-1]}"
+                                sp["implications"] = ["Fed: Historical / Former Policy Commentary"]
+                            break
+                    cleaned_speeches.append(sp)
+                self.speeches = cleaned_speeches
+                last_str = data.get("last_fetch_time")
+                if last_str:
+                    self.last_fetch_time = datetime.fromisoformat(last_str)
+            log.info("[WorldNewsEngine] Loaded %d news items, %d speeches from 30-day cache.",
+                     len(self.items), len(self.speeches))
+            return True
         except Exception as e:
             log.warning("[WorldNewsEngine] Error loading cache: %s", e)
             return False
@@ -248,8 +270,10 @@ class WorldNewsEngine:
                     "items": self.items[:3000],  # 30-day cumulative archive (up to 3000 items)
                     "speeches": self.speeches[:150],  # 30-day speech briefs (up to 150 speeches)
                 }
-            with open(self.cache_file, "w", encoding="utf-8") as f:
+            tmp_path = f"{self.cache_file}.tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, self.cache_file)
         except Exception as e:
             log.error("[WorldNewsEngine] Error saving cache: %s", e)
 
@@ -267,10 +291,64 @@ class WorldNewsEngine:
     def stop(self):
         self._stop_event.set()
 
+    def _fetch_truth_social_posts(self) -> List[Dict[str, Any]]:
+        """Fetch real-time direct posts from Donald Trump's official Truth Social account."""
+        url = "https://truthsocial.com/api/v1/accounts/107780257626128497/statuses?exclude_replies=true&limit=25"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+        }
+        items = []
+        now = datetime.now(timezone.utc)
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                statuses = json.loads(resp.read().decode("utf-8", errors="replace"))
+
+            for s in statuses:
+                raw_html = s.get("content") or ""
+                text = clean_html_text(raw_html)
+                if not text or len(text) < 15:
+                    continue
+                # Skip pure re-tweets/re-truths without original text
+                if text.startswith("RT:") or text.startswith("RT @"):
+                    continue
+
+                # Format title: first sentence or first 130 chars
+                sentences = re.split(r"[.!?]\s+", text)
+                first_sentence = sentences[0].strip() if sentences else text
+                if len(first_sentence) > 130:
+                    title = f"Donald Trump (Truth Social): \"{first_sentence[:125]}...\""
+                else:
+                    title = f"Donald Trump (Truth Social): \"{first_sentence}\""
+
+                created_str = s.get("created_at")
+                pub_dt = parse_rfc_date(created_str) or now
+                link = s.get("url") or f"https://truthsocial.com/@realDonaldTrump/{s.get('id', '')}"
+
+                items.append({
+                    "title": title,
+                    "link": link,
+                    "summary": text[:400],
+                    "published_at": pub_dt.isoformat(),
+                    "timestamp": int(pub_dt.timestamp()),
+                    "source": "Truth Social (@realDonaldTrump)",
+                    "base_category": "Trade & Policy",
+                })
+        except Exception as e:
+            log.warning("[WorldNewsEngine] Truth Social direct feed skipped: %s", e)
+        return items
+
     def sync_feeds(self, force: bool = False):
-        """Fetch all configured RSS feeds, process, classify, and update cache."""
+        """Fetch all configured RSS feeds and Truth Social direct stream, process, classify, and update cache."""
         now = datetime.now(timezone.utc)
         all_raw_items = []
+
+        # 1. Direct Truth Social Stream (@realDonaldTrump)
+        truth_posts = self._fetch_truth_social_posts()
+        if truth_posts:
+            all_raw_items.extend(truth_posts)
+            log.info("[WorldNewsEngine] Ingested %d posts directly from Truth Social.", len(truth_posts))
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -399,28 +477,36 @@ class WorldNewsEngine:
             if re.search(r"\b" + re.escape(w) + r"\b", text):
                 return None
 
-        # 1. Directional action detection
-        is_de_escalation = any(p in text for p in DE_ESCALATION_PHRASES)
-        is_escalation = any(p in text for p in ESCALATION_PHRASES)
+        # 1. AI Classification (FinBERT ONNX) with graceful fallback
+        ai_res = None
+        if analyze_news_item:
+            try:
+                ai_res = analyze_news_item(item.get("title", ""), item.get("summary", ""))
+            except Exception as e:
+                log.warning("[WorldNewsEngine] AI classification error: %s", e)
 
-        # 2. Severity Classification
-        severity = "MONITOR"
-        for kw in CRITICAL_KEYWORDS:
-            if kw in text and not is_de_escalation:
-                severity = "CRITICAL"
-                break
-
-        if severity != "CRITICAL":
-            for kw in HIGH_KEYWORDS:
-                if kw in text:
-                    severity = "HIGH"
+        # 2. Severity Classification (AI override or keyword fallback)
+        if ai_res and ai_res.get("severity_override"):
+            severity = ai_res["severity_override"]
+        else:
+            is_de_escalation = any(p in text for p in DE_ESCALATION_PHRASES)
+            severity = "MONITOR"
+            for kw in CRITICAL_KEYWORDS:
+                if kw in text and not is_de_escalation:
+                    severity = "CRITICAL"
                     break
 
-        if severity == "MONITOR":
-            for kw in MEDIUM_KEYWORDS:
-                if kw in text:
-                    severity = "MEDIUM"
-                    break
+            if severity != "CRITICAL":
+                for kw in HIGH_KEYWORDS:
+                    if kw in text:
+                        severity = "HIGH"
+                        break
+
+            if severity == "MONITOR":
+                for kw in MEDIUM_KEYWORDS:
+                    if kw in text:
+                        severity = "MEDIUM"
+                        break
 
         # 3. Category Classification
         category = "Geopolitics"
@@ -435,93 +521,52 @@ class WorldNewsEngine:
         elif any(w in text for w in ["earthquake", "tsunami", "flood", "disaster", "outbreak", "bank failure"]):
             category = "Crisis & Black Swan"
 
-        # 4. Correlated Pairs & Impact Bias
-        impacted_pairs = []
-        implications = []
+        # 4. Correlated Pairs & Implications (AI primary, regional FX supplement)
+        impacted_pairs = list(ai_res.get("impacted_pairs", [])) if ai_res else []
+        if impacted_pairs == ["GLOBAL"]:
+            impacted_pairs = []
+        implications = list(ai_res.get("implications", [])) if ai_res else []
 
-        # Gold / Safe Haven & Geopolitical transmission
-        has_geo_keyword = any(w in text for w in ["war", "strike", "missile", "escalation", "gold", "bullion", "safe haven", "iran", "middle east", "sanction", "sanctions", "ukraine", "russia"])
-        if has_geo_keyword:
-            impacted_pairs.append("XAUUSD")
-            if is_de_escalation:
-                implications.append("XAUUSD: Geopolitical Relief (Haven Unwind)")
-                if any(w in text for w in ["russia", "ukraine", "europe", "gas", "sanction", "sanctions"]):
-                    if "EURUSD" not in impacted_pairs:
-                        impacted_pairs.append("EURUSD")
-                    implications.append("EURUSD: Geopolitical Relief (Tailwind)")
-            elif is_escalation or severity in ["CRITICAL", "HIGH"]:
-                implications.append("XAUUSD: Safe-Haven Inflow (Bullish)")
-
-        # JPY & Bank of Japan
+        # JPY & Bank of Japan specific catalyst watch
         if any(w in text for w in ["yen", "boj", "bank of japan", "ueda", "tokyo", "japan", "intervention", "nikkei"]):
             for p in ["USDJPY", "GBPJPY", "EURJPY"]:
                 if p not in impacted_pairs:
                     impacted_pairs.append(p)
-            if any(w in text for w in ["intervention", "verbal warning", "currency check"]):
-                implications.append("USDJPY: FX Intervention Threat (JPY Surge Risk)")
-            elif any(w in text for w in ["rate hike", "hike rates", "tightening"]):
-                implications.append("USDJPY: BOJ Rate Hike Catalyst (Bearish USDJPY)")
-            elif any(w in text for w in ["hold", "dovish", "cautious", "easy policy"]):
-                implications.append("USDJPY: Dovish BOJ Stance (Yield Gap Intact)")
-            else:
-                implications.append("USDJPY: JPY Flow / Policy Watch")
+            if len(implications) < 2:
+                if any(w in text for w in ["intervention", "verbal warning", "currency check"]):
+                    implications.append("USDJPY: FX Intervention Threat (JPY Surge Risk)")
+                elif any(w in text for w in ["rate hike", "hike rates", "tightening"]):
+                    implications.append("USDJPY: BOJ Rate Hike Catalyst (Bearish USDJPY)")
+                elif any(w in text for w in ["hold", "dovish", "cautious", "easy policy"]):
+                    implications.append("USDJPY: Dovish BOJ Stance (Yield Gap Intact)")
 
-        # EUR & European Central Bank
+        # EUR & European Central Bank specific catalyst watch
         if any(w in text for w in ["ecb", "lagarde", "eurozone", "germany", "france", "brussels", "euro"]):
             for p in ["EURUSD", "EURJPY", "EURGBP"]:
                 if p not in impacted_pairs:
                     impacted_pairs.append(p)
-            if any(w in text for w in ["tariff", "trade war"]):
-                if is_de_escalation:
-                    implications.append("EURUSD: Trade Relief (Bullish EUR)")
-                else:
+            if len(implications) < 2:
+                if any(w in text for w in ["tariff", "trade war"]) and not any("EURUSD" in imp for imp in implications):
                     implications.append("EURUSD: Export Headwind (Bearish EUR)")
-            elif any(w in text for w in ["rate cut", "easing", "rate reduction"]):
-                implications.append("EURUSD: ECB Easing Bias (Yield Drag)")
-            elif any(w in text for w in ["inflation", "hike", "resilient"]):
-                implications.append("EURUSD: ECB Inflation Resilience")
-            elif "EURUSD: Geopolitical Relief (Tailwind)" not in implications:
-                implications.append("EURUSD: Eurozone Macro Watch")
+                elif any(w in text for w in ["rate cut", "easing", "rate reduction"]):
+                    implications.append("EURUSD: ECB Easing Bias (Yield Drag)")
 
-        # GBP & Bank of England
+        # GBP & Bank of England specific catalyst watch
         if any(w in text for w in ["boe", "bank of england", "bailey", "sterling", "pound", "uk budget", "gilt", "london", "britain"]):
             for p in ["GBPUSD", "GBPJPY", "EURGBP"]:
                 if p not in impacted_pairs:
                     impacted_pairs.append(p)
-            if any(w in text for w in ["rate cut", "easing"]):
-                implications.append("GBPUSD: BOE Rate Cut Easing")
-            elif any(w in text for w in ["sticky inflation", "hike", "wage growth"]):
-                implications.append("GBPUSD: Sticky UK Inflation (Rate Support)")
-            else:
-                implications.append("GBPUSD: UK Policy & Yield Watch")
+            if len(implications) < 2:
+                if any(w in text for w in ["rate cut", "easing"]):
+                    implications.append("GBPUSD: BOE Rate Cut Easing")
+                elif any(w in text for w in ["sticky inflation", "hike", "wage growth"]):
+                    implications.append("GBPUSD: Sticky UK Inflation (Rate Support)")
 
         # USD / Federal Reserve: Distinguish Active Policy vs Former Officials
         is_about_powell = ("powell" in text or "jerome powell" in text) and not any(w in text for w in ["warsh", "kevin warsh"])
         if is_about_powell:
-            # Former Fed official commentary - NOT active monetary policy!
-            implications.append("Fed: Former Official Commentary (Non-Actionable)")
-        elif any(w in text for w in ["fed", "federal reserve", "warsh", "bessent", "fomc", "treasury", "debt ceiling", "wall street", "us dollar", "dxy"]):
-            for p in ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]:
-                if p not in impacted_pairs:
-                    impacted_pairs.append(p)
-            if any(w in text for w in ["hike", "not in a hurry", "sticky", "higher for longer", "cautious on cut"]):
-                implications.append("USD: Hawkish Policy Tone (Yield Support)")
-            elif any(w in text for w in ["rate cut", "cuts rate", "easing", "cool", "labor softening", "slowdown"]):
-                implications.append("USD: Dovish Rate Cut Bias (Yield Drag)")
-            elif any(w in text for w in ["tariff", "trade war"]):
-                if is_de_escalation:
-                    implications.append("USD: Tariff Relief / Risk-On")
-                else:
-                    implications.append("USD: Protectionist Trade Policy")
-            else:
-                implications.append("USD: Monetary Policy / Macro Watch")
-
-        # Energy & Crude Oil implications
-        if any(w in text for w in ["crude", "oil", "opec", "energy", "wti", "brent"]):
-            if is_de_escalation or any(w in text for w in ["waive", "lifts sanction", "output surge", "glut", "drop"]):
-                implications.append("OIL: Supply Inflow (Price Softening)")
-            elif is_escalation or any(w in text for w in ["opec cut", "pipeline sabotage", "red sea", "strait of hormuz", "tanker"]):
-                implications.append("OIL: Supply Disruption Risk (Inflation Tailwind)")
+            if not any("Former Official" in imp for imp in implications):
+                implications.append("Fed: Former Official Commentary (Non-Actionable)")
 
         # Default fallback if no specific currency detected
         if not impacted_pairs:
@@ -539,6 +584,8 @@ class WorldNewsEngine:
             "category": category,
             "impacted_pairs": impacted_pairs,
             "implications": implications[:2],  # top 2 key points
+            "sentiment": ai_res.get("sentiment", "neutral") if ai_res else "neutral",
+            "sentiment_conf": round(ai_res.get("confidence", 0.5), 3) if ai_res else 0.5,
         }
 
     def _extract_speech_brief(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:

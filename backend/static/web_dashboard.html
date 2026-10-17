@@ -149,46 +149,183 @@
   }
 
   .card{ position:relative; background:var(--glass); border:1px solid var(--border); border-radius:14px;
-    padding:13px; cursor:pointer; overflow:hidden; transition:transform .15s,border-color .15s,box-shadow .15s; }
+    padding:14px 15px; cursor:pointer; overflow:hidden; transition:transform .15s,border-color .15s,box-shadow .15s;
+    display:flex; flex-direction:column; gap:9px; }
   .card::before{ content:""; position:absolute; top:0; left:0; height:2px; width:100%;
     background:linear-gradient(90deg, var(--cyan), transparent); opacity:.5; }
   .card:hover{ transform:translateY(-3px); border-color:var(--cyan); box-shadow:0 10px 30px rgba(0,0,0,.5); }
   .card.sel{ border-color:var(--cyan); box-shadow:0 0 0 1px var(--cyan); }
-  .chead{ display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
-  .chead-left{ display:flex; align-items:center; gap:8px; flex:none; }
-  .sym{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--cyan); font-size:14px; }
-  .price{ font-family:'JetBrains Mono',monospace; font-size:13px; color:#CBD5E1; }
+  .chead{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+  .chead-left{ display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
+  .sym-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .sym{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--cyan); font-size:15px; letter-spacing:0.02em; }
+  .sym-desc{ font-family:'Inter',system-ui,sans-serif; font-size:11px; color:var(--muted); font-weight:500; }
+  .price{ font-family:'JetBrains Mono',monospace; font-size:13.5px; color:#F1F5F9; font-weight:600; }
 
-  .align-wrap{ margin-left:auto; display:flex; align-items:center; gap:5px; flex:none; }
-  .align-dot{ width:10px; height:10px; border-radius:9999px; border:2px solid rgba(255,255,255,0.15); flex:none; }
-  .align-dot.lvl-HIGH{ background:var(--bull); box-shadow:0 0 16px rgba(0,255,136,0.6); animation:alignmentPulse 2s infinite; }
-  .align-dot.lvl-MEDIUM{ background:var(--neut); box-shadow:0 0 14px rgba(255,184,0,0.5); }
-  .align-dot.lvl-LOW{ background:#4B5563; }
-  .align-tag{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.06em; min-width:34px; text-align:left; }
-  .align-tag.lvl-HIGH{ color:var(--bull); }
-  .align-tag.lvl-MEDIUM{ color:var(--neut); }
-  .align-tag.lvl-LOW{ color:#6B7280; }
-  .circle{ width:36px; height:36px; border-radius:9999px; display:flex;
-    align-items:center; justify-content:center; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:13px; flex:none; }
-  
+  .chead-right{ display:flex; align-items:center; flex:none; margin-top:2px; }
   .deep-dive-btn{
-    background:transparent; border:1px solid #f5c518; color:#f5c518; font-family:'JetBrains Mono',monospace;
-    font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer; margin-left:8px;
-    transition:all 0.2s; text-decoration:none; display:inline-block; line-height:1.4;
+    background:rgba(255, 184, 0, 0.08); border:1px solid rgba(255, 184, 0, 0.4); color:#FFB800; font-family:'JetBrains Mono',monospace;
+    font-size:11px; font-weight:700; padding:6px 11px; border-radius:6px; cursor:pointer;
+    transition:all 0.2s; text-decoration:none; display:inline-flex; align-items:center; gap:5px; line-height:1.2;
   }
-  .deep-dive-btn:hover{ background:rgba(245,197,24,0.15); transform:translateY(-1px); }
+  .deep-dive-btn:hover{ background:rgba(255, 184, 0, 0.22); border-color:#FFB800; transform:translateY(-1px); color:#FFF; }
+  .deep-dive-btn:active{ transform:scale(0.98); }
 
-  .badges{ display:flex; gap:6px; margin:9px 0 7px; flex-wrap:wrap; }
-  .badge{ font-family:'JetBrains Mono',monospace; font-size:10px; padding:3px 8px; border-radius:6px;
-    background:rgba(10,14,20,.7); color:#CBD5E1; border:1px solid var(--border); }
+  /* Direction Strength Meter (Option 2) */
+  .strength-section{
+    margin-top:6px;
+    padding-top:8px;
+    border-top:1px solid rgba(255, 255, 255, 0.06);
+    display:flex;
+    flex-direction:column;
+    gap:5px;
+  }
+  .strength-meta{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    flex-wrap:wrap;
+    gap:4px;
+  }
+  .strength-label{
+    color:#94A3B8;
+  }
+  .strength-label b{
+    color:#F1F5F9;
+    font-size:11.5px;
+  }
+  .strength-tier{
+    font-size:10px;
+    font-weight:700;
+    margin-left:3px;
+  }
+  .strength-tier.strong{ color:var(--cyan); }
+  .strength-tier.moderate{ color:var(--neut); }
+  .strength-tier.weak{ color:#94A3B8; }
+
+  .strength-align{
+    font-size:10.5px;
+    font-weight:600;
+  }
+  .strength-align.lvl-HIGH{ color:var(--bull); }
+  .strength-align.lvl-MEDIUM{ color:var(--neut); }
+  .strength-align.lvl-LOW{ color:#64748B; }
+
+  /* Direction Strength Segmented Meter */
+  .strength-bar-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:2px;
+  }
+  .seg-bar{
+    display:flex;
+    align-items:center;
+    gap:2.5px;
+    flex:1;
+    height:7px;
+  }
+  .seg-block{
+    flex:1;
+    height:100%;
+    border-radius:1.5px;
+    background:rgba(255, 255, 255, 0.08);
+    transition:background 0.3s;
+  }
+  .seg-bar.strong .seg-block.active{
+    background:var(--cyan);
+    box-shadow:0 0 5px rgba(0, 229, 255, 0.55);
+  }
+  .seg-bar.moderate .seg-block.active{
+    background:var(--neut);
+    box-shadow:0 0 4px rgba(255, 184, 0, 0.45);
+  }
+  .seg-bar.weak .seg-block.active{
+    background:#64748B;
+  }
+  .seg-pct{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;
+    font-weight:600;
+    color:#94A3B8;
+    flex:none;
+    min-width:38px;
+    text-align:right;
+  }
+  .align-dots{
+    font-size:11px;
+    letter-spacing:1px;
+    display:inline-block;
+    margin-right:2px;
+  }
+
+  .badges{ display:flex; gap:6px; margin:2px 0 0; flex-wrap:wrap; }
+  .badge{ font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; padding:3px 8px; border-radius:6px;
+    background:rgba(10,14,20,.7); color:#CBD5E1; border:1px solid var(--border); display:inline-flex; align-items:center; gap:4px; }
   .badge.bull{ background:linear-gradient(135deg, rgba(0,255,136,0.18), rgba(0,255,136,0.08));
     border:1px solid rgba(0,255,136,0.35); color:var(--bull); }
   .badge.bear{ background:rgba(255,59,92,0.18); border:1px solid rgba(255,59,92,0.35); color:var(--bear); }
   .badge.neut{ background:rgba(255,184,0,0.12); border:1px solid rgba(255,184,0,0.25); color:var(--neut); }
 
-  .body{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#94A3B8; line-height:1.55; }
-  .act{ margin-top:9px; font-weight:700; font-size:12.5px; font-family:'JetBrains Mono',monospace; }
-  .res{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px; line-height:1.4; }
+  /* Simplified Action Banner */
+  .act-banner{
+    margin-top:4px;
+    padding:8px 10px;
+    border-radius:7px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11.5px;
+    font-weight:700;
+    letter-spacing:0.03em;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .act-buy{
+    background:rgba(0, 255, 136, 0.12);
+    border:1px solid rgba(0, 255, 136, 0.4);
+    color:var(--bull);
+    box-shadow:0 0 14px rgba(0, 255, 136, 0.12);
+  }
+  .act-sell{
+    background:rgba(255, 90, 121, 0.12);
+    border:1px solid rgba(255, 90, 121, 0.4);
+    color:var(--bear);
+    box-shadow:0 0 14px rgba(255, 90, 121, 0.12);
+  }
+  .act-wait-pullback{
+    background:rgba(255, 184, 0, 0.10);
+    border:1px solid rgba(255, 184, 0, 0.35);
+    color:var(--neut);
+  }
+  .act-early{
+    background:rgba(0, 229, 255, 0.10);
+    border:1px solid rgba(0, 229, 255, 0.35);
+    color:var(--cyan);
+  }
+  .act-news{
+    background:rgba(239, 68, 68, 0.16);
+    border:1px solid rgba(239, 68, 68, 0.45);
+    color:#FCA5A5;
+  }
+  .act-wait{
+    background:rgba(255, 255, 255, 0.04);
+    border:1px solid rgba(255, 255, 255, 0.08);
+    color:#94A3B8;
+  }
+  .act-limit{
+    background:rgba(255, 184, 0, 0.14);
+    border:1px solid rgba(255, 184, 0, 0.4);
+    color:var(--gold);
+  }
+  .card-summary{
+    font-family:'Inter',system-ui,sans-serif;
+    font-size:11.5px;
+    line-height:1.45;
+    color:#CBD5E1;
+    min-height:34px;
+  }
 
   /* Calendar, Pulse, Heatmap styling */
   .global-calendar-container, .heatmap-container, .pulse-container{
@@ -319,31 +456,397 @@
     background:rgba(255, 255, 255, 0.05); color:#64748B; border:1px solid rgba(255, 255, 255, 0.08);
   }
 
-  .heatmap-grid{ border:1px solid #1A2234; border-radius:8px; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; }
-  .heatmap-header{ display:grid; grid-template-columns:85px 52px 70px 70px 70px 88px; min-width:435px; font-family:'JetBrains Mono',monospace; font-size:9px; color:#71717a; text-transform:uppercase; letter-spacing:.05em; padding:8px 10px; border-bottom:1px solid #1A2234; background:#0C111B; font-weight:700; }
-  .heatmap-row{ display:grid; grid-template-columns:85px 52px 70px 70px 70px 88px; min-width:435px; padding:9px 10px; font-family:'JetBrains Mono',monospace; font-size:12px; border-bottom:1px solid #1e212e; align-items:center; }
-  .heatmap-row:last-child{ border-bottom:none; }
-  .heatmap-row.green{ border-left:3px solid #00d47b; background:rgba(0,212,123,0.06); }
-  .heatmap-row.red{ border-left:3px solid #ff4747; background:rgba(255,71,71,0.06); }
-  .heatmap-row.yellow-green{ border-left:3px solid #a3d900; background:rgba(163,217,0,0.06); }
-  .heatmap-row.orange{ border-left:3px solid #ff8c00; background:rgba(255,140,0,0.06); }
-  .heatmap-row.gray{ border-left:3px solid #555; }
-  .heatmap-footer{ font-family:'JetBrains Mono',monospace; font-size:10px; color:#6B7280; margin-top:10px; line-height:1.5; }
-
-  .pulse-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(95px,1fr)); gap:10px; }
-  @media(max-width:480px){
-    .pulse-grid{ grid-template-columns:repeat(3, 1fr); gap:6px; }
-    .pulse-card{ padding:8px 4px; }
-    .pulse-card .pulse-cur{ font-size:11.5px; margin-bottom:2px; }
-    .pulse-card .pulse-strength{ font-size:12px; }
-    .pulse-card .pulse-arrow{ font-size:9.5px; }
+  /* ================== UNIFIED HEATMAP COCKPIT ================== */
+  .heatmap-cockpit-wrap {
+    margin: 18px 0;
+    background: linear-gradient(180deg, rgba(14, 20, 32, 0.85), rgba(10, 14, 22, 0.85));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    backdrop-filter: blur(12px);
   }
-  .pulse-card{ background:#1e222e; border-radius:8px; padding:12px; text-align:center; border:1px solid var(--border); }
-  .pulse-card .pulse-cur{ font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:var(--text); margin-bottom:6px; }
-  .pulse-card .pulse-arrow{ font-size:11px; font-weight:700; margin-bottom:4px; }
-  .pulse-card .pulse-strength{ font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; margin-bottom:4px; }
-  .pulse-card .pulse-ratio{ font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--muted); }
-  .pulse-empty{ grid-column:1/-1; text-align:center; color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:11px; padding:16px 0; }
+  .heatmap-cockpit-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 1.05fr;
+    gap: 14px;
+    align-items: stretch;
+  }
+  @media (max-width: 1024px) {
+    .heatmap-cockpit-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .cockpit-col-card {
+    background: rgba(18, 24, 36, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .gold-desk-card {
+    border: 1px solid rgba(255, 184, 0, 0.28);
+    background: radial-gradient(circle at 100% 0%, rgba(255, 184, 0, 0.06), transparent 70%), rgba(18, 24, 36, 0.7);
+  }
+  .col-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 12px;
+  }
+  .col-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .col-icon { font-size: 15px; }
+  .col-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: var(--text);
+  }
+  .col-subtag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .gold-tag {
+    color: var(--gold);
+    background: rgba(255, 184, 0, 0.1);
+    border-color: rgba(255, 184, 0, 0.25);
+  }
+
+  /* Column 1: CSI bars */
+  .csi-bar-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex-grow: 1;
+    margin-bottom: 12px;
+  }
+  .csi-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .csi-cur {
+    width: 38px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #fff;
+  }
+  .csi-meter-wrap {
+    flex-grow: 1;
+    height: 12px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 3px;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    align-items: center;
+  }
+  .csi-block {
+    flex: 1;
+    height: 100%;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .csi-block.active-pos {
+    background: #00FF88;
+    box-shadow: 0 0 4px rgba(0, 255, 136, 0.5);
+  }
+  .csi-block.active-neg {
+    background: #FF5A79;
+    box-shadow: 0 0 4px rgba(255, 90, 121, 0.5);
+  }
+  .csi-val {
+    width: 50px;
+    text-align: right;
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+  .csi-val.pos { color: #00FF88; }
+  .csi-val.neg { color: #FF5A79; }
+  .csi-val.neut { color: #94A3B8; }
+
+  .csi-movers-box {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .mover-tag {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 6px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .mover-gainer { border-left: 3px solid #00FF88; }
+  .mover-loser { border-left: 3px solid #FF5A79; }
+  .mover-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    font-weight: 700;
+  }
+  .mover-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .mover-gainer .mover-val { color: #00FF88; }
+  .mover-loser .mover-val { color: #FF5A79; }
+
+  /* Column 2: FX Pairs */
+  .fx-pairs-table-wrap {
+    flex-grow: 1;
+    margin-bottom: 8px;
+  }
+  .fx-pairs-header {
+    display: grid;
+    grid-template-columns: 80px 1fr 1fr 85px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    font-weight: 700;
+    padding: 4px 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .fx-pairs-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .fx-pair-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 1fr 85px;
+    align-items: center;
+    padding: 7px 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    transition: background 0.15s ease;
+    cursor: pointer;
+  }
+  .fx-pair-row:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .fx-pair-sym {
+    font-weight: 800;
+    color: #fff;
+  }
+  .fx-pct-pill {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-align: right;
+  }
+  .fx-pct-pill.pos {
+    background: rgba(0, 255, 136, 0.12);
+    color: #00FF88;
+    border: 1px solid rgba(0, 255, 136, 0.25);
+  }
+  .fx-pct-pill.neg {
+    background: rgba(255, 90, 121, 0.12);
+    color: #FF5A79;
+    border: 1px solid rgba(255, 90, 121, 0.25);
+  }
+  .fx-pct-pill.neut {
+    background: rgba(255, 255, 255, 0.06);
+    color: #94A3B8;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .fx-pips-txt {
+    font-size: 11px;
+    font-weight: 700;
+    text-align: right;
+  }
+  .fx-pips-txt.pos { color: #00FF88; }
+  .fx-pips-txt.neg { color: #FF5A79; }
+  .fx-pips-txt.neut { color: #94A3B8; }
+  .fx-align-badge {
+    text-align: center;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .fx-align-badge.full-bull {
+    background: rgba(0, 255, 136, 0.15);
+    color: #00FF88;
+  }
+  .fx-align-badge.full-bear {
+    background: rgba(255, 90, 121, 0.15);
+    color: #FF5A79;
+  }
+  .fx-align-badge.pullback {
+    background: rgba(255, 184, 0, 0.15);
+    color: #FFB800;
+  }
+  .fx-align-badge.mixed {
+    background: rgba(148, 163, 184, 0.12);
+    color: #94A3B8;
+  }
+  .col-card-footer-note {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--muted);
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  /* Column 3: Spot Gold */
+  .gold-desk-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex-grow: 1;
+  }
+  .gold-price-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 184, 0, 0.2);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .gold-price-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--muted);
+    font-weight: 700;
+  }
+  .gold-spot-price {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 800;
+    color: #FFD700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+  }
+  .gold-price-right {
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: flex-end;
+  }
+  .gold-pct-pill {
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .gold-pips-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    font-weight: 700;
+  }
+
+  .gold-range-box {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .gold-range-header {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    margin-bottom: 6px;
+  }
+  .range-lbl { color: var(--muted); font-weight: 700; }
+  .range-val { color: #CBD5E1; font-weight: 700; }
+  .range-track {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 5px;
+  }
+  .range-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #FFB800, #FFD700);
+    border-radius: 3px;
+    box-shadow: 0 0 6px rgba(255, 184, 0, 0.6);
+    transition: width 0.3s ease;
+  }
+  .range-limits {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+  }
+
+  .gold-drivers-box {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .drivers-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  .driver-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+  }
+  .driver-name { color: #94A3B8; }
+  .driver-status { font-weight: 700; }
+
+  .gold-net-bias-box {
+    background: rgba(255, 184, 0, 0.08);
+    border: 1px solid rgba(255, 184, 0, 0.25);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .net-bias-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: var(--gold);
+  }
+  .net-bias-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
 
   footer.bar{ padding:9px 16px; border-top:1px solid var(--border); background:rgba(12,17,27,.7);
     font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); }
@@ -594,10 +1097,133 @@
     <div id="grid-wrap">
       <div id="grid"></div>
 
-      <div id="market-pulse" class="pulse-container">
-        <div class="section-header">MARKET PULSE</div>
-        <div class="section-subheader">GLOBAL CURRENCY STRENGTH • Decision Support - Not a Signal</div>
-        <div class="pulse-grid" id="pulse-grid"></div>
+      <!-- UNIFIED FOREX & GOLD MOMENTUM HEATMAP COCKPIT (OPTION B) -->
+      <div id="market-heatmap-cockpit" class="heatmap-cockpit-wrap">
+        <div class="cal-header-row" style="margin-bottom:12px;">
+          <div>
+            <div class="section-header" style="color:var(--cyan);display:flex;align-items:center;gap:8px;">
+              <span>⚡ FOREX & SPOT GOLD MOMENTUM COCKPIT</span>
+              <span class="cockpit-badge" style="background:rgba(0,229,255,0.12);color:var(--cyan);border:1px solid rgba(0,229,255,0.3);font-size:9.5px;padding:2px 7px;">DAILY BASELINE (06:00 MYT / NY ROLLOVER)</span>
+            </div>
+            <div class="section-subheader">CURRENCY STRENGTH • PAIR MOMENTUM & PIPS • SPOT GOLD DESK • Decision Support - Not a Signal</div>
+          </div>
+          <div class="cal-badge-pill" style="border-color:rgba(0,229,255,0.3);color:var(--cyan);">
+            <span class="pulse-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan);"></span> LIVE INTRADAY FLOW
+          </div>
+        </div>
+
+        <div class="heatmap-cockpit-grid">
+          <!-- COLUMN 1: CURRENCY STRENGTH INDEX -->
+          <div class="cockpit-col-card" id="csi-col-card">
+            <div class="col-card-header">
+              <div class="col-card-title">
+                <span class="col-icon">📊</span>
+                <span class="col-name">CURRENCY STRENGTH INDEX</span>
+              </div>
+              <span class="col-subtag" id="csi-active-count">FIAT FLOW</span>
+            </div>
+            <div class="csi-bar-list" id="csi-bar-list">
+              <div class="gc-empty" style="padding:16px;">Loading strength...</div>
+            </div>
+            <div class="csi-movers-box">
+              <div class="mover-tag mover-gainer">
+                <span class="mover-lbl">TOP GAINER</span>
+                <span class="mover-val" id="csi-top-gainer">—</span>
+              </div>
+              <div class="mover-tag mover-loser">
+                <span class="mover-lbl">TOP LOSER</span>
+                <span class="mover-val" id="csi-top-loser">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- COLUMN 2: FOREX PAIRS MOMENTUM & PIPS -->
+          <div class="cockpit-col-card" id="fx-col-card">
+            <div class="col-card-header">
+              <div class="col-card-title">
+                <span class="col-icon">💱</span>
+                <span class="col-name">CORE FOREX PAIRS</span>
+              </div>
+              <span class="col-subtag">% & PIPS FROM OPEN</span>
+            </div>
+            <div class="fx-pairs-table-wrap">
+              <div class="fx-pairs-header">
+                <span>PAIR</span>
+                <span style="text-align:right;">% CHANGE</span>
+                <span style="text-align:right;">PIPS CHANGE</span>
+                <span style="text-align:center;">ALIGN</span>
+              </div>
+              <div class="fx-pairs-list" id="fx-pairs-list">
+                <div class="gc-empty" style="padding:16px;">Loading pairs...</div>
+              </div>
+            </div>
+            <div class="col-card-footer-note">
+              <span>Dynamic interbank rollover • Pips & % change vs today's open</span>
+            </div>
+          </div>
+
+          <!-- COLUMN 3: SPOT GOLD (XAUUSD DESK) -->
+          <div class="cockpit-col-card gold-desk-card" id="gold-col-card">
+            <div class="col-card-header">
+              <div class="col-card-title">
+                <span class="col-icon">🪙</span>
+                <span class="col-name" style="color:var(--gold);">SPOT GOLD (XAUUSD DESK)</span>
+              </div>
+              <span class="col-subtag gold-tag">MACRO & VOLATILITY</span>
+            </div>
+            <div class="gold-desk-content">
+              <!-- Live Spot Price & Today's % -->
+              <div class="gold-price-banner">
+                <div class="gold-price-left">
+                  <div class="gold-price-label">LIVE SPOT PRICE</div>
+                  <div class="gold-price-val" id="gold-spot-price">$—</div>
+                </div>
+                <div class="gold-price-right">
+                  <div class="gold-pct-pill fx-pct-pill neut" id="gold-pct-pill">+0.00%</div>
+                  <div class="gold-pips-val fx-pips-txt neut" id="gold-pips-val">+0.00 pts</div>
+                </div>
+              </div>
+
+              <!-- Today's Range Bar -->
+              <div class="gold-range-box">
+                <div class="gold-range-header">
+                  <span class="range-lbl">TODAY'S RANGE</span>
+                  <span class="range-val" id="gold-range-text">$— – $—</span>
+                </div>
+                <div class="range-track">
+                  <div class="range-bar" id="gold-range-bar" style="width:50%;"></div>
+                </div>
+                <div class="range-limits">
+                  <span id="gold-range-low">L: $—</span>
+                  <span id="gold-range-high">H: $—</span>
+                </div>
+              </div>
+
+              <!-- Live Macro Drivers -->
+              <div class="gold-drivers-box">
+                <div class="drivers-title">MACRO DRIVERS IMPACTING GOLD</div>
+                <div class="driver-item" id="gold-driver-dxy">
+                  <span class="driver-name">DXY Dollar Index:</span>
+                  <span class="driver-status" id="gd-dxy-status">—</span>
+                </div>
+                <div class="driver-item" id="gold-driver-us10y">
+                  <span class="driver-name">US 10Y Yield:</span>
+                  <span class="driver-status" id="gd-us10y-status">—</span>
+                </div>
+                <div class="driver-item" id="gold-driver-atr">
+                  <span class="driver-name">Daily ATR (Volatility):</span>
+                  <span class="driver-status" id="gd-atr-status">$—</span>
+                </div>
+              </div>
+
+              <!-- Net Gold Bias -->
+              <div class="gold-net-bias-box" id="gold-net-bias-box">
+                <span class="net-bias-lbl">NET GOLD BIAS:</span>
+                <span class="net-bias-val" id="gold-net-bias-val">EVALUATING...</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div id="global-calendar" class="global-calendar-container">
@@ -677,17 +1303,7 @@
         </div>
       </div>
 
-      <div id="market-heatmap" class="heatmap-container">
-        <div class="section-header">MARKET HEATMAP</div>
-        <div class="section-subheader">H4 H1 M15 ALIGNMENT • Decision Support - Not a Signal</div>
-        <div class="heatmap-grid">
-          <div class="heatmap-header">
-            <span>PAIR</span><span>SCORE</span><span>H4</span><span>H1</span><span>M15</span><span>ALIGN</span>
-          </div>
-          <div id="heatmap-body"></div>
-        </div>
-        <div class="heatmap-footer">Top: <span id="heatmap-top">-</span> • 3/3 = full alignment, 2/3 = pullback watch, MIXED = no trade</div>
-      </div>
+
     </div>
   </main>
 
@@ -704,6 +1320,15 @@
 
 <script>
 const PAIRS = ["EURUSD","GBPUSD","USDJPY","GBPJPY","EURJPY","EURGBP","XAUUSD"];
+const PAIR_NAMES = {
+  EURUSD: "Euro · US Dollar",
+  GBPUSD: "Pound · US Dollar",
+  USDJPY: "US Dollar · Japanese Yen",
+  GBPJPY: "Pound · Japanese Yen",
+  EURJPY: "Euro · Japanese Yen",
+  EURGBP: "Euro · British Pound",
+  XAUUSD: "Spot Gold · US Dollar"
+};
 let DATA = {};
 let SELECTED = "XAUUSD";
 
@@ -803,6 +1428,7 @@ function updateSessions(sessions){
 
 function renderMacroIntel(data){
   if(!data || !data.matrix) return;
+  window._MACRO_MATRIX = data.matrix;
   const m = data.matrix;
   const ins = data.insight || {};
 
@@ -867,6 +1493,12 @@ function renderMacroIntel(data){
 
   const sync = document.getElementById('macro-sync-time');
   if(sync) sync.textContent = 'SYNCED: ' + new Date().toLocaleTimeString();
+
+  try {
+    if(typeof renderUnifiedHeatmap === 'function' && (window._LAST_MARKET_PULSE || window._LAST_MARKET_HEATMAP)){
+      renderUnifiedHeatmap();
+    }
+  } catch(e){}
 }
 
 async function pollMacro(){
@@ -905,35 +1537,179 @@ function getAlignment(h4d, h1d, m15d){
   }
   return Object.assign({ level:'LOW', score:0, color:'#4B5563', label:'LOW', tooltip:'LOW CONFLUENCE' }, base);
 }
-function alignmentFor(d){ return getAlignment(d.h4 && d.h4.direction, d.h1 && d.h1.bias, d.m15_bias); }
+function alignmentFor(d){ 
+  const h1Trend = d.h1_bias || (d.h1 && d.h1.bias);
+  return getAlignment(d.h4 && d.h4.direction, h1Trend, d.m15_bias); 
+}
+
+function formatCardAction(d) {
+  const act = (d.action || 'WAIT').toUpperCase();
+  const sc = d.score != null ? d.score : 0;
+  const reason = d.reason || '';
+  const isGold = (d.symbol || '').includes('XAU') || (d.symbol || '').includes('GOLD');
+  const dir = parseDir(d.h4 && d.h4.direction);
+  const isBear = dir === 'BEAR';
+
+  // 1. High impact news
+  if (act.includes('NEWS') || reason.includes('High impact news') || reason.includes('polluted')) {
+    return {
+      badge: '⚠️ NEWS RISK · STAND ASIDE',
+      cls: 'act-news',
+      summary: isGold
+        ? 'High-impact economic release approaching. Gold exhibits extreme volatility spikes—remain flat.'
+        : 'High-impact news release in under 60 minutes. Stand aside until volatility settles.'
+    };
+  }
+
+  // 2. Buy Pullback ready
+  if (act.includes('BUY PULLBACK')) {
+    return {
+      badge: '🟢 BUY PULLBACK READY',
+      cls: 'act-buy',
+      summary: isGold
+        ? 'Bullish structure intact. Price retraced to value support. Macro tailwinds favor Gold.'
+        : 'Uptrend active. Price has pulled back to value support—favorable entry window.'
+    };
+  }
+
+  // 3. Sell Pullback ready
+  if (act.includes('SELL PULLBACK')) {
+    return {
+      badge: '🔴 SELL PULLBACK READY',
+      cls: 'act-sell',
+      summary: isGold
+        ? 'Bearish structure intact. Price retraced up to resistance. Dollar/yield pressure active.'
+        : 'Downtrend active. Price has retraced up into resistance—favorable sell window.'
+    };
+  }
+
+  // 4. Trend active, but wait for pullback / retrace
+  if (act.includes('WAIT FOR PULLBACK') || (sc >= 70 && reason.includes('Wait for'))) {
+    if (isBear) {
+      return {
+        badge: '🟡 WAIT FOR BOUNCE / RETRACE',
+        cls: 'act-wait-pullback',
+        summary: isGold
+          ? 'Strong downtrend, but Gold is oversold. Wait for a bounce up to resistance before shorting.'
+          : 'Strong downtrend, but price is extended. Wait for a bounce up into the 21 EMA before shorting.'
+      };
+    }
+    return {
+      badge: '🟡 WAIT FOR PULLBACK',
+      cls: 'act-wait-pullback',
+      summary: isGold
+        ? 'Strong uptrend, but Gold is extended. Wait for a dip to support before buying.'
+        : 'Strong uptrend, but price is extended. Wait for a dip down into the 21 EMA before buying.'
+    };
+  }
+
+  // 5. Early / Developing
+  if (act.includes('EARLY') || act.includes('LOOK - EARLY')) {
+    return {
+      badge: '👀 DEVELOPING SETUP',
+      cls: 'act-early',
+      summary: 'Pullback is currently forming. Monitor price action closely, but do not chase.'
+    };
+  }
+
+  // 6. Limit at Liquidity
+  if (act.startsWith('LIMIT AT LIQ')) {
+    const level = act.replace(/LIMIT AT LIQ (HIGH|LOW)\s*/, '');
+    return {
+      badge: '🎯 LIMIT AT LIQUIDITY LEVEL',
+      cls: 'act-limit',
+      summary: `High momentum trend breakout. Watching for limit reaction near ${level || 'key liquidity'}.`
+    };
+  }
+
+  // 7. Low edge / Chop / Wait
+  if (sc < 40 || reason.includes('no edge') || reason.includes('chop')) {
+    return {
+      badge: '⚪ WAIT · CHOPPY / NO EDGE',
+      cls: 'act-wait',
+      summary: isGold
+        ? 'Gold is consolidating without clear trend direction. Await Dollar / yield resolution.'
+        : 'Market is range-bound without clear directional momentum. Standing aside.'
+    };
+  }
+
+  // 8. Moderate score wait
+  return {
+    badge: '⚪ WAIT FOR CONFIRMATION',
+    cls: 'act-wait',
+    summary: 'Consolidation phase. Waiting for multi-timeframe alignment and retrace to support.'
+  };
+}
 
 function cardHTML(d){
-  const sc = scoreColor(d.score);
-  const h = d.h4 || {}, h1 = d.h1 || {}, lv = d.levels || {};
+  const h = d.h4 || {}, h1 = d.h1 || {};
   const al = alignmentFor(d);
-  const body = `H4 ${h.gate||'--'} ${h.direction||'--'} ADX ${fmt(h.adx,1)} ATRx${fmt(h.atr_ratio,1)} | H1 Dist ${fmt(h1.dist_ema21_atr,2)} ATR | M15 ${d.m15_bias||'--'} | Liq High ${fmt(lv.liq_high)}`;
-  const actColor = (d.action && d.action.startsWith('LIMIT AT LIQ')) ? 'var(--gold)' : 'var(--text)';
+  const actInfo = formatCardAction(d);
+  const name = PAIR_NAMES[d.symbol] || '';
+
+  const scoreVal = d.score != null ? Math.round(Number(d.score)) : 0;
+  let tierCls = 'moderate';
+  let tierText = 'Moderate';
+  if (scoreVal >= 70) {
+    tierCls = 'strong';
+    tierText = 'High Edge';
+  } else if (scoreVal < 40) {
+    tierCls = 'weak';
+    tierText = 'Low / Chop';
+  }
+
+  // 3 Timeframe Dots
+  let dotsHtml = '';
+  if (al.level === 'HIGH') {
+    dotsHtml = `<span class="align-dots" style="color:var(--bull);">●●●</span> 3/3 Align`;
+  } else if (al.level === 'MEDIUM') {
+    dotsHtml = `<span class="align-dots"><span style="color:var(--neut);">●●</span><span style="opacity:0.35;">○</span></span> 2/3 Align`;
+  } else {
+    dotsHtml = `<span class="align-dots"><span style="color:#94A3B8;">●</span><span style="opacity:0.35;">○○</span></span> Low Align`;
+  }
+
+  // 20 Segmented Blocks
+  const totalBlocks = 20;
+  const activeBlocks = Math.round((Math.max(0, Math.min(100, scoreVal)) / 100) * totalBlocks);
+  let blocksHtml = '';
+  for (let i = 0; i < totalBlocks; i++) {
+    blocksHtml += `<span class="seg-block ${i < activeBlocks ? 'active' : ''}"></span>`;
+  }
+
   return `<div class="card ${d.symbol===SELECTED?'sel':''}" data-symbol="${d.symbol}">
     <div class="chead">
       <div class="chead-left">
-        <div class="sym">${d.symbol}</div>
-        <div class="price">${priceTxt(d.symbol,d.price)}</div>
+        <div class="sym-row">
+          <span class="sym">${d.symbol}</span>
+          <span class="price">${priceTxt(d.symbol,d.price)}</span>
+        </div>
+        <div class="sym-desc">${name}</div>
       </div>
-      <div class="align-wrap">
-        <div class="align-dot lvl-${al.level}" title="${al.tooltip}"></div>
-        <div class="align-tag lvl-${al.level}">${al.label}</div>
-        <div class="circle" style="background:${sc.bg};color:${sc.fg};box-shadow:0 0 14px ${sc.bg}">${d.score}</div>
-        <button class="deep-dive-btn" onclick="window.location.href='/pair/${d.symbol}'">Deep Dive &rarr;</button>
+      <div class="chead-right">
+        <button class="deep-dive-btn" onclick="event.stopPropagation();window.location.href='/pair/${d.symbol}'">Deep Dive &rarr;</button>
       </div>
     </div>
     <div class="badges">
       ${biasBadge('H4', h.direction)}
-      ${biasBadge('H1', h1.bias)}
+      ${biasBadge('H1', d.h1_bias || (h1 && h1.bias))}
       ${biasBadge('M15', d.m15_bias)}
     </div>
-    <div class="body">${body}</div>
-    <div class="act" style="color:${actColor}">${d.action||'WAIT'}</div>
-    <div class="res">${d.reason||''}</div>
+    <div class="act-banner ${actInfo.cls}">
+      <span>${actInfo.badge}</span>
+    </div>
+    <div class="card-summary">${actInfo.summary}</div>
+    <div class="strength-section">
+      <div class="strength-meta">
+        <span class="strength-label">Direction Strength: <b>${scoreVal}/100</b> <span class="strength-tier ${tierCls}">(${tierText})</span></span>
+        <span class="strength-align lvl-${al.level}">${dotsHtml}</span>
+      </div>
+      <div class="strength-bar-row">
+        <div class="seg-bar ${tierCls}">
+          ${blocksHtml}
+        </div>
+        <span class="seg-pct">(${scoreVal}%)</span>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -941,9 +1717,30 @@ function renderCards(){
   const grid = document.getElementById('grid');
   if(!grid) return;
   grid.innerHTML = PAIRS.map(s => DATA[s] ? cardHTML(DATA[s]) :
-    `<div class="card"><div class="chead"><div class="sym">${s}</div><div class="price">—</div>
-      <div class="align-wrap"><div class="align-dot lvl-LOW"></div><div class="align-tag lvl-LOW"></div>
-      <div class="circle" style="background:#1A2234;color:#71717a">--</div></div></div></div>`
+    `<div class="card" data-symbol="${s}">
+      <div class="chead">
+        <div class="chead-left">
+          <div class="sym-row"><span class="sym">${s}</span><span class="price">—</span></div>
+          <div class="sym-desc">${PAIR_NAMES[s]||''}</div>
+        </div>
+        <div class="chead-right">
+          <button class="deep-dive-btn" onclick="event.stopPropagation();window.location.href='/pair/${s}'">Deep Dive &rarr;</button>
+        </div>
+      </div>
+      <div class="act-banner act-wait"><span>⚪ LOADING...</span></div>
+      <div class="strength-section">
+        <div class="strength-meta">
+          <span class="strength-label">Direction Strength: <b>--/100</b></span>
+          <span class="strength-align lvl-LOW"><span class="align-dots" style="opacity:0.35;">○○○</span> -- Align</span>
+        </div>
+        <div class="strength-bar-row">
+          <div class="seg-bar weak">
+            ${Array(20).fill('<span class="seg-block"></span>').join('')}
+          </div>
+          <span class="seg-pct">(--%)</span>
+        </div>
+      </div>
+    </div>`
   ).join('');
   grid.querySelectorAll('.card[data-symbol]').forEach(c=>{
     c.addEventListener('click', ()=>{ SELECTED=c.dataset.symbol; renderCards(); });
@@ -967,30 +1764,7 @@ function renderNews(){
   bar.innerHTML = `SESSION: <span id="session">${sess}</span> • <span id="news-next">${text}</span>`;
 }
 
-/* ================== MARKET PULSE ================== */
-function renderMarketPulse(market_pulse){
-  const grid = document.getElementById('pulse-grid');
-  if(!grid || !market_pulse) return;
-  const colorMap = { green:'#00FF88', red:'#FF5A79', yellow:'#FFB800', gray:'#6B7280' };
-  const items = Object.entries(market_pulse)
-    .filter(([cur, d]) => d && typeof d === 'object' && d.strength !== null && d.label !== "No Data")
-    .map(([cur, d]) => {
-      const strength = (d.strength > 0 ? '+' : '') + d.strength.toFixed(2);
-      const dir = d.direction === 'up' ? '▲' : d.direction === 'down' ? '▼' : '→';
-      const color = colorMap[d.color] || '#FFB800';
-      const label = d.label || '—';
-      const ratio = d.bull_ratio || '—';
-      return `<div class="pulse-card">
-        <div class="pulse-cur">${cur}</div>
-        <div class="pulse-arrow" style="color:${color}">${dir} ${label}</div>
-        <div class="pulse-strength" style="color:${color}">${strength}</div>
-        <div class="pulse-ratio">${ratio} Bull</div>
-      </div>`;
-    });
-  if(items.length > 0){
-    grid.innerHTML = items.join('');
-  }
-}
+
 
 /* ================== GLOBAL CALENDAR (OPTION B + PAST RELEASE STYLING) ================== */
 let CURRENT_CAL_TAB = 'today';
@@ -1221,42 +1995,262 @@ function renderFilteredCalendar(){
   tbody.innerHTML = html;
 }
 
-/* ================== MARKET HEATMAP ================== */
-function renderHeatmap(raw){
-  try {
-    const arr = Array.isArray(raw)? raw : (raw && (raw.heatmap || raw.market_heatmap || raw.data)) || [];
-    const body = document.getElementById('heatmap-body');
-    const top = document.getElementById('heatmap-top');
-    if(!body) return;
-    if(!arr.length){
-      body.innerHTML = '<div style="padding:12px;color:#666;text-align:center;">No heatmap — waiting for data</div>';
-      return;
+/* ================== UNIFIED FOREX & SPOT GOLD MOMENTUM HEATMAP COCKPIT ================== */
+function renderUnifiedHeatmap(market_pulse, heatmapData){
+  if(market_pulse) window._LAST_MARKET_PULSE = market_pulse;
+  if(heatmapData) window._LAST_MARKET_HEATMAP = heatmapData;
+
+  const pulse = window._LAST_MARKET_PULSE;
+  const rawHm = window._LAST_MARKET_HEATMAP;
+  const hm = Array.isArray(rawHm) ? rawHm : ((rawHm && (rawHm.heatmap || rawHm.market_heatmap || rawHm.data)) || []);
+
+  /* ---------------- COLUMN 1: CURRENCY STRENGTH INDEX ---------------- */
+  const csiList = document.getElementById('csi-bar-list');
+  const topGainerEl = document.getElementById('csi-top-gainer');
+  const topLoserEl = document.getElementById('csi-top-loser');
+  const activeCountEl = document.getElementById('csi-active-count');
+
+  if(csiList && pulse){
+    const excludeKeys = ['_top_gainer', '_top_loser', 'timestamp', 'method', 'XAU'];
+    const curEntries = Object.entries(pulse)
+      .filter(([k, v]) => !excludeKeys.includes(k) && v && typeof v === 'object' && v.strength !== null && v.strength !== undefined);
+
+    if(activeCountEl) activeCountEl.textContent = `${curEntries.length} FIAT FLOW`;
+
+    if(curEntries.length === 0){
+      csiList.innerHTML = '<div class="gc-empty" style="padding:16px;">Waiting for currency flow data...</div>';
+    } else {
+      curEntries.sort((a, b) => (Number(b[1].strength) || 0) - (Number(a[1].strength) || 0));
+
+      csiList.innerHTML = curEntries.map(([cur, d]) => {
+        const strVal = Number(d.strength || 0);
+        const isPos = strVal > 0;
+        const isNeg = strVal < 0;
+        const sign = isPos ? '+' : '';
+        const valStr = `${sign}${strVal.toFixed(1)}`;
+        const valCls = isPos ? 'pos' : isNeg ? 'neg' : 'neut';
+        
+        // 10 segmented blocks
+        const intensity = Math.min(10, Math.max(isPos || isNeg ? 1 : 0, Math.round(Math.abs(strVal) * 1.5)));
+        let blocks = '';
+        for(let i = 0; i < 10; i++){
+          if(i < intensity){
+            blocks += `<span class="csi-block ${isPos ? 'active-pos' : isNeg ? 'active-neg' : ''}"></span>`;
+          } else {
+            blocks += `<span class="csi-block"></span>`;
+          }
+        }
+
+        return `
+          <div class="csi-row">
+            <span class="csi-cur">${cur}</span>
+            <div class="csi-meter-wrap" title="${cur}: ${d.label || ''} (${d.bull_ratio || ''} Bull)">
+              ${blocks}
+            </div>
+            <span class="csi-val ${valCls}">${valStr}</span>
+          </div>
+        `;
+      }).join('');
+
+      let topG = pulse._top_gainer;
+      let topL = pulse._top_loser;
+      if(!topG && curEntries.length > 0){
+        topG = { currency: curEntries[0][0], strength: curEntries[0][1].strength };
+      }
+      if(!topL && curEntries.length > 1){
+        topL = { currency: curEntries[curEntries.length - 1][0], strength: curEntries[curEntries.length - 1][1].strength };
+      }
+
+      if(topGainerEl && topG){
+        const gSign = Number(topG.strength) > 0 ? '+' : '';
+        topGainerEl.textContent = `${topG.currency} (${gSign}${Number(topG.strength).toFixed(1)})`;
+      }
+      if(topLoserEl && topL){
+        const lSign = Number(topL.strength) > 0 ? '+' : '';
+        topLoserEl.textContent = `${topL.currency} (${lSign}${Number(topL.strength).toFixed(1)})`;
+      }
     }
-    const norm = v => {
-      if(!v) return 'NEUTRAL';
-      if(typeof v==='string') return v;
-      if(typeof v==='object') return v.direction || v.bias || v.trend || v.h4 || 'NEUTRAL';
-      return String(v);
+  }
+
+  /* ---------------- COLUMN 2: CORE FOREX PAIRS ---------------- */
+  const fxList = document.getElementById('fx-pairs-list');
+  if(fxList && hm.length > 0){
+    const fxPairs = hm.filter(r => !r.is_gold && !String(r.pair).toUpperCase().includes('XAU'));
+    
+    if(fxPairs.length === 0){
+      fxList.innerHTML = '<div class="gc-empty" style="padding:16px;">No forex pairs available</div>';
+    } else {
+      fxList.innerHTML = fxPairs.map(r => {
+        const pct = Number(r.pct_change || 0);
+        const pips = Number(r.pips_change || 0);
+        const isPos = pct > 0;
+        const isNeg = pct < 0;
+        const pctSign = isPos ? '+' : '';
+        const pipsSign = pips > 0 ? '+' : '';
+        const pctCls = isPos ? 'pos' : isNeg ? 'neg' : 'neut';
+        const pipsCls = pips > 0 ? 'pos' : pips < 0 ? 'neg' : 'neut';
+        
+        let alignBadge = '';
+        const al = String(r.alignment || '').toUpperCase();
+        if(al.includes('3/3 BULL') || al.includes('3/3 UP')){
+          alignBadge = '<span class="fx-align-badge full-bull">3/3 BULL</span>';
+        } else if(al.includes('3/3 BEAR') || al.includes('3/3 DOWN')){
+          alignBadge = '<span class="fx-align-badge full-bear">3/3 BEAR</span>';
+        } else if(al.includes('2/3')){
+          alignBadge = '<span class="fx-align-badge pullback">2/3 PULL</span>';
+        } else {
+          alignBadge = '<span class="fx-align-badge mixed">MIXED</span>';
+        }
+
+        return `
+          <div class="fx-pair-row" onclick="window.location.href='/pair/${r.pair}'" title="Deep dive ${r.pair}">
+            <span class="fx-pair-sym">${r.pair}</span>
+            <div style="text-align:right;"><span class="fx-pct-pill ${pctCls}">${pctSign}${pct.toFixed(2)}%</span></div>
+            <span class="fx-pips-txt ${pipsCls}">${pipsSign}${pips.toFixed(1)}p</span>
+            <div>${alignBadge}</div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  /* ---------------- COLUMN 3: SPOT GOLD (XAUUSD DESK) ---------------- */
+  let goldRow = hm.find(r => r.is_gold || String(r.pair).toUpperCase().includes('XAU'));
+  if(!goldRow && DATA['XAUUSD'] && DATA['XAUUSD'].price){
+    const d = DATA['XAUUSD'];
+    const p = Number(d.price || 0);
+    const op = Number(d.daily_open || (d.levels && d.levels.daily_open) || p);
+    const pct = op > 0 ? ((p - op) / op) * 100 : 0;
+    goldRow = {
+      pair: 'XAUUSD',
+      price: p,
+      daily_open: op,
+      pct_change: pct,
+      pips_change: p - op,
+      today_high: Number(d.levels?.daily_high || p),
+      today_low: Number(d.levels?.daily_low || p),
+      atr: Number(d.levels?.atr || d.atr || 0),
+      h4: d.h4?.direction || 'NEUTRAL'
     };
-    const ico = v => {
-      const s = norm(v).toUpperCase();
-      if(s.includes('UP')||s.includes('BULL')) return '🟢';
-      if(s.includes('DOWN')||s.includes('BEAR')) return '🔴';
-      return '⚪';
-    };
-    body.innerHTML = arr.map(r=>`
-      <div class="heatmap-row ${r.color||'gray'}" style="display:grid;grid-template-columns:0.9fr 0.5fr 0.6fr 0.6fr 0.6fr 0.8fr;padding:8px 0;border-bottom:1px solid #1e212e;border-left:3px solid ${r.color==='green'?'#00d47b':r.color==='red'?'#ff4747':'#555'}">
-        <span><b>${r.pair}</b></span>
-        <span style="color:${r.score>=65?'#00d47b':r.score<45?'#ff4747':'#ffc107'}"><b>${Math.round(r.score||0)}</b></span>
-        <span>${ico(r.h4)} ${norm(r.h4).slice(0,4)}</span>
-        <span>${ico(r.h1)} ${norm(r.h1).slice(0,4)}</span>
-        <span>${ico(r.m15)} ${norm(r.m15).slice(0,4)}</span>
-        <span style="font-size:10px"><b>${r.alignment||''}</b></span>
-      </div>
-    `).join('');
-    if(top && arr[0]) top.textContent = `TOP: ${arr[0].pair} ${Math.round(arr[0].score)} ${arr[0].alignment||''}`;
-  } catch(e){
-    console.error("renderHeatmap FATAL", e);
+  }
+
+  if(goldRow && goldRow.price){
+    const gPrice = Number(goldRow.price || 0);
+    const gPct = Number(goldRow.pct_change || 0);
+    const gPts = Number(goldRow.pips_change || 0);
+    const gHigh = Number(goldRow.today_high || gPrice);
+    const gLow = Number(goldRow.today_low || gPrice);
+    const gAtr = Number(goldRow.atr || 0);
+
+    const spotPriceEl = document.getElementById('gold-spot-price');
+    if(spotPriceEl) spotPriceEl.textContent = `$${gPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const pctPill = document.getElementById('gold-pct-pill');
+    if(pctPill){
+      const isPos = gPct > 0;
+      const isNeg = gPct < 0;
+      pctPill.className = `gold-pct-pill fx-pct-pill ${isPos ? 'pos' : isNeg ? 'neg' : 'neut'}`;
+      pctPill.textContent = `${isPos ? '+' : ''}${gPct.toFixed(2)}%`;
+    }
+
+    const pipsVal = document.getElementById('gold-pips-val');
+    if(pipsVal){
+      const isPos = gPts > 0;
+      const isNeg = gPts < 0;
+      pipsVal.className = `gold-pips-val fx-pips-txt ${isPos ? 'pos' : isNeg ? 'neg' : 'neut'}`;
+      pipsVal.textContent = `${isPos ? '+' : ''}${gPts.toFixed(2)} pts`;
+    }
+
+    const rangeText = document.getElementById('gold-range-text');
+    if(rangeText) rangeText.textContent = `$${gLow.toFixed(2)} – $${gHigh.toFixed(2)}`;
+
+    const rangeLow = document.getElementById('gold-range-low');
+    if(rangeLow) rangeLow.textContent = `L: $${gLow.toFixed(2)}`;
+
+    const rangeHigh = document.getElementById('gold-range-high');
+    if(rangeHigh) rangeHigh.textContent = `H: $${gHigh.toFixed(2)}`;
+
+    const rangeBar = document.getElementById('gold-range-bar');
+    if(rangeBar){
+      const span = Math.max(0.01, gHigh - gLow);
+      const posPct = Math.min(100, Math.max(0, ((gPrice - gLow) / span) * 100));
+      rangeBar.style.width = `${posPct.toFixed(1)}%`;
+    }
+
+    // Macro Drivers Impacting Gold
+    const matrix = window._MACRO_MATRIX || {};
+    const dxy = matrix.DXY || {};
+    const us10y = matrix.US10Y || {};
+
+    const dxyStatusEl = document.getElementById('gd-dxy-status');
+    let dxyBullishForGold = false;
+    let dxyBearishForGold = false;
+    if(dxyStatusEl){
+      if(dxy.price){
+        const dxyChg = Number(dxy.change_pct || 0);
+        const dxyChgSign = dxyChg >= 0 ? '+' : '';
+        if(dxyChg > 0.05){
+          dxyBearishForGold = true;
+          dxyStatusEl.innerHTML = `<span style="color:#FF5A79;">${dxy.price.toFixed(2)} (${dxyChgSign}${dxyChg.toFixed(2)}%) → Headwind</span>`;
+        } else if(dxyChg < -0.05){
+          dxyBullishForGold = true;
+          dxyStatusEl.innerHTML = `<span style="color:#00FF88;">${dxy.price.toFixed(2)} (${dxyChgSign}${dxyChg.toFixed(2)}%) → Tailwind</span>`;
+        } else {
+          dxyStatusEl.innerHTML = `<span style="color:#94A3B8;">${dxy.price.toFixed(2)} (${dxyChgSign}${dxyChg.toFixed(2)}%) → Neutral</span>`;
+        }
+      } else {
+        dxyStatusEl.textContent = 'Syncing...';
+      }
+    }
+
+    const us10yStatusEl = document.getElementById('gd-us10y-status');
+    let yieldBullishForGold = false;
+    let yieldBearishForGold = false;
+    if(us10yStatusEl){
+      if(us10y.price){
+        const yChg = Number(us10y.change_pct || 0);
+        const yBps = Math.round(yChg * 100);
+        const ySign = yBps >= 0 ? '+' : '';
+        if(yBps > 1){
+          yieldBearishForGold = true;
+          us10yStatusEl.innerHTML = `<span style="color:#FF5A79;">${us10y.price.toFixed(2)}% (${ySign}${yBps} bps) → Yield Pressure</span>`;
+        } else if(yBps < -1){
+          yieldBullishForGold = true;
+          us10yStatusEl.innerHTML = `<span style="color:#00FF88;">${us10y.price.toFixed(2)}% (${ySign}${yBps} bps) → Support</span>`;
+        } else {
+          us10yStatusEl.innerHTML = `<span style="color:#94A3B8;">${us10y.price.toFixed(2)}% (${ySign}${yBps} bps) → Flat</span>`;
+        }
+      } else {
+        us10yStatusEl.textContent = 'Syncing...';
+      }
+    }
+
+    const atrStatusEl = document.getElementById('gd-atr-status');
+    if(atrStatusEl){
+      atrStatusEl.textContent = gAtr > 0 ? `$${gAtr.toFixed(2)} / day` : '—';
+    }
+
+    // Net Gold Bias
+    const netBiasValEl = document.getElementById('gold-net-bias-val');
+    const netBiasBox = document.getElementById('gold-net-bias-box');
+    if(netBiasValEl && netBiasBox){
+      if((dxyBullishForGold || yieldBullishForGold) && !dxyBearishForGold && !yieldBearishForGold){
+        netBiasValEl.textContent = 'BULLISH MACRO SUPPORT';
+        netBiasValEl.style.color = '#00FF88';
+        netBiasBox.style.borderColor = 'rgba(0, 255, 136, 0.4)';
+        netBiasBox.style.background = 'rgba(0, 255, 136, 0.08)';
+      } else if((dxyBearishForGold || yieldBearishForGold) && !dxyBullishForGold && !yieldBullishForGold){
+        netBiasValEl.textContent = 'BEARISH MACRO HEADWIND';
+        netBiasValEl.style.color = '#FF5A79';
+        netBiasBox.style.borderColor = 'rgba(255, 90, 121, 0.4)';
+        netBiasBox.style.background = 'rgba(255, 90, 121, 0.08)';
+      } else {
+        netBiasValEl.textContent = 'CONFLICTED / RANGE-BOUND';
+        netBiasValEl.style.color = '#FFB800';
+        netBiasBox.style.borderColor = 'rgba(255, 184, 0, 0.3)';
+        netBiasBox.style.background = 'rgba(255, 184, 0, 0.08)';
+      }
+    }
   }
 }
 
@@ -1290,13 +2284,13 @@ function setDegradedCards(reason){
   PAIRS.forEach(s=>{ DATA[s] = degradedCard(s, reason); });
   renderCards();
 }
-function renderEmptyPulse(msg){
-  const grid = document.getElementById('pulse-grid');
-  if(grid) grid.innerHTML = `<div class="pulse-empty">${msg||'waiting for live data'}</div>`;
-}
-function renderEmptyHeatmap(msg){
-  const body = document.getElementById('heatmap-body');
-  if(body) body.innerHTML = `<div style="padding:12px;color:#666;text-align:center;">${msg||'heatmap unavailable'}</div>`;
+function renderEmptyCockpit(msg){
+  const csiList = document.getElementById('csi-bar-list');
+  const fxList = document.getElementById('fx-pairs-list');
+  const spotPrice = document.getElementById('gold-spot-price');
+  if(csiList) csiList.innerHTML = `<div class="gc-empty" style="padding:16px;">${msg}</div>`;
+  if(fxList) fxList.innerHTML = `<div class="gc-empty" style="padding:16px;">${msg}</div>`;
+  if(spotPrice) spotPrice.textContent = '$—';
 }
 function renderEmptyCalendar(msg){
   const tbody = document.getElementById('global-calendar-body');
@@ -1306,8 +2300,7 @@ function enterDegradedMode(bannerText, warn, reason){
   DEGRADED = true;
   showApiBanner(bannerText, warn);
   setDegradedCards(reason);
-  renderEmptyPulse('waiting for live data');
-  renderEmptyHeatmap('heatmap unavailable');
+  renderEmptyCockpit('Connecting to data feed...');
   renderEmptyCalendar('calendar unavailable');
   window._NEWS_BAR_TEXT = bannerText;
   window._BLOCKING_NEWS = [];
@@ -1343,12 +2336,11 @@ async function poll(){
       
       renderCards();
       try { renderNews(); } catch(e){}
-      try { if(data.market_pulse) renderMarketPulse(data.market_pulse); else renderEmptyPulse('waiting for live data'); } catch(e){}
-      try { if(data.global_calendar){ window._GLOBAL_CAL_TOTAL = data.count; renderGlobalCalendar(data.global_calendar); } } catch(e){}
       try {
         const hmRaw = data.market_heatmap || data.heatmap;
-        if(hmRaw) renderHeatmap(hmRaw); else renderEmptyHeatmap('heatmap unavailable');
-      } catch(e){}
+        renderUnifiedHeatmap(data.market_pulse, hmRaw);
+      } catch(e){ console.error("renderUnifiedHeatmap error", e); }
+      try { if(data.global_calendar){ window._GLOBAL_CAL_TOTAL = data.count; renderGlobalCalendar(data.global_calendar); } } catch(e){}
     }
   }catch(e){
     enterDegradedMode('OFFLINE - Reconnecting to Brain API...', true, 'Connecting to data feed...');
