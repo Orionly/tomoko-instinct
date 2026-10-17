@@ -99,22 +99,44 @@ MEDIUM_KEYWORDS = [
     "presidential race", "white house policy"
 ]
 
+# Directional action / sentiment modifiers
+DE_ESCALATION_PHRASES = [
+    "waive", "waives", "waiving", "waived", "waiver",
+    "lift sanction", "lifts sanction", "lifting sanction", "lifted sanction", "lift sanctions", "lifts sanctions", "lifting sanctions", "lifted sanctions",
+    "suspend", "suspends", "suspending", "suspended", "suspension",
+    "ease sanction", "eases sanction", "easing sanction", "eased sanction", "ease sanctions", "eases sanctions", "easing sanctions",
+    "delay tariff", "delays tariff", "delaying tariff", "pause tariff", "pauses tariff", "exempt", "exemption",
+    "on hold", "puts on hold", "put on hold", "halts", "halting",
+    "ceasefire", "peace deal", "peace talk", "peace talks", "truce", "thaw", "thaws",
+    "lessen strain", "lessens strain", "de-escalat", "end war", "ends war", "sanctions relief",
+    "normalize ties", "normalizing ties", "diplomatic breakthrough", "aid deal"
+]
+
+ESCALATION_PHRASES = [
+    "impose sanction", "imposes sanction", "imposing sanction", "imposed sanction",
+    "impose sanctions", "imposes sanctions", "imposing sanctions", "imposed sanctions",
+    "fresh sanction", "new sanction", "tighten sanction", "tightens sanction",
+    "airstrike", "missile strike", "drone strike", "invasion", "invade", "military attack",
+    "slaps tariff", "slap tariff", "impose tariff", "imposes tariff", "tariff threat",
+    "retaliatory tariff", "blockade", "nuclear threat", "war declaration", "mobilization"
+]
+
 # Speaker identification dictionary
 KNOWN_SPEAKERS = {
-    "kevin warsh": {"name": "Kevin Warsh", "title": "Federal Reserve Chair", "currency": "USD", "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
-    "warsh": {"name": "Kevin Warsh", "title": "Federal Reserve Chair", "currency": "USD", "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
-    "scott bessent": {"name": "Scott Bessent", "title": "US Treasury Secretary", "currency": "USD", "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
-    "bessent": {"name": "Scott Bessent", "title": "US Treasury Secretary", "currency": "USD", "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
-    "donald trump": {"name": "Donald Trump", "title": "US President", "currency": "USD", "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
-    "trump": {"name": "Donald Trump", "title": "US President", "currency": "USD", "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
-    "jerome powell": {"name": "Jerome Powell", "title": "Former Fed Chair / Fed Governor", "currency": "USD", "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
-    "powell": {"name": "Jerome Powell", "title": "Former Fed Chair / Fed Governor", "currency": "USD", "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
-    "kazuo ueda": {"name": "Kazuo Ueda", "title": "Governor, Bank of Japan", "currency": "JPY", "pairs": ["USDJPY", "GBPJPY", "EURJPY"]},
-    "ueda": {"name": "Kazuo Ueda", "title": "Governor, Bank of Japan", "currency": "JPY", "pairs": ["USDJPY", "GBPJPY", "EURJPY"]},
-    "christine lagarde": {"name": "Christine Lagarde", "title": "President, European Central Bank", "currency": "EUR", "pairs": ["EURUSD", "EURJPY", "EURGBP"]},
-    "lagarde": {"name": "Christine Lagarde", "title": "President, European Central Bank", "currency": "EUR", "pairs": ["EURUSD", "EURJPY", "EURGBP"]},
-    "andrew bailey": {"name": "Andrew Bailey", "title": "Governor, Bank of England", "currency": "GBP", "pairs": ["GBPUSD", "GBPJPY", "EURGBP"]},
-    "bailey": {"name": "Andrew Bailey", "title": "Governor, Bank of England", "currency": "GBP", "pairs": ["GBPUSD", "GBPJPY", "EURGBP"]},
+    "kevin warsh": {"name": "Kevin Warsh", "title": "Federal Reserve Chair", "currency": "USD", "is_former": False, "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
+    "warsh": {"name": "Kevin Warsh", "title": "Federal Reserve Chair", "currency": "USD", "is_former": False, "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
+    "scott bessent": {"name": "Scott Bessent", "title": "US Treasury Secretary", "currency": "USD", "is_former": False, "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
+    "bessent": {"name": "Scott Bessent", "title": "US Treasury Secretary", "currency": "USD", "is_former": False, "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
+    "donald trump": {"name": "Donald Trump", "title": "US President", "currency": "USD", "is_former": False, "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
+    "trump": {"name": "Donald Trump", "title": "US President", "currency": "USD", "is_former": False, "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
+    "jerome powell": {"name": "Jerome Powell", "title": "Former Fed Chair / Fed Governor", "currency": "USD", "is_former": True, "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
+    "powell": {"name": "Jerome Powell", "title": "Former Fed Chair / Fed Governor", "currency": "USD", "is_former": True, "pairs": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]},
+    "kazuo ueda": {"name": "Kazuo Ueda", "title": "Governor, Bank of Japan", "currency": "JPY", "is_former": False, "pairs": ["USDJPY", "GBPJPY", "EURJPY"]},
+    "ueda": {"name": "Kazuo Ueda", "title": "Governor, Bank of Japan", "currency": "JPY", "is_former": False, "pairs": ["USDJPY", "GBPJPY", "EURJPY"]},
+    "christine lagarde": {"name": "Christine Lagarde", "title": "President, European Central Bank", "currency": "EUR", "is_former": False, "pairs": ["EURUSD", "EURJPY", "EURGBP"]},
+    "lagarde": {"name": "Christine Lagarde", "title": "President, European Central Bank", "currency": "EUR", "is_former": False, "pairs": ["EURUSD", "EURJPY", "EURGBP"]},
+    "andrew bailey": {"name": "Andrew Bailey", "title": "Governor, Bank of England", "currency": "GBP", "is_former": False, "pairs": ["GBPUSD", "GBPJPY", "EURGBP"]},
+    "bailey": {"name": "Andrew Bailey", "title": "Governor, Bank of England", "currency": "GBP", "is_former": False, "pairs": ["GBPUSD", "GBPJPY", "EURGBP"]},
 }
 
 
@@ -180,7 +202,13 @@ class WorldNewsEngine:
                 cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
                 with self._lock:
                     loaded_items = data.get("items", [])
-                    self.items = [it for it in loaded_items if it.get("timestamp", 0) >= cutoff_ts]
+                    re_enriched = []
+                    for it in loaded_items:
+                        if it.get("timestamp", 0) >= cutoff_ts:
+                            en = self._enrich_item(it)
+                            re_enriched.append(en if en else it)
+                    self.items = re_enriched
+
                     loaded_speeches = data.get("speeches", [])
                     cleaned_speeches = []
                     for sp in loaded_speeches:
@@ -189,10 +217,14 @@ class WorldNewsEngine:
                         sp_title_lower = (sp.get("takeaways", [""])[0] if sp.get("takeaways") else "").lower()
                         if any(bad in sp_title_lower for bad in ["free speech", "hate speech", "speech fight", "creeps out", "savages trump"]):
                             continue
-                        # Update speaker title if changed in KNOWN_SPEAKERS
+                        # Update speaker title & former official status
                         for k, info in KNOWN_SPEAKERS.items():
                             if info["name"].lower() == sp.get("speaker", "").lower():
                                 sp["title"] = info["title"]
+                                if info.get("is_former"):
+                                    sp["tone"] = "COMMENTARY (FORMER OFFICIAL)"
+                                    sp["occasion"] = f"Retrospective / Commentary ({sp.get('occasion', '').split('(')[-1]}"
+                                    sp["implications"] = ["Fed: Historical / Former Policy Commentary"]
                                 break
                         cleaned_speeches.append(sp)
                     self.speeches = cleaned_speeches
@@ -359,17 +391,22 @@ class WorldNewsEngine:
                  len(self.items), len(self.speeches))
 
     def _enrich_item(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Classify severity, macro category, and correlated pairs."""
+        """Classify severity, macro category, directional sentiment, and correlated pairs."""
         text = f"{item['title']} {item['summary']}".lower()
 
-        # Noise / sports / entertainment rejection
-        if any(w in text for w in EXCLUDED_KEYWORDS):
-            return None
+        # Noise / sports / entertainment rejection (word boundaries avoid collisions like nfl in inflation)
+        for w in EXCLUDED_KEYWORDS:
+            if re.search(r"\b" + re.escape(w) + r"\b", text):
+                return None
 
-        # 1. Severity Classification
+        # 1. Directional action detection
+        is_de_escalation = any(p in text for p in DE_ESCALATION_PHRASES)
+        is_escalation = any(p in text for p in ESCALATION_PHRASES)
+
+        # 2. Severity Classification
         severity = "MONITOR"
         for kw in CRITICAL_KEYWORDS:
-            if kw in text:
+            if kw in text and not is_de_escalation:
                 severity = "CRITICAL"
                 break
 
@@ -385,7 +422,7 @@ class WorldNewsEngine:
                     severity = "MEDIUM"
                     break
 
-        # 2. Category Classification
+        # 3. Category Classification
         category = "Geopolitics"
         if any(w in text for w in ["speech", "remarks", "press conference", "testimony", "addresses", "fomc presser"]):
             category = "Speeches"
@@ -398,47 +435,93 @@ class WorldNewsEngine:
         elif any(w in text for w in ["earthquake", "tsunami", "flood", "disaster", "outbreak", "bank failure"]):
             category = "Crisis & Black Swan"
 
-        # 3. Correlated Pairs & Impact Bias
+        # 4. Correlated Pairs & Impact Bias
         impacted_pairs = []
         implications = []
 
-        # Gold / Safe Haven
-        if any(w in text for w in ["war", "strike", "missile", "escalation", "gold", "bullion", "safe haven", "iran", "middle east", "sanctions"]):
+        # Gold / Safe Haven & Geopolitical transmission
+        has_geo_keyword = any(w in text for w in ["war", "strike", "missile", "escalation", "gold", "bullion", "safe haven", "iran", "middle east", "sanction", "sanctions", "ukraine", "russia"])
+        if has_geo_keyword:
             impacted_pairs.append("XAUUSD")
-            if severity in ["CRITICAL", "HIGH"]:
+            if is_de_escalation:
+                implications.append("XAUUSD: Geopolitical Relief (Haven Unwind)")
+                if any(w in text for w in ["russia", "ukraine", "europe", "gas", "sanction", "sanctions"]):
+                    if "EURUSD" not in impacted_pairs:
+                        impacted_pairs.append("EURUSD")
+                    implications.append("EURUSD: Geopolitical Relief (Tailwind)")
+            elif is_escalation or severity in ["CRITICAL", "HIGH"]:
                 implications.append("XAUUSD: Safe-Haven Inflow (Bullish)")
 
-        # JPY & BOJ
+        # JPY & Bank of Japan
         if any(w in text for w in ["yen", "boj", "bank of japan", "ueda", "tokyo", "japan", "intervention", "nikkei"]):
             for p in ["USDJPY", "GBPJPY", "EURJPY"]:
                 if p not in impacted_pairs:
                     impacted_pairs.append(p)
-            if "intervention" in text or "rate hike" in text:
-                implications.append("USDJPY: JPY Rebound Risk (Bearish USDJPY)")
+            if any(w in text for w in ["intervention", "verbal warning", "currency check"]):
+                implications.append("USDJPY: FX Intervention Threat (JPY Surge Risk)")
+            elif any(w in text for w in ["rate hike", "hike rates", "tightening"]):
+                implications.append("USDJPY: BOJ Rate Hike Catalyst (Bearish USDJPY)")
+            elif any(w in text for w in ["hold", "dovish", "cautious", "easy policy"]):
+                implications.append("USDJPY: Dovish BOJ Stance (Yield Gap Intact)")
             else:
-                implications.append("USDJPY: Volatility / Policy Watch")
+                implications.append("USDJPY: JPY Flow / Policy Watch")
 
-        # EUR & ECB
+        # EUR & European Central Bank
         if any(w in text for w in ["ecb", "lagarde", "eurozone", "germany", "france", "brussels", "euro"]):
             for p in ["EURUSD", "EURJPY", "EURGBP"]:
                 if p not in impacted_pairs:
                     impacted_pairs.append(p)
-            if "tariff" in text or "recession" in text:
-                implications.append("EURUSD: Export Headwind (Bearish EUR)")
+            if any(w in text for w in ["tariff", "trade war"]):
+                if is_de_escalation:
+                    implications.append("EURUSD: Trade Relief (Bullish EUR)")
+                else:
+                    implications.append("EURUSD: Export Headwind (Bearish EUR)")
+            elif any(w in text for w in ["rate cut", "easing", "rate reduction"]):
+                implications.append("EURUSD: ECB Easing Bias (Yield Drag)")
+            elif any(w in text for w in ["inflation", "hike", "resilient"]):
+                implications.append("EURUSD: ECB Inflation Resilience")
+            elif "EURUSD: Geopolitical Relief (Tailwind)" not in implications:
+                implications.append("EURUSD: Eurozone Macro Watch")
 
-        # GBP & BOE
+        # GBP & Bank of England
         if any(w in text for w in ["boe", "bank of england", "bailey", "sterling", "pound", "uk budget", "gilt", "london", "britain"]):
             for p in ["GBPUSD", "GBPJPY", "EURGBP"]:
                 if p not in impacted_pairs:
                     impacted_pairs.append(p)
-            implications.append("GBPUSD: UK Policy & Yield Divergence")
+            if any(w in text for w in ["rate cut", "easing"]):
+                implications.append("GBPUSD: BOE Rate Cut Easing")
+            elif any(w in text for w in ["sticky inflation", "hike", "wage growth"]):
+                implications.append("GBPUSD: Sticky UK Inflation (Rate Support)")
+            else:
+                implications.append("GBPUSD: UK Policy & Yield Watch")
 
-        # General USD / Fed
-        if any(w in text for w in ["fed", "federal reserve", "warsh", "powell", "bessent", "fomc", "treasury", "debt ceiling", "wall street", "us dollar", "dxy"]):
+        # USD / Federal Reserve: Distinguish Active Policy vs Former Officials
+        is_about_powell = ("powell" in text or "jerome powell" in text) and not any(w in text for w in ["warsh", "kevin warsh"])
+        if is_about_powell:
+            # Former Fed official commentary - NOT active monetary policy!
+            implications.append("Fed: Former Official Commentary (Non-Actionable)")
+        elif any(w in text for w in ["fed", "federal reserve", "warsh", "bessent", "fomc", "treasury", "debt ceiling", "wall street", "us dollar", "dxy"]):
             for p in ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]:
                 if p not in impacted_pairs:
                     impacted_pairs.append(p)
-            implications.append("USD: Interest Rate / Macro Bias")
+            if any(w in text for w in ["hike", "not in a hurry", "sticky", "higher for longer", "cautious on cut"]):
+                implications.append("USD: Hawkish Policy Tone (Yield Support)")
+            elif any(w in text for w in ["rate cut", "cuts rate", "easing", "cool", "labor softening", "slowdown"]):
+                implications.append("USD: Dovish Rate Cut Bias (Yield Drag)")
+            elif any(w in text for w in ["tariff", "trade war"]):
+                if is_de_escalation:
+                    implications.append("USD: Tariff Relief / Risk-On")
+                else:
+                    implications.append("USD: Protectionist Trade Policy")
+            else:
+                implications.append("USD: Monetary Policy / Macro Watch")
+
+        # Energy & Crude Oil implications
+        if any(w in text for w in ["crude", "oil", "opec", "energy", "wti", "brent"]):
+            if is_de_escalation or any(w in text for w in ["waive", "lifts sanction", "output surge", "glut", "drop"]):
+                implications.append("OIL: Supply Inflow (Price Softening)")
+            elif is_escalation or any(w in text for w in ["opec cut", "pipeline sabotage", "red sea", "strait of hormuz", "tanker"]):
+                implications.append("OIL: Supply Disruption Risk (Inflation Tailwind)")
 
         # Default fallback if no specific currency detected
         if not impacted_pairs:
@@ -480,14 +563,25 @@ class WorldNewsEngine:
         if not speaker_info:
             return None
 
-        # Determine tone
-        tone = "BALANCED"
-        if any(w in text for w in ["tariff", "levy", "ban", "retaliat", "threat", "sanction", "trade war", "protection"]):
-            tone = "PROTECTIONIST / TARIFF"
-        elif any(w in text for w in ["hike", "not in a hurry", "sticky", "inflation persistence", "higher for longer", "resilient", "cautious on cut"]):
-            tone = "HAWKISH 🦅"
-        elif any(w in text for w in ["cut", "easing", "cool", "slowdown", "rate reduction", "labor softening"]):
-            tone = "DOVISH 🕊️"
+        # Determine tone & speaker authority
+        if speaker_info.get("is_former"):
+            tone = "COMMENTARY (FORMER OFFICIAL)"
+            occasion = f"Retrospective / Commentary ({item['source'].split('(')[0].strip()})"
+            speech_implications = ["Fed: Historical / Former Policy Commentary"]
+        else:
+            occasion = f"Official Address / Briefing ({item['source'].split('(')[0].strip()})"
+            speech_implications = item.get("implications")
+            if not speech_implications:
+                en = self._enrich_item(item)
+                speech_implications = en.get("implications", []) if en else []
+            tone = "BALANCED"
+            # Check hawkish / dovish / trade tones with word boundaries to avoid 'ban' in 'bank'
+            if any(w in text for w in ["hike", "not in a hurry", "sticky", "inflation persistence", "higher for longer", "resilient", "cautious on cut", "hold rate"]):
+                tone = "HAWKISH 🦅"
+            elif any(w in text for w in ["rate cut", "cuts rate", "easing", "cool", "slowdown", "rate reduction", "labor softening"]):
+                tone = "DOVISH 🕊️"
+            elif any(re.search(r"\b" + re.escape(w) + r"\b", text) for w in ["tariff", "tariffs", "levy", "export ban", "trade ban", "retaliation", "sanction", "sanctions", "trade war", "protectionism"]):
+                tone = "PROTECTIONIST / TARIFF"
 
         # Generate bullet takeaways from title and summary sentences
         sentences = re.split(r"[.!?]\s+", item["summary"])
@@ -509,13 +603,13 @@ class WorldNewsEngine:
             "id": f"speech_{abs(hash(speaker_info['name'] + item['title'])) % 1000000}",
             "speaker": speaker_info["name"],
             "title": speaker_info["title"],
-            "occasion": f"Official Address / Briefing ({item['source'].split('(')[0].strip()})",
+            "occasion": occasion,
             "tone": tone,
             "timestamp": item["timestamp"],
             "published_at": item["published_at"],
             "takeaways": takeaways,
             "impacted_pairs": speaker_info["pairs"],
-            "implications": item["implications"],
+            "implications": speech_implications,
             "link": item["link"],
         }
 
