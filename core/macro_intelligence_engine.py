@@ -479,7 +479,7 @@ class MacroIntelligenceEngine:
             elif dxy_chg > 0.25 or "RISK-OFF" in regime:
                 status = "BEARISH HEADWIND"
                 cls = "bear"
-                rationale = "DXY upside momentum and defensive risk tone pose headwinds for EUR/GBP longs."
+                rationale = f"DXY upside momentum and defensive risk tone pose headwinds for {sym} longs."
             else:
                 status = "BALANCED"
                 cls = "neut"

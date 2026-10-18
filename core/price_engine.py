@@ -250,25 +250,29 @@ class PriceEngine:
 
                     if not sub.empty:
                         sub.index = pd.to_datetime(sub.index)
+                        if sub.index.tz is None:
+                            sub.index = sub.index.tz_localize("UTC").tz_convert("Asia/Kuala_Lumpur")
+                        else:
+                            sub.index = sub.index.tz_convert("Asia/Kuala_Lumpur")
                         sub["time"] = sub.index
 
                         # Compute H1 with indicators
                         h1_ind = self._add_indicators(sub.copy())
 
-                        # Compute H4 by 4h resampling
-                        h4_res = sub.resample("4h").agg({
+                        # Compute H4 by 4h resampling anchored to 6:00 AM MYT session cycle (06:00, 10:00, 14:00, 18:00, 22:00, 02:00)
+                        h4_res = sub.resample("4h", offset="2h").agg({
                             "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "time": "first"
                         }).dropna()
                         h4_ind = self._add_indicators(h4_res)
 
-                        # Compute D1 by 1d resampling
-                        d1_res = sub.resample("1D").agg({
+                        # Compute D1 by 1d resampling strictly anchored to 06:00 AM Malaysia Time (Forex NY 5pm rollover)
+                        d1_res = sub.resample("1D", offset="6h").agg({
                             "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "time": "first"
                         }).dropna()
                         d1_ind = self._add_indicators(d1_res)
 
-                        # Compute W1 by 1W resampling
-                        w1_res = sub.resample("1W").agg({
+                        # Compute W1 by 1W resampling anchored to Monday 06:00 AM Malaysia Time
+                        w1_res = sub.resample("W-MON", offset="6h").agg({
                             "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "time": "first"
                         }).dropna()
                         w1_ind = self._add_indicators(w1_res)
@@ -320,6 +324,10 @@ class PriceEngine:
                         }).dropna()
                     if not sub.empty:
                         sub.index = pd.to_datetime(sub.index)
+                        if sub.index.tz is None:
+                            sub.index = sub.index.tz_localize("UTC").tz_convert("Asia/Kuala_Lumpur")
+                        else:
+                            sub.index = sub.index.tz_convert("Asia/Kuala_Lumpur")
                         sub["time"] = sub.index
                         m15_ind = self._add_indicators(sub)
                         with self._lock:

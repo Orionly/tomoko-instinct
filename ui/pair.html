@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Tomoko // Pair Deep Dive V5.0</title>
+<title>Tomoko // Pair Deep Dive V5.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
   :root{
     --bg:#05070A; --card:#0C111B; --glass:rgba(18,24,36,0.72); --border:#1A2234;
@@ -30,153 +30,447 @@
 
   #app{ position:relative; z-index:10; display:flex; flex-direction:column; min-height:100vh; }
 
+  /* Top Navigation Bar */
   header.top{ min-height:56px; display:flex; align-items:center; justify-content:space-between;
-    padding:10px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; gap:8px;
-    background:linear-gradient(180deg, rgba(18,24,36,0.9), rgba(14,18,26,0.9)); backdrop-filter:blur(12px); }
-  @media(max-width:650px){
-    header.top{ flex-direction:column; align-items:flex-start; gap:8px; padding:10px 12px; }
+    padding:10px 18px; border-bottom:1px solid var(--border); flex-wrap:wrap; gap:12px;
+    background:linear-gradient(180deg, rgba(18,24,36,0.92), rgba(14,18,26,0.92)); backdrop-filter:blur(12px); }
+  @media(max-width:768px){
+    header.top{ flex-direction:column; align-items:flex-start; gap:10px; padding:10px 14px; }
     .brand{ width:100%; justify-content:space-between; }
-    .meta{ width:100%; justify-content:space-between; font-size:10px; flex-wrap:wrap; gap:6px; }
+    .meta{ width:100%; justify-content:space-between; font-size:10px; flex-wrap:wrap; gap:8px; }
   }
-  .brand{ display:flex; align-items:center; gap:10px; }
-  .back-btn{ display:inline-flex; align-items:center; gap:6px; background:transparent;
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .back-btn{ display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03);
     border:1px solid var(--border); color:var(--cyan); font-family:'JetBrains Mono',monospace;
-    font-size:11px; padding:5px 12px; border-radius:6px; cursor:pointer; text-decoration:none;
+    font-size:11px; font-weight:700; padding:6px 13px; border-radius:7px; cursor:pointer; text-decoration:none;
     transition:all .2s; }
-  .back-btn:hover{ border-color:var(--cyan); background:rgba(0,229,255,0.08); }
-  .dot{ width:8px; height:8px; border-radius:9999px; background:var(--cyan); display:block;
+  .back-btn:hover{ border-color:var(--cyan); background:rgba(0,229,255,0.12); transform:translateX(-2px); }
+  .brand-id{ display:flex; flex-direction:column; gap:1px; }
+  .brand-row{ display:flex; align-items:baseline; gap:8px; }
+  .dot{ width:8px; height:8px; border-radius:9999px; background:var(--cyan); display:inline-block;
     box-shadow:0 0 12px var(--cyan), 0 0 20px rgba(0,229,255,0.4); animation:pulseDot 2s infinite; }
-  .sym{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--cyan); font-size:14px; }
-  .price{ font-family:'JetBrains Mono',monospace; font-size:13px; color:#CBD5E1; }
-  .meta{ display:flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); }
-  .meta .sep{ opacity:.3; }
-  #live-time{ color:#9CA3AF; }
+  .sym{ font-family:'JetBrains Mono',monospace; font-weight:800; color:#FFFFFF; font-size:16px; letter-spacing:.02em; }
+  .sym-name{ font-size:11.5px; color:#94A3B8; font-weight:500; }
+  .price{ font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; color:var(--cyan); }
+  
+  .meta{ display:flex; align-items:center; gap:10px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); }
+  .meta .sep{ opacity:.25; }
+  #live-time{ color:#94A3B8; font-size:10.5px; }
+
+  /* Pair Quick Switcher */
+  .switcher-bar{
+    display:flex; align-items:center; gap:6px; padding:6px 18px;
+    background:rgba(10,14,22,0.7); border-bottom:1px solid rgba(255,255,255,0.05);
+    overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  .switcher-label{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:700;
+    color:var(--muted); letter-spacing:.08em; text-transform:uppercase; margin-right:4px; flex-shrink:0;
+  }
+  .pair-pill{
+    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700;
+    padding:4px 10px; border-radius:6px; text-decoration:none; white-space:nowrap;
+    color:#94A3B8; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);
+    transition:all .15s ease-out;
+  }
+  .pair-pill:hover{ background:rgba(0,229,255,0.08); color:#FFFFFF; border-color:rgba(0,229,255,0.3); }
+  .pair-pill.active{ background:rgba(0,229,255,0.18); color:var(--cyan); border-color:var(--cyan); box-shadow:0 0 10px rgba(0,229,255,0.25); }
+
+  /* Badges */
   .badges{ display:flex; gap:6px; flex-wrap:wrap; }
-  .badge{ font-family:'JetBrains Mono',monospace; font-size:10px; padding:3px 8px; border-radius:6px;
-    background:rgba(10,14,20,.7); color:#CBD5E1; border:1px solid var(--border); }
+  .badge{ font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:6px;
+    background:rgba(10,14,20,.7); color:#CBD5E1; border:1px solid var(--border); display:inline-flex; align-items:center; gap:4px; }
   .badge.bull{ background:linear-gradient(135deg, rgba(0,255,136,0.18), rgba(0,255,136,0.08));
-    border:1px solid rgba(0,255,136,0.35); color:var(--bull); }
-  .badge.bear{ background:rgba(255,59,92,0.18); border:1px solid rgba(255,59,92,0.35); color:var(--bear); }
-  .badge.neut{ background:rgba(255,184,0,0.12); border:1px solid rgba(255,184,0,0.25); color:var(--neut); }
-  .circle{ width:36px; height:36px; border-radius:9999px; display:flex;
-    align-items:center; justify-content:center; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:13px; flex:none; }
-  .align-dot{ width:10px; height:10px; border-radius:9999px; border:2px solid rgba(255,255,255,0.15); flex:none; }
-  .align-dot.lvl-HIGH{ background:var(--bull); box-shadow:0 0 16px rgba(0,255,136,0.6); }
-  .align-dot.lvl-MEDIUM{ background:var(--neut); box-shadow:0 0 14px rgba(255,184,0,0.5); }
-  .align-dot.lvl-LOW{ background:#4B5563; }
+    border:1px solid rgba(0,255,136,0.4); color:var(--bull); }
+  .badge.bear{ background:rgba(255,90,121,0.18); border:1px solid rgba(255,90,121,0.4); color:var(--bear); }
+  .badge.neut{ background:rgba(255,184,0,0.15); border:1px solid rgba(255,184,0,0.35); color:var(--neut); }
 
-  main{ flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:14px; max-width:1100px; width:100%; margin:0 auto; }
-  .panel{ background:var(--glass); border:1px solid var(--border); border-radius:14px; padding:16px;
-    backdrop-filter:blur(8px); }
-  .panel h3{ margin:0 0 11px; font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.1em;
-    color:var(--cyan); text-transform:uppercase; display:flex; justify-content:space-between; align-items:center; }
-  .panel .ph{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); }
-  .v{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:#CBD5E1; line-height:1.6; white-space:pre-line; word-break:break-word; }
+  /* Score Badge */
+  .score-badge-wrap{
+    display:flex; align-items:center; gap:8px; background:rgba(18,24,36,0.8);
+    border:1px solid var(--border); border-radius:8px; padding:3px 10px 3px 4px;
+  }
+  .circle{ width:32px; height:32px; border-radius:9999px; display:flex;
+    align-items:center; justify-content:center; font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13px; flex:none; }
+  .score-badge-info{ display:flex; flex-direction:column; line-height:1.1; }
+  .score-badge-label{ font-family:'JetBrains Mono',monospace; font-size:8.5px; color:var(--muted); text-transform:uppercase; font-weight:700; }
+  .score-badge-tier{ font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; }
 
-  /* Macro Confluence Panel */
+  /* Main Layout */
+  main{ flex:1; padding:16px 18px; display:flex; flex-direction:column; gap:16px; max-width:1160px; width:100%; margin:0 auto; }
+  
+  .panel{ background:var(--glass); border:1px solid var(--border); border-radius:14px; padding:16px 18px;
+    backdrop-filter:blur(8px); position:relative; overflow:hidden; }
+  .panel-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .panel-title{ margin:0; font-family:'JetBrains Mono',monospace; font-size:12.5px; letter-spacing:.08em;
+    color:var(--cyan); text-transform:uppercase; font-weight:800; display:flex; align-items:center; gap:8px; }
+  .panel-subtitle{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); }
+
+  /* ================= 1. MACRO CONFLUENCE PANEL ================= */
   #macro-confluence{
-    background:linear-gradient(180deg, rgba(14,20,32,0.85), rgba(10,14,22,0.85));
-    border:1px solid rgba(0,229,255,0.3);
+    background:linear-gradient(180deg, rgba(14,20,32,0.9), rgba(10,14,22,0.9));
+    border:1px solid rgba(0,229,255,0.28);
+    box-shadow:0 4px 20px rgba(0,0,0,0.3);
   }
   .macro-conf-badge{
-    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800;
-    padding:3px 8px; border-radius:5px; letter-spacing:.05em;
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:800;
+    padding:3px 10px; border-radius:6px; letter-spacing:.06em;
   }
-  .macro-conf-badge.bull{ background:rgba(0,255,136,0.18); color:var(--bull); border:1px solid rgba(0,255,136,0.4); }
-  .macro-conf-badge.bear{ background:rgba(255,77,77,0.18); color:var(--red); border:1px solid rgba(255,77,77,0.4); }
+  .macro-conf-badge.bull{ background:rgba(0,255,136,0.18); color:var(--bull); border:1px solid rgba(0,255,136,0.4); box-shadow:0 0 10px rgba(0,255,136,0.2); }
+  .macro-conf-badge.bear{ background:rgba(255,77,77,0.18); color:var(--red); border:1px solid rgba(255,77,77,0.4); box-shadow:0 0 10px rgba(255,77,77,0.2); }
   .macro-conf-badge.neut{ background:rgba(255,184,0,0.18); color:var(--gold); border:1px solid rgba(255,184,0,0.4); }
 
-  .conf-grid{
-    display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:10px;
-  }
+  .conf-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:8px; }
   @media(max-width:700px){ .conf-grid{ grid-template-columns:1fr; } }
   .conf-box{
-    background:rgba(18,24,36,0.65); border:1px solid var(--border); border-radius:8px; padding:10px;
+    background:rgba(18,24,36,0.65); border:1px solid var(--border); border-radius:8px; padding:10px 12px;
   }
-  .conf-box .k{ font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--muted); text-transform:uppercase; margin-bottom:4px; }
-  .conf-box .n{ font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:var(--text); }
+  .conf-box .k{ font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--muted); text-transform:uppercase; font-weight:700; margin-bottom:4px; letter-spacing:.05em; }
+  .conf-box .n{ font-family:'JetBrains Mono',monospace; font-size:13.5px; font-weight:800; color:#FFFFFF; display:flex; align-items:center; gap:6px; }
+  .conf-box .sub{ font-size:10.5px; color:#94A3B8; font-weight:500; margin-top:3px; }
   .conf-desc{
-    font-family:'Inter',sans-serif; font-size:11.5px; color:#CBD5E1; line-height:1.5; margin-top:10px;
-    padding:10px 12px; background:rgba(12,17,27,0.6); border-radius:8px; border-left:3px solid var(--cyan);
+    font-family:'Inter',sans-serif; font-size:12px; color:#CBD5E1; line-height:1.55; margin-top:10px;
+    padding:10px 14px; background:rgba(12,17,27,0.7); border-radius:8px; border-left:3px solid var(--cyan);
+    display:flex; align-items:flex-start; gap:8px;
+  }
+  .conf-desc-icon{ flex-shrink:0; font-size:14px; }
+
+  /* ================= 2. TACTICAL BATTLE-PLAN & ACTION ================= */
+  .battle-card{
+    background:linear-gradient(180deg, rgba(16,23,38,0.85), rgba(12,16,26,0.85));
+    border:1px solid rgba(255,255,255,0.08);
+  }
+  .action-banner{
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+    padding:12px 16px; border-radius:9px; font-family:'JetBrains Mono',monospace;
+    font-size:13px; font-weight:800; letter-spacing:.04em; margin-bottom:12px;
+  }
+  .action-banner.buy{
+    background:rgba(0, 255, 136, 0.12); border:1px solid rgba(0, 255, 136, 0.4);
+    color:var(--bull); box-shadow:0 0 16px rgba(0, 255, 136, 0.12);
+  }
+  .action-banner.sell{
+    background:rgba(255, 90, 121, 0.12); border:1px solid rgba(255, 90, 121, 0.4);
+    color:var(--bear); box-shadow:0 0 16px rgba(255, 90, 121, 0.12);
+  }
+  .action-banner.wait{
+    background:rgba(255, 184, 0, 0.10); border:1px solid rgba(255, 184, 0, 0.35);
+    color:var(--gold);
+  }
+  .action-banner.neutral{
+    background:rgba(148, 163, 184, 0.08); border:1px solid rgba(148, 163, 184, 0.25);
+    color:#94A3B8;
+  }
+  .action-type-pill{
+    font-size:10px; font-weight:800; padding:2px 8px; border-radius:5px;
+    background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.1);
   }
 
-  /* Score Grid */
-  .score-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
-  .score-grid .sc{ text-align:center; background:#05070A; border:1px solid var(--border); border-radius:6px; padding:8px 2px; cursor:help; }
-  .score-grid .sc .k{ font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--muted); text-transform:uppercase; }
-  .score-grid .sc .n{ font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; color:#E5E7EB; }
-  .score-total{ text-align:center; margin-top:9px; font-family:'JetBrains Mono',monospace; font-size:12px; color:#94A3B8; }
-  .score-total b{ font-size:18px; color:var(--cyan); }
+  .thesis-box{
+    background:rgba(10,14,20,0.6); border:1px solid var(--border); border-radius:8px;
+    padding:12px 14px; margin-bottom:12px;
+  }
+  .thesis-text{ font-size:12.5px; color:#E2E8F0; line-height:1.55; }
+  .thesis-meta{ display:flex; align-items:center; gap:8px; margin-top:6px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#94A3B8; }
 
-  /* Watchout Cards */
-  .wo-cards{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-  @media(max-width:650px){ .wo-cards{ grid-template-columns:1fr; gap:10px; } }
-  .wo-card{ border-radius:10px; padding:14px; font-family:'JetBrains Mono',monospace; }
-  .wo-card.buy{ border:1px solid rgba(0,255,136,0.30); background:rgba(0,255,136,0.08); }
-  .wo-card.sell{ border:1px solid rgba(255,59,92,0.30); background:rgba(255,59,92,0.08); }
-  .wo-card .pill{ display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:2px 8px; border-radius:5px; margin-bottom:6px; }
-  .wo-card.buy .pill{ background:rgba(0,255,136,0.18); color:#00FF88; border:1px solid rgba(0,255,136,0.4); }
-  .wo-card.sell .pill{ background:rgba(255,90,121,0.18); color:#FF5A79; border:1px solid rgba(255,90,121,0.4); }
-  .wo-card .rng{ color:#E5E7EB; font-size:14px; font-weight:700; margin-bottom:4px; }
-  .wo-card .meta2{ color:#71717a; font-size:11px; line-height:1.5; }
-  .wo-card ul{ margin:6px 0 0; padding-left:14px; color:#a1a1aa; font-size:10px; line-height:1.6; }
-  .wo-card li::marker{ content:'✓ '; }
-  .wo-disclaimer{ font-family:'JetBrains Mono',monospace; font-size:8px; color:#6B7280; line-height:1.5; margin-top:10px; }
+  .timeframe-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:10px; }
+  @media(max-width:650px){ .timeframe-grid{ grid-template-columns:1fr; } }
+  .tf-box{
+    background:rgba(18,24,36,0.6); border:1px solid var(--border); border-radius:7px;
+    padding:9px 11px; display:flex; flex-direction:column; gap:4px;
+  }
+  .tf-head{ display:flex; justify-content:space-between; align-items:center; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); font-weight:700; }
+  .tf-val{ font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:800; color:#FFFFFF; }
+  .tf-sub{ font-family:'JetBrains Mono',monospace; font-size:10px; color:#94A3B8; }
 
-  /* Key Levels */
-  .lvl-row{ display:flex; align-items:center; gap:10px; font-family:'JetBrains Mono',monospace; font-size:12px; height:34px; }
-  .lvl-row .name{ width:110px; color:#94A3B8; font-family:'Inter',sans-serif; font-size:12px; }
-  .lvl-row .track{ flex:1; height:6px; background:#1f2937; border-radius:9999px; position:relative; }
-  .lvl-row .dot2{ position:absolute; top:-3px; width:12px; height:12px; border-radius:9999px; background:var(--cyan); border:2px solid #0A0E14; box-shadow:0 0 8px var(--cyan); transform:translateX(-50%); }
-  .lvl-row .val{ width:84px; text-align:right; color:var(--cyan); font-weight:700; font-size:12px; }
-  .lvl-row.cur .dot2{ background:var(--gold); box-shadow:0 0 8px var(--gold); }
-  @media(max-width:480px){
-    .lvl-row{ font-size:10.5px; gap:6px; }
-    .lvl-row .name{ width:85px; font-size:10.5px; }
-    .lvl-row .val{ width:65px; font-size:10.5px; }
+  .risk-advisory{
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#94A3B8;
+    padding:8px 12px; background:rgba(255,184,0,0.06); border:1px solid rgba(255,184,0,0.2);
+    border-radius:6px; display:flex; align-items:center; gap:8px;
   }
 
-  /* Fundamental & Calendar */
-  .fn-badge{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; padding:4px 10px; border-radius:6px; }
-  .fn-badge.clean{ background:rgba(0,255,136,0.15); color:#00FF88; }
-  .fn-badge.blocked{ background:rgba(255,90,121,0.15); color:#FF5A79; }
-  .fn-sub{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#71717a; margin-bottom:10px; line-height:1.5; }
-  .fn-sub.warn{ color:#FFB800; }
-  .fn-bias{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#CBD5E1; margin-bottom:10px; }
-  .cal-wrap{ max-height:280px; overflow-x:auto; overflow-y:auto; border-radius:8px; border:1px solid #1A2234; -webkit-overflow-scrolling:touch; }
-  .cal-wrap::-webkit-scrollbar{ width:6px; height:6px; }
-  .cal-wrap::-webkit-scrollbar-thumb{ background:#1f2937; border-radius:3px; }
+  /* ================= 3. EXPLAINABLE SCORECARD ================= */
+  .score-pillars{ display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-top:6px; }
+  @media(max-width:850px){ .score-pillars{ grid-template-columns:repeat(2, 1fr); } }
+  @media(max-width:500px){ .score-pillars{ grid-template-columns:1fr; } }
+  
+  .pillar-card{
+    background:rgba(12,17,27,0.7); border:1px solid var(--border); border-radius:8px;
+    padding:10px 12px; display:flex; flex-direction:column; justify-content:space-between;
+    transition:all .15s ease-out; cursor:help; position:relative;
+  }
+  .pillar-card:hover{ border-color:rgba(0,229,255,0.3); background:rgba(18,25,40,0.85); transform:translateY(-1px); }
+  .pillar-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  .pillar-title{ font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .pillar-score{ font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:800; color:#FFFFFF; }
+  .pillar-bar{ width:100%; height:4px; background:rgba(255,255,255,0.06); border-radius:2px; overflow:hidden; margin-bottom:6px; }
+  .pillar-fill{ height:100%; border-radius:2px; transition:width .6s ease; }
+  .pillar-desc{ font-size:10px; color:#94A3B8; line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* ================= 4. VERTICAL PRICE LADDER ================= */
+  .ladder-container{
+    display:flex; flex-direction:column; gap:6px; margin-top:8px;
+    background:rgba(10,14,22,0.6); border:1px solid var(--border); border-radius:10px; padding:12px 14px;
+  }
+  .ladder-row{
+    display:flex; align-items:center; justify-content:space-between; padding:7px 10px;
+    border-radius:6px; font-family:'JetBrains Mono',monospace; font-size:11.5px;
+    background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04);
+    transition:background .15s;
+  }
+  .ladder-row:hover{ background:rgba(255,255,255,0.05); }
+  .ladder-row.cur{
+    background:linear-gradient(90deg, rgba(0,229,255,0.15) 0%, rgba(255,184,0,0.15) 100%);
+    border:1px solid var(--cyan); box-shadow:0 0 14px rgba(0,229,255,0.2); font-weight:800;
+  }
+  .ladder-row.res{ border-left:3px solid var(--bear); }
+  .ladder-row.sup{ border-left:3px solid var(--bull); }
+  .ladder-left{ display:flex; align-items:center; gap:8px; }
+  .ladder-tag{
+    font-size:9.5px; font-weight:800; padding:2px 6px; border-radius:4px;
+    text-transform:uppercase; letter-spacing:.05em; min-width:68px; text-align:center;
+  }
+  .ladder-tag.res{ background:rgba(255,90,121,0.15); color:var(--bear); }
+  .ladder-tag.sup{ background:rgba(0,255,136,0.15); color:var(--bull); }
+  .ladder-tag.cur{ background:var(--cyan); color:#000; font-weight:800; }
+  .ladder-name{ color:#E2E8F0; font-weight:600; font-size:12px; }
+  .ladder-right{ display:flex; align-items:baseline; gap:12px; }
+  .ladder-price{ font-weight:800; color:#FFFFFF; font-size:12.5px; }
+  .ladder-dist{ font-size:10.5px; font-weight:600; min-width:85px; text-align:right; }
+  .ladder-dist.plus{ color:var(--bear); }
+  .ladder-dist.minus{ color:var(--bull); }
+  .ladder-dist.zero{ color:var(--gold); }
+
+  /* ================= 5. DYNAMIC DECISION ZONES ================= */
+  .dz-tf-tabs{ display:flex; gap:6px; }
+  .dz-tab-btn{
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700;
+    padding:4px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.08);
+    background:rgba(255,255,255,0.03); color:#94A3B8; cursor:pointer; transition:all .15s;
+  }
+  .dz-tab-btn:hover{ color:#FFF; background:rgba(0,229,255,0.1); border-color:rgba(0,229,255,0.3); }
+  .dz-tab-btn.active{
+    color:var(--cyan); background:rgba(0,229,255,0.18); border-color:var(--cyan);
+    box-shadow:0 0 10px rgba(0,229,255,0.25);
+  }
+
+  .dz-stack{ display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+  .dz-card{
+    background:rgba(12,17,27,0.7); border:1px solid var(--border); border-radius:10px;
+    padding:12px 14px; position:relative; transition:all .15s ease-out;
+  }
+  .dz-card.upper{ border-left:3px solid var(--bear); }
+  .dz-card.lower{ border-left:3px solid var(--bull); }
+  .dz-card.flip{ border-left:3px solid var(--gold); background:rgba(255,184,0,0.04); }
+  .dz-card:hover{ background:rgba(18,25,40,0.85); transform:translateX(2px); }
+
+  .dz-header{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; flex-wrap:wrap; gap:6px; }
+  .dz-title-wrap{ display:flex; align-items:center; gap:8px; }
+  .dz-tag{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:800;
+    padding:2px 7px; border-radius:4px; text-transform:uppercase; letter-spacing:.04em;
+  }
+  .dz-tag.upper{ background:rgba(255,90,121,0.15); color:var(--bear); border:1px solid rgba(255,90,121,0.3); }
+  .dz-tag.lower{ background:rgba(0,255,136,0.15); color:var(--bull); border:1px solid rgba(0,255,136,0.3); }
+  .dz-tag.flip{ background:rgba(255,184,0,0.18); color:var(--gold); border:1px solid rgba(255,184,0,0.4); }
+  .dz-subtitle{ font-family:'JetBrains Mono',monospace; font-size:10px; color:#94A3B8; font-weight:600; }
+
+  .dz-dist-badge{
+    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:800;
+    padding:2px 8px; border-radius:5px;
+  }
+  .dz-dist-badge.plus{ background:rgba(255,90,121,0.12); color:var(--bear); }
+  .dz-dist-badge.minus{ background:rgba(0,255,136,0.12); color:var(--bull); }
+
+  .dz-body{ display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
+  .dz-range{ font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:800; color:#FFFFFF; }
+  .dz-confluences{ display:flex; gap:5px; flex-wrap:wrap; }
+  .dz-conf-pill{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:2px 6px;
+    border-radius:4px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); color:#CBD5E1;
+  }
+
+  .dz-playbook{
+    display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px;
+    padding-top:8px; border-top:1px solid rgba(255,255,255,0.04);
+  }
+  @media(max-width:650px){ .dz-playbook{ grid-template-columns:1fr; } }
+  .dz-play-item{ font-size:10.5px; line-height:1.4; color:#94A3B8; }
+  .dz-play-item b{ font-family:'JetBrains Mono',monospace; font-size:9.5px; text-transform:uppercase; margin-right:4px; }
+  .dz-play-item.reject b{ color:var(--gold); }
+  .dz-play-item.break b{ color:var(--cyan); }
+
+  .dz-live-divider{
+    display:flex; align-items:center; justify-content:space-between; padding:8px 14px;
+    border-radius:7px; background:linear-gradient(90deg, rgba(0,229,255,0.15) 0%, rgba(18,24,36,0.9) 100%);
+    border:1px solid var(--cyan); box-shadow:0 0 14px rgba(0,229,255,0.25);
+    font-family:'JetBrains Mono',monospace; margin:4px 0;
+  }
+  .dz-live-left{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:12px; color:#FFFFFF; }
+  .dz-live-right{ font-size:10.5px; color:#94A3B8; }
+
+  /* ================= ORDER FLOW PROXIMITY RADAR STYLES ================= */
+  @keyframes radarPulseAmber {
+    0%, 100% { box-shadow: 0 0 12px rgba(255,184,0,0.25); border-color: rgba(255,184,0,0.5); }
+    50% { box-shadow: 0 0 24px rgba(255,184,0,0.55); border-color: rgba(255,184,0,0.9); }
+  }
+  @keyframes radarPulseCyan {
+    0%, 100% { box-shadow: 0 0 12px rgba(0,229,255,0.25); border-color: rgba(0,229,255,0.5); }
+    50% { box-shadow: 0 0 26px rgba(0,229,255,0.65); border-color: rgba(0,229,255,0.95); }
+  }
+  @keyframes radarPulseRed {
+    0%, 100% { box-shadow: 0 0 12px rgba(255,77,77,0.25); border-color: rgba(255,77,77,0.5); }
+    50% { box-shadow: 0 0 22px rgba(255,77,77,0.55); border-color: rgba(255,77,77,0.9); }
+  }
+  @keyframes pingDot {
+    0% { transform: scale(0.9); opacity: 0.9; }
+    50% { transform: scale(1.4); opacity: 0.4; }
+    100% { transform: scale(0.9); opacity: 0.9; }
+  }
+
+  .dz-radar-banner {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg, rgba(14,20,32,0.85) 0%, rgba(8,12,20,0.95) 100%);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 13px 15px; margin-bottom: 12px;
+    backdrop-filter: blur(12px);
+    transition: all 0.25s ease-out;
+  }
+  .dz-radar-banner::before {
+    content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 4px;
+    background: var(--muted); transition: background 0.2s ease;
+  }
+  .dz-radar-banner.radar-testing { border-color: rgba(0,229,255,0.45); animation: radarPulseCyan 3s infinite; }
+  .dz-radar-banner.radar-testing::before { background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+  .dz-radar-banner.radar-approaching { border-color: rgba(255,184,0,0.45); animation: radarPulseAmber 2.5s infinite; }
+  .dz-radar-banner.radar-approaching::before { background: var(--gold); box-shadow: 0 0 12px var(--gold); }
+  .dz-radar-banner.radar-rejected { border-color: rgba(255,77,77,0.45); animation: radarPulseRed 3s infinite; }
+  .dz-radar-banner.radar-rejected::before { background: var(--red); box-shadow: 0 0 12px var(--red); }
+  .dz-radar-banner.radar-breakout { border-color: rgba(34,197,94,0.45); }
+  .dz-radar-banner.radar-breakout::before { background: var(--green); box-shadow: 0 0 12px var(--green); }
+  .dz-radar-banner.radar-in-transit, .dz-radar-banner.radar-transit { border-color: var(--border); }
+  .dz-radar-banner.radar-in-transit::before, .dz-radar-banner.radar-transit::before { background: #64748B; }
+
+  .radar-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .radar-lead { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 800; }
+  .radar-ping-icon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.06); font-size: 12px; }
+  .radar-ping-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; animation: pingDot 1.8s infinite; }
+
+  .radar-state-badge {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 800;
+    padding: 3px 8px; border-radius: 5px; text-transform: uppercase; letter-spacing: 0.04em;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .radar-state-badge.badge-testing { background: rgba(0,229,255,0.15); color: var(--cyan); border: 1px solid rgba(0,229,255,0.4); box-shadow: 0 0 10px rgba(0,229,255,0.25); }
+  .radar-state-badge.badge-approaching { background: rgba(255,184,0,0.18); color: var(--gold); border: 1px solid rgba(255,184,0,0.4); box-shadow: 0 0 10px rgba(255,184,0,0.25); }
+  .radar-state-badge.badge-rejected { background: rgba(255,77,77,0.18); color: var(--red); border: 1px solid rgba(255,77,77,0.4); box-shadow: 0 0 10px rgba(255,77,77,0.25); }
+  .radar-state-badge.badge-breakout { background: rgba(34,197,94,0.18); color: var(--green); border: 1px solid rgba(34,197,94,0.4); box-shadow: 0 0 10px rgba(34,197,94,0.25); }
+  .radar-state-badge.badge-transit { background: rgba(148,163,184,0.15); color: #94A3B8; border: 1px solid rgba(148,163,184,0.25); }
+
+  .radar-headline {
+    font-family: 'JetBrains Mono', monospace; font-size: 13.5px; font-weight: 800; color: #FFFFFF;
+    margin-bottom: 5px; line-height: 1.4;
+  }
+  .radar-detail {
+    font-size: 11.5px; color: #CBD5E1; line-height: 1.45; margin-bottom: 8px;
+  }
+  .radar-benchmarks {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.06); font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #94A3B8;
+  }
+  .radar-bench-pill {
+    padding: 2px 7px; border-radius: 4px; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07); color: #E2E8F0; display: inline-flex; align-items: center; gap: 4px;
+    cursor: default; transition: all .15s;
+  }
+  .radar-bench-pill:hover { background: rgba(255,255,255,0.08); }
+  .radar-bench-pill.active-test { border-color: var(--cyan); background: rgba(0,229,255,0.12); color: var(--cyan); box-shadow: 0 0 8px rgba(0,229,255,0.2); }
+  .radar-bench-pill.active-approach { border-color: var(--gold); background: rgba(255,184,0,0.12); color: var(--gold); box-shadow: 0 0 8px rgba(255,184,0,0.2); }
+
+  /* Card State Highlighting */
+  .dz-card.testing-active {
+    border: 1px solid rgba(0,229,255,0.6) !important;
+    box-shadow: 0 0 16px rgba(0,229,255,0.22);
+    background: linear-gradient(135deg, rgba(0,229,255,0.06) 0%, rgba(12,17,27,0.85) 100%) !important;
+  }
+  .dz-card.approaching-active {
+    border: 1px solid rgba(255,184,0,0.55) !important;
+    box-shadow: 0 0 14px rgba(255,184,0,0.18);
+    background: linear-gradient(135deg, rgba(255,184,0,0.05) 0%, rgba(12,17,27,0.85) 100%) !important;
+  }
+  .dz-card.rejected-active {
+    border: 1px solid rgba(255,77,77,0.55) !important;
+    box-shadow: 0 0 14px rgba(255,77,77,0.18);
+    background: linear-gradient(135deg, rgba(255,77,77,0.05) 0%, rgba(12,17,27,0.85) 100%) !important;
+  }
+  .dz-card.breakout-active {
+    border: 1px solid rgba(34,197,94,0.5) !important;
+    box-shadow: 0 0 14px rgba(34,197,94,0.18);
+    background: linear-gradient(135deg, rgba(34,197,94,0.05) 0%, rgba(12,17,27,0.85) 100%) !important;
+  }
+
+  .dz-radar-pill {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 800;
+    padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.03em;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .dz-radar-pill.badge-testing { background: rgba(0,229,255,0.15); color: var(--cyan); border: 1px solid rgba(0,229,255,0.4); }
+  .dz-radar-pill.badge-approaching { background: rgba(255,184,0,0.18); color: var(--gold); border: 1px solid rgba(255,184,0,0.4); }
+  .dz-radar-pill.badge-rejected { background: rgba(255,77,77,0.18); color: var(--red); border: 1px solid rgba(255,77,77,0.4); }
+  .dz-radar-pill.badge-breakout { background: rgba(34,197,94,0.18); color: var(--green); border: 1px solid rgba(34,197,94,0.4); }
+  .dz-radar-pill.badge-transit { background: rgba(148,163,184,0.12); color: #94A3B8; border: 1px solid rgba(148,163,184,0.25); }
+
+  .dz-telemetry-row {
+    display: flex; align-items: center; gap: 7px; padding: 6px 10px; margin-top: 8px;
+    border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.05); color: #CBD5E1;
+  }
+  .dz-telemetry-row.badge-testing { border-left: 3px solid var(--cyan); background: rgba(0,229,255,0.06); color: #E0F2FE; }
+  .dz-telemetry-row.badge-approaching { border-left: 3px solid var(--gold); background: rgba(255,184,0,0.06); color: #FEF3C7; }
+  .dz-telemetry-row.badge-rejected { border-left: 3px solid var(--red); background: rgba(255,77,77,0.06); color: #FFE4E6; }
+  .dz-telemetry-row.badge-breakout { border-left: 3px solid var(--green); background: rgba(34,197,94,0.06); color: #DCFCE7; }
+  .dz-telemetry-row.badge-transit { border-left: 3px solid #64748B; color: #94A3B8; }
+
+  /* ================= 6. CALENDAR & NEWS FILTER ================= */
+  .fn-badge{ font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; padding:4px 10px; border-radius:6px; }
+  .fn-badge.clean{ background:rgba(0,255,136,0.15); color:#00FF88; border:1px solid rgba(0,255,136,0.3); }
+  .fn-badge.blocked{ background:rgba(255,90,121,0.18); color:#FF5A79; border:1px solid rgba(255,90,121,0.4); }
+  .cal-wrap{ max-height:280px; overflow-x:auto; overflow-y:auto; border-radius:8px; border:1px solid #1A2234; -webkit-overflow-scrolling:touch; margin-top:8px; }
   .cal-wrap table{ width:100%; min-width:540px; border-collapse:collapse; }
   .cal-wrap thead th{ position:sticky; top:0; z-index:1; background:#0C111B; font-family:'JetBrains Mono',monospace;
-    font-size:9px; color:#71717a; text-transform:uppercase; letter-spacing:.05em; padding:6px 5px; text-align:left; border-bottom:1px solid #1A2234; }
+    font-size:9.5px; color:#94A3B8; text-transform:uppercase; letter-spacing:.05em; padding:8px 6px; text-align:left; border-bottom:1px solid #1A2234; }
   .cal-wrap tbody tr{ height:38px; border-top:1px solid #1A2234; transition:background .15s; }
   .cal-wrap tbody tr:hover{ background:#1a2234; }
-  .cal-wrap tbody tr.hi{ background:rgba(255,90,121,0.06); border-left:2px solid #FF5A79; }
-  .cal-time{ font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#E4E4E7; }
-  .cal-rel{ display:block; font-size:10px; color:#FFB800; font-weight:400; margin-top:1px; }
+  .cal-wrap tbody tr.hi{ background:rgba(255,90,121,0.06); border-left:3px solid #FF5A79; }
+  .cal-time{ font-family:'JetBrains Mono',monospace; font-size:11.5px; font-weight:700; color:#E4E4E7; }
+  .cal-rel{ display:block; font-size:9.5px; color:#FFB800; font-weight:500; margin-top:1px; }
   .cal-cur{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:#a1a1aa; text-align:center; }
-  .cal-event{ font-family:'Inter',sans-serif; font-size:12px; color:#f4f4f5; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .fn-pill{ display:inline-flex; align-items:center; justify-content:center; padding:2px 6px; min-width:32px; border-radius:4px; font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; text-transform:uppercase; }
+  .cal-event{ font-family:'Inter',sans-serif; font-size:12px; color:#f4f4f5; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fn-pill{ display:inline-flex; align-items:center; justify-content:center; padding:2px 6px; min-width:32px; border-radius:4px; font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:800; text-transform:uppercase; }
   .fn-pill.hi{ background:rgba(255,90,121,0.18); color:#FF5A79; border:1px solid rgba(255,90,121,0.35); }
   .fn-pill.med{ background:rgba(255,184,0,0.15); color:#FFB800; border:1px solid rgba(255,184,0,0.35); }
   .fn-pill.lo{ background:rgba(82,82,91,0.3); color:#94A3B8; border:1px solid rgba(82,82,91,0.3); }
   .fn-num{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#CBD5E1; text-align:right; }
   .fn-num.green{ color:#00FF88; font-weight:700; }
   .fn-num.red{ color:#FF5A79; font-weight:700; }
-  .fn-empty{ font-family:'JetBrains Mono',monospace; font-size:10px; color:#71717a; }
-  .cal-wrap tbody tr.past-row{ background:rgba(255,255,255,0.015); border-left:3px solid rgba(148,163,184,0.25); }
-  .cal-wrap tbody tr.past-row.beat{ border-left:3px solid #10B981 !important; }
-  .cal-wrap tbody tr.past-row.miss{ border-left:3px solid #EF4444 !important; }
-  .cal-wrap tbody tr.past-row.inline{ border-left:3px solid #64748B !important; }
-  .cal-rel.released{ color:#94A3B8; font-size:9.5px; }
   .fn-perf{ font-size:8px; font-weight:800; padding:1px 4px; border-radius:3px; display:inline-block; margin-left:3px; font-family:'JetBrains Mono',monospace; }
   .fn-perf.beat{ background:rgba(16,185,129,0.18); color:#10B981; border:1px solid rgba(16,185,129,0.35); }
   .fn-perf.miss{ background:rgba(239,68,68,0.18); color:#EF4444; border:1px solid rgba(239,68,68,0.35); }
   .fn-perf.inline{ background:rgba(148,163,184,0.15); color:#94A3B8; border:1px solid rgba(148,163,184,0.25); }
-  .fn-perf.archived{ background:rgba(255,255,255,0.05); color:#64748B; border:1px solid rgba(255,255,255,0.08); }
 
-  footer.bar{ padding:9px 16px; border-top:1px solid var(--border); background:rgba(12,17,27,.7);
-    font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); }
+  /* ================= 7. TECHNICAL TELEMETRY TILES ================= */
+  .telemetry-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:8px; }
+  @media(max-width:768px){ .telemetry-grid{ grid-template-columns:repeat(2, 1fr); } }
+  @media(max-width:500px){ .telemetry-grid{ grid-template-columns:1fr; } }
+  .tele-box{
+    background:rgba(12,17,27,0.7); border:1px solid var(--border); border-radius:8px; padding:10px 12px;
+  }
+  .tele-label{ font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:700; color:var(--muted); text-transform:uppercase; margin-bottom:3px; }
+  .tele-val{ font-family:'JetBrains Mono',monospace; font-size:13.5px; font-weight:800; color:#FFFFFF; }
+  .tele-sub{ font-size:10.5px; color:#94A3B8; margin-top:2px; }
+
+  footer.bar{ padding:10px 18px; border-top:1px solid var(--border); background:rgba(12,17,27,.85);
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); display:flex; justify-content:space-between; align-items:center; }
 </style>
 </head>
 <body>
@@ -184,76 +478,725 @@
 <div id="noise"></div>
 
 <div id="app">
+  <!-- TOP BAR -->
   <header class="top">
     <div class="brand">
       <a class="back-btn" href="/">← Dashboard</a>
       <span class="dot"></span>
-      <span class="sym" id="pd-symbol">Loading…</span>
-      <span class="price" id="pd-price"></span>
+      <div class="brand-id">
+        <div class="brand-row">
+          <span class="sym" id="pd-symbol">Loading…</span>
+          <span class="price" id="pd-price">—</span>
+        </div>
+        <span class="sym-name" id="pd-sym-name">Global Currency Pair</span>
+      </div>
     </div>
     <div class="meta">
-      <span class="badges" id="pd-badges"><span class="badge neut">H4 --</span><span class="badge neut">H1 --</span><span class="badge neut">M15 --</span></span>
+      <span class="badges" id="pd-badges">
+        <span class="badge neut">H4 --</span>
+        <span class="badge neut">H1 --</span>
+        <span class="badge neut">M15 --</span>
+      </span>
       <span class="sep">•</span>
-      <div class="circle" id="pd-score" style="background:#1A2234;color:#71717a">--</div>
+      <div class="score-badge-wrap">
+        <div class="circle" id="pd-score" style="background:#1A2234;color:#71717a">--</div>
+        <div class="score-badge-info">
+          <span class="score-badge-label">SCORE</span>
+          <span class="score-badge-tier" id="pd-score-tier">EVALUATING</span>
+        </div>
+      </div>
       <span class="sep">•</span>
       <span id="live-time">live: --:--:--</span>
     </div>
   </header>
 
+  <!-- QUICK PAIR SWITCHER -->
+  <nav class="switcher-bar" id="pair-switcher">
+    <span class="switcher-label">PAIRS:</span>
+    <a class="pair-pill" href="/pair/EURUSD" data-pair="EURUSD">EURUSD</a>
+    <a class="pair-pill" href="/pair/GBPUSD" data-pair="GBPUSD">GBPUSD</a>
+    <a class="pair-pill" href="/pair/USDJPY" data-pair="USDJPY">USDJPY</a>
+    <a class="pair-pill" href="/pair/GBPJPY" data-pair="GBPJPY">GBPJPY</a>
+    <a class="pair-pill" href="/pair/EURJPY" data-pair="EURJPY">EURJPY</a>
+    <a class="pair-pill" href="/pair/EURGBP" data-pair="EURGBP">EURGBP</a>
+    <a class="pair-pill" href="/pair/XAUUSD" data-pair="XAUUSD">XAUUSD</a>
+  </nav>
+
   <main>
-    <!-- MACRO & INTERMARKET CONFLUENCE -->
-    <div id="macro-confluence" class="panel">
-      <h3>
-        <span>⚡ Macro & Intermarket Confluence</span>
+    <!-- 1. MACRO & INTERMARKET CONFLUENCE -->
+    <section id="macro-confluence" class="panel">
+      <div class="panel-header">
+        <h3 class="panel-title">
+          <span>⚡ Macro & Intermarket Confluence</span>
+        </h3>
         <span class="macro-conf-badge neut" id="mc-badge">EVALUATING...</span>
-      </h3>
+      </div>
       <div class="conf-grid">
         <div class="conf-box">
-          <div class="k">Broad Regime</div>
+          <div class="k">Broad Macro Regime</div>
           <div class="n" id="mc-regime">—</div>
+          <div class="sub" id="mc-regime-sub">Global liquidity & risk posture</div>
         </div>
         <div class="conf-box">
           <div class="k" id="mc-driver1-title">Real Yields (10Y TIPS)</div>
           <div class="n" id="mc-driver1-val">—</div>
+          <div class="sub" id="mc-driver1-sub">Primary valuation anchor</div>
         </div>
         <div class="conf-box">
-          <div class="k" id="mc-driver2-title">DXY Momentum</div>
+          <div class="k" id="mc-driver2-title">DXY Momentum & Flows</div>
           <div class="n" id="mc-driver2-val">—</div>
+          <div class="sub" id="mc-driver2-sub">Cross-currency transmission</div>
         </div>
       </div>
-      <div class="conf-desc" id="mc-rationale">
-        Synthesizing cross-asset macro drivers for this asset...
+      <div class="conf-desc">
+        <span class="conf-desc-icon">💡</span>
+        <span id="mc-rationale">Synthesizing cross-asset macro drivers and institutional flows for this asset...</span>
       </div>
-    </div>
+    </section>
 
-    <div id="overview" class="panel"><h3>Overview</h3><div class="ph">Loading…</div></div>
-    <div id="score-breakdown" class="panel"><h3>Score Breakdown</h3><div class="ph">Loading…</div></div>
-    <div id="key-levels" class="panel"><h3>Key Levels Map</h3><div class="ph">Loading…</div></div>
-    <div id="watchout" class="panel"><h3>Watchout Zones</h3><div class="ph">Loading…</div></div>
-    <div id="fundamental" class="panel"><h3>Fundamental // News Filter</h3><div class="ph">Loading…</div></div>
-    <div id="info-feed" class="panel"><h3>Info Feed <span style="color:var(--muted)">— Last 4H</span></h3><div class="ph">Loading…</div></div>
+    <!-- 2. TACTICAL BATTLE-PLAN & EXECUTION STATUS -->
+    <section id="battle-plan-panel" class="panel battle-card">
+      <div class="panel-header">
+        <h3 class="panel-title">
+          <span>🎯 Tactical Battle-Plan & Execution Status</span>
+        </h3>
+        <span class="panel-subtitle" id="bp-alignment-tag">3/3 ALIGNED</span>
+      </div>
+
+      <!-- Action Banner -->
+      <div class="action-banner wait" id="bp-action-banner">
+        <span id="bp-action-text">⚪ EVALUATING ACTION...</span>
+        <span class="action-type-pill" id="bp-action-pill">MONITOR</span>
+      </div>
+
+      <!-- Executive Thesis -->
+      <div class="thesis-box">
+        <div class="thesis-text" id="bp-thesis">
+          Evaluating multi-timeframe candle close, EMA21 distance, and market structure...
+        </div>
+        <div class="thesis-meta">
+          <span>SETUP CONFIRMATION:</span>
+          <b style="color:var(--cyan)" id="bp-confirmation">CONFIRM ON M15 REJECTION</b>
+        </div>
+      </div>
+
+      <!-- 3 Timeframe Alignment Grid -->
+      <div class="timeframe-grid">
+        <div class="tf-box">
+          <div class="tf-head"><span>H4 MACRO TREND</span><span id="tf-h4-adx">ADX --</span></div>
+          <div class="tf-val" id="tf-h4-status">—</div>
+          <div class="tf-sub" id="tf-h4-gate">Structure: Inside Value</div>
+        </div>
+        <div class="tf-box">
+          <div class="tf-head"><span>H1 EXECUTION GATE</span><span id="tf-h1-rsi">RSI --</span></div>
+          <div class="tf-val" id="tf-h1-status">—</div>
+          <div class="tf-sub" id="tf-h1-pullback">Pullback: -- ATR to EMA21</div>
+        </div>
+        <div class="tf-box">
+          <div class="tf-head"><span>M15 TRIGGER</span><span id="tf-m15-vol">VOL --</span></div>
+          <div class="tf-val" id="tf-m15-status">—</div>
+          <div class="tf-sub" id="tf-m15-timing">Timing: Immediate Entry Window</div>
+        </div>
+      </div>
+
+      <!-- Risk Advisory -->
+      <div class="risk-advisory" id="bp-advisory">
+        <span>🛡️</span>
+        <span id="bp-advisory-text">Institutional Discipline: Avoid chasing extreme wicks. Allow price to test EMA21 or value boundaries before committing risk.</span>
+      </div>
+    </section>
+
+    <!-- 3. EXPLAINABLE 5-PILLAR INSTITUTIONAL SCORECARD -->
+    <section id="score-breakdown" class="panel">
+      <div class="panel-header">
+        <h3 class="panel-title">
+          <span>📊 Explainable 5-Pillar Scorecard</span>
+        </h3>
+        <span class="panel-subtitle">Calculated Directional Edge (0-100)</span>
+      </div>
+      <div class="score-pillars" id="pillars-container">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- 4. VERTICAL PRICE LADDER & KEY S/R BENCHMARKS -->
+    <section id="key-levels" class="panel">
+      <div class="panel-header">
+        <h3 class="panel-title">
+          <span>🧭 Vertical Price Ladder (Key S/R & Session Benchmarks)</span>
+        </h3>
+        <span class="panel-subtitle">Real-Time Distance in Pips / Points from Market</span>
+      </div>
+      <div class="ladder-container" id="ladder-container">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- 5. DYNAMIC MULTI-TIMEFRAME DECISION ZONES -->
+    <section id="decision-zones" class="panel">
+      <div class="panel-header">
+        <h3 class="panel-title">
+          <span>🎯 Dynamic Decision Zones (Swing Tips & SNR)</span>
+        </h3>
+        <div class="dz-tf-tabs" id="dz-tf-tabs">
+          <button class="dz-tab-btn active" data-tf="m15" onclick="setDecisionZoneTF('m15')">M15 INTRADAY</button>
+          <button class="dz-tab-btn" data-tf="h1" onclick="setDecisionZoneTF('h1')">H1 SESSION</button>
+          <button class="dz-tab-btn" data-tf="h4" onclick="setDecisionZoneTF('h4')">H4 MACRO</button>
+        </div>
+      </div>
+      <div id="dz-content">Loading decision zones…</div>
+    </section>
+
+    <!-- 6. FUNDAMENTAL // NEWS FILTER -->
+    <section id="fundamental" class="panel">
+      <div class="panel-header">
+        <h3 class="panel-title">
+          <span>📰 Institutional Macro Calendar & News Risk</span>
+        </h3>
+        <span id="fn-status-badge"><span class="fn-badge clean">EVALUATING</span></span>
+      </div>
+      <div id="fn-content">Loading macroeconomic calendar…</div>
+    </section>
+
+    <!-- 7. TECHNICAL TELEMETRY TILES -->
+    <section id="info-feed" class="panel">
+      <div class="panel-header">
+        <h3 class="panel-title">
+          <span>🔬 Technical Telemetry & Moving Averages</span>
+        </h3>
+        <span class="panel-subtitle">Quantitative Metrics Snapshot</span>
+      </div>
+      <div class="telemetry-grid" id="tele-grid">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
   </main>
 
-  <footer class="bar">Tomoko Brain <b>V5.0</b> // PAIR DEEP DIVE // Decision Support - Not a Signal</footer>
+  <footer class="bar">
+    <span>Tomoko Instinct <b>V5.1</b> // PAIR DEEP DIVE TERMINAL</span>
+    <span>Institutional Decision Support — Execution Safeguards Active</span>
+  </footer>
 </div>
 
 <script>
-const raw = location.pathname.split('/').filter(Boolean).pop() || 'XAUUSD';
+const raw = location.pathname.split('/').filter(Boolean).pop() || 'EURUSD';
 const symbol = raw.toUpperCase();
 const $ = id => document.getElementById(id);
 
-function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-function scoreColor(s){ if(s<40) return {bg:'#FF4D4D',fg:'#fff'}; if(s<70) return {bg:'#FFB800',fg:'#000'}; return {bg:'#00E5FF',fg:'#000'}; }
+const PAIR_NAMES = {
+  EURUSD: 'Euro · US Dollar',
+  GBPUSD: 'Pound Sterling · US Dollar',
+  USDJPY: 'US Dollar · Japanese Yen',
+  GBPJPY: 'Pound Sterling · Japanese Yen',
+  EURJPY: 'Euro · Japanese Yen',
+  EURGBP: 'Euro · British Pound',
+  XAUUSD: 'Spot Gold · US Dollar',
+};
+
+// Set Active Tab in Switcher
+document.querySelectorAll('.pair-pill').forEach(el => {
+  if (el.dataset.pair === symbol) el.classList.add('active');
+});
+
+function esc(s){ return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 function fmt(n,d){ if(n===undefined||n===null||isNaN(n)) return '—'; return Number(n).toFixed(d); }
 function isGold(s){ return String(s).indexOf('XAU')>=0; }
-function dp(s){ return isGold(s)?3:5; }
-function arrow(t){ return t==='UP'?'↑':t==='DOWN'?'↓':'→'; }
+function isJpy(s){ return String(s).indexOf('JPY')>=0; }
+function dp(s){ return isGold(s) ? 3 : isJpy(s) ? 3 : 5; }
+function arrow(t){ return t==='UP'?'▲':t==='DOWN'?'▼':'→'; }
 function dirWord(s){ s=String(s||'').toUpperCase(); if(s==='UP'||s==='BULLISH'||s==='BULL') return 'BULL'; if(s==='DOWN'||s==='BEARISH'||s==='BEAR') return 'BEAR'; return 'NEUTRAL'; }
+
 function biasBadge(tf, raw){
   const w = dirWord(raw);
   const cls = w==='BULL' ? 'bull' : w==='BEAR' ? 'bear' : 'neut';
-  return `<div class="badge ${cls}">${tf} ${w} ${arrow(raw)}</div>`;
+  return `<span class="badge ${cls}">${tf} ${w} ${arrow(w)}</span>`;
 }
+
+function scoreInfo(score){
+  const s = Number(score) || 0;
+  if(s >= 70) return { bg: '#00FF88', fg: '#000', tier: 'HIGH EDGE', cls: 'strong' };
+  if(s >= 40) return { bg: '#FFB800', fg: '#000', tier: 'MODERATE', cls: 'mid' };
+  return { bg: '#FF4D4D', fg: '#FFF', tier: 'CHOP / LOW', cls: 'weak' };
+}
+
+/* Pip distance calculations */
+function calcPipDist(targetPrice, currentPrice, sym){
+  if(targetPrice == null || currentPrice == null || isNaN(targetPrice) || isNaN(currentPrice)) return null;
+  const diff = targetPrice - currentPrice;
+  if(isGold(sym)){
+    const pts = diff;
+    return { val: pts, label: (pts >= 0 ? '+' : '') + pts.toFixed(2) + ' pts', raw: pts };
+  }
+  const mult = isJpy(sym) ? 100 : 10000;
+  const pips = diff * mult;
+  return { val: pips, label: (pips >= 0 ? '+' : '') + pips.toFixed(1) + ' pips', raw: pips };
+}
+
+/* ================= 1. MACRO CONFLUENCE ================= */
+function renderMacroConfluence(conf, matrix){
+  if(!conf) return;
+  const badge = $('mc-badge');
+  badge.textContent = conf.status || 'NEUTRAL';
+  badge.className = 'macro-conf-badge ' + (conf.class || 'neut');
+
+  $('mc-regime').textContent = conf.regime || 'BALANCED';
+  $('mc-rationale').textContent = conf.rationale || 'Macro conditions evaluated.';
+
+  if(matrix){
+    const tips = matrix.TIPS_HYBRID || {};
+    const dxy = matrix.DXY || {};
+    const us10y = matrix.US10Y || {};
+    const spx = matrix.SPX || {};
+    const vix = matrix.VIX || {};
+
+    if(isGold(symbol)){
+      $('mc-driver1-title').textContent = '10Y Real Yield (TIPS)';
+      $('mc-driver1-val').innerHTML = `${fmt(tips.real_yield_pct, 2)}% <span style="font-size:11px;color:${tips.yield_pressure==='FALLING'?'var(--bull)':'var(--bear)'}">(${tips.yield_pressure||'STEADY'})</span>`;
+      $('mc-driver1-sub').textContent = 'Inverse driver of spot bullion demand';
+
+      $('mc-driver2-title').textContent = 'DXY Dollar Momentum';
+      $('mc-driver2-val').innerHTML = `${fmt(dxy.price, 2)} <span style="font-size:11px;color:${dxy.change_pct<=0?'var(--bull)':'var(--bear)'}">(${dxy.change_pct>=0?'+':''}${fmt(dxy.change_pct,2)}%)</span>`;
+      $('mc-driver2-sub').textContent = 'USD pricing denominator pressure';
+    } else if(symbol === 'USDJPY'){
+      $('mc-driver1-title').textContent = 'US 10Y Yield Spread';
+      $('mc-driver1-val').innerHTML = `${fmt(us10y.price, 2)}% <span style="font-size:11px;color:${us10y.change_pct>=0?'var(--bull)':'var(--bear)'}">(${us10y.change_pct>=0?'+':''}${fmt(us10y.change_pct*100,0)} bps)</span>`;
+      $('mc-driver1-sub').textContent = 'Yield spread anchor vs BOJ rate';
+
+      $('mc-driver2-title').textContent = 'Risk Appetite (S&P 500 / VIX)';
+      $('mc-driver2-val').innerHTML = `VIX ${fmt(vix.price, 1)} <span style="font-size:11px;color:${spx.change_pct>=0?'var(--bull)':'var(--bear)'}">(${spx.change_pct>=0?'+':''}${fmt(spx.change_pct,2)}%)</span>`;
+      $('mc-driver2-sub').textContent = 'Equity flight vs JPY safe-haven flows';
+    } else {
+      $('mc-driver1-title').textContent = 'DXY Dollar Index';
+      $('mc-driver1-val').innerHTML = `${fmt(dxy.price, 2)} <span style="font-size:11px;color:${dxy.change_pct<=0?'var(--bull)':'var(--bear)'}">${arrow(dxy.trend)} (${fmt(dxy.change_pct,2)}%)</span>`;
+      $('mc-driver1-sub').textContent = 'Global USD reserve appetite';
+
+      $('mc-driver2-title').textContent = 'US 10Y Treasury Yield';
+      $('mc-driver2-val').innerHTML = `${fmt(us10y.price, 2)}% <span style="font-size:11px;color:#94A3B8;">${arrow(us10y.trend)}</span>`;
+      $('mc-driver2-sub').textContent = 'Global benchmark capital cost';
+    }
+  }
+}
+
+/* ================= 2. BATTLE-PLAN & ACTION ================= */
+function renderBattlePlan(scan){
+  const h4 = scan.h4 || {}, h1 = scan.h1 || {};
+  const action = scan.action || 'WAIT FOR SETUP';
+  const reason = scan.reason || '';
+  const isBuy = action.toUpperCase().includes('BUY') || action.toUpperCase().includes('LONG');
+  const isSell = action.toUpperCase().includes('SELL') || action.toUpperCase().includes('SHORT');
+  const isLimit = action.toUpperCase().startsWith('LIMIT');
+
+  const banner = $('bp-action-banner');
+  const actionText = $('bp-action-text');
+  const pill = $('bp-action-pill');
+
+  if(isBuy){
+    banner.className = 'action-banner buy';
+    actionText.innerHTML = `🟢 ${action}`;
+    pill.textContent = isLimit ? 'LIMIT ORDER' : 'BUY SETUP';
+    pill.style.color = 'var(--bull)';
+  } else if(isSell){
+    banner.className = 'action-banner sell';
+    actionText.innerHTML = `🔴 ${action}`;
+    pill.textContent = isLimit ? 'LIMIT ORDER' : 'SELL SETUP';
+    pill.style.color = 'var(--bear)';
+  } else {
+    banner.className = 'action-banner wait';
+    actionText.innerHTML = `🟡 ${action}`;
+    pill.textContent = 'MONITOR';
+    pill.style.color = 'var(--gold)';
+  }
+
+  // Thesis
+  $('bp-thesis').textContent = reason ? reason :
+    `H4 structure is ${h4.direction || 'Neutral'}. Price is positioned ${fmt(h1.dist_ema21_atr, 2)} ATR from H1 EMA21. Await confirmation before commitment.`;
+
+  // Timeframe pills
+  const h4Dir = dirWord(h4.direction);
+  $('tf-h4-status').innerHTML = `${h4Dir} ${arrow(h4Dir)}`;
+  $('tf-h4-status').style.color = h4Dir==='BULL'?'var(--bull)':h4Dir==='BEAR'?'var(--bear)':'var(--neut)';
+  $('tf-h4-adx').textContent = `ADX ${fmt(h4.adx, 1)}`;
+  $('tf-h4-gate').textContent = `Gate: ${h4.gate || 'INSIDE'} · ATRx ${fmt(h4.atr_ratio, 1)}`;
+
+  const h1Bias = dirWord(scan.h1_bias || h1.bias);
+  $('tf-h1-status').innerHTML = `${h1Bias} ${arrow(h1Bias)}`;
+  $('tf-h1-status').style.color = h1Bias==='BULL'?'var(--bull)':h1Bias==='BEAR'?'var(--bear)':'var(--neut)';
+  $('tf-h1-rsi').textContent = `RSI ${fmt(h1.rsi, 1)}`;
+  $('tf-h1-pullback').textContent = `Dist: ${fmt(h1.dist_ema21_atr, 2)} ATR ${h1.is_pullback ? '(Pullback Active ⏳)' : ''}`;
+
+  const m15Bias = dirWord(scan.m15_bias);
+  $('tf-m15-status').innerHTML = `${m15Bias} ${arrow(m15Bias)}`;
+  $('tf-m15-status').style.color = m15Bias==='BULL'?'var(--bull)':m15Bias==='BEAR'?'var(--bear)':'var(--neut)';
+  $('tf-m15-vol').textContent = 'M15 TIMING';
+  $('tf-m15-timing').textContent = (h4Dir===h1Bias && h1Bias===m15Bias) ? '3/3 Confluence Active' : 'Waiting for alignment';
+
+  // Alignment Tag
+  const cnt = (h4Dir === 'BULL' ? 1 : 0) + (h1Bias === 'BULL' ? 1 : 0) + (m15Bias === 'BULL' ? 1 : 0);
+  const bearCnt = (h4Dir === 'BEAR' ? 1 : 0) + (h1Bias === 'BEAR' ? 1 : 0) + (m15Bias === 'BEAR' ? 1 : 0);
+  if(cnt === 3 || bearCnt === 3){
+    $('bp-alignment-tag').innerHTML = '<span style="color:var(--bull)">●●● 3/3 ALIGNED (HIGH EDGE)</span>';
+  } else if(cnt === 2 || bearCnt === 2){
+    $('bp-alignment-tag').innerHTML = '<span style="color:var(--gold)">●●○ 2/3 ALIGNED (MODERATE)</span>';
+  } else {
+    $('bp-alignment-tag').innerHTML = '<span style="color:#94A3B8">●○○ LOW ALIGNMENT</span>';
+  }
+}
+
+/* ================= 3. SCORE BREAKDOWN ================= */
+function renderScoreBreakdown(scan){
+  const bd = scan.score_breakdown || {};
+  const tips = scan.score_tooltips || {};
+
+  const pillars = [
+    { key: 'structural', name: 'Market Structure', weight: '25%', max: 100, desc: 'H4 trend direction & value gate alignment' },
+    { key: 'volatility', name: 'Volatility / ATR', weight: '20%', max: 100, desc: 'Healthy ATR ratio & distance to EMA21' },
+    { key: 'levels', name: 'Key Levels Confluence', weight: '20%', max: 100, desc: 'Discount vs Premium daily range location' },
+    { key: 'intermarket', name: 'Intermarket Flows', weight: '20%', max: 100, desc: 'Yield differentials & macroeconomic driver' },
+    { key: 'news', name: 'News & Event Risk', weight: '15%', max: 100, desc: 'Tier-1 event horizon & calendar safety' },
+  ];
+
+  const html = pillars.map(p => {
+    const val = bd[p.key] != null ? Number(bd[p.key]) : 50;
+    const tooltip = tips[p.key] || p.desc;
+    let color = '#00FF88';
+    if(val < 50) color = '#FF4D4D';
+    else if(val < 75) color = '#FFB800';
+
+    return `
+      <div class="pillar-card" title="${esc(tooltip)}">
+        <div>
+          <div class="pillar-head">
+            <span class="pillar-title">${p.name}</span>
+            <span class="pillar-score" style="color:${color}">${val}</span>
+          </div>
+          <div class="pillar-bar">
+            <div class="pillar-fill" style="width:${Math.min(100, Math.max(0, val))}%;background:${color}"></div>
+          </div>
+        </div>
+        <div class="pillar-desc" title="${esc(tooltip)}">${esc(tooltip)}</div>
+      </div>
+    `;
+  }).join('');
+
+  $('pillars-container').innerHTML = html;
+}
+
+/* ================= 4. VERTICAL PRICE LADDER ================= */
+function renderPriceLadder(scan){
+  const lv = scan.levels || {};
+  const cur = scan.price;
+  const D = dp(scan.symbol);
+
+  if(!cur || (!lv.daily_high && !lv.today_high)){
+    $('ladder-container').innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px">Price ladder telemetry unavailable</div>';
+    return;
+  }
+
+  const pdh = lv.daily_high;
+  const pdl = lv.daily_low;
+  const th = lv.today_high;
+  const tl = lv.today_low;
+  const wo = lv.weekly_open;
+  const doPrice = lv.daily_open;
+
+  const keyRadar = (scan.decision_zones && scan.decision_zones.key_levels_radar) ? scan.decision_zones.key_levels_radar : null;
+  const benchMap = {};
+  if(keyRadar && keyRadar.benchmarks){
+    keyRadar.benchmarks.forEach(b => { benchMap[b.key] = b; });
+  }
+
+  const rawLevels = [];
+
+  // Previous Day High (PDH) & Today High logic
+  if(pdh != null && !isNaN(pdh)){
+    if(th != null && !isNaN(th) && Math.abs(th - pdh) < (isGold(scan.symbol) ? 0.05 : 0.0001)){
+      rawLevels.push({ name: 'Previous Day High (PDH) & Today High', val: pdh, tag: 'PDH / High', key: 'daily_high' });
+    } else {
+      rawLevels.push({ name: 'Previous Day High (PDH)', val: pdh, tag: 'PDH', key: 'daily_high' });
+      if(th != null && !isNaN(th)){
+        rawLevels.push({ name: "Today's Session High", val: th, tag: 'Day High', key: 'today_high' });
+      }
+    }
+  } else if(th != null && !isNaN(th)){
+    rawLevels.push({ name: "Today's Session High", val: th, tag: 'Day High', key: 'today_high' });
+  }
+
+  // Daily Open (Session Bias Anchor)
+  if(doPrice != null && !isNaN(doPrice) && doPrice > 0){
+    rawLevels.push({ name: 'Daily Open (Session Bias Anchor · 6:00 AM MYT)', val: doPrice, tag: 'Day Open', key: 'daily_open' });
+  }
+
+  // Weekly Open (Macro Benchmark)
+  if(wo != null && !isNaN(wo) && wo > 0){
+    rawLevels.push({ name: 'Weekly Open (Macro Benchmark)', val: wo, tag: 'Wk Open', key: 'weekly_open' });
+  }
+
+  // Today Low & Previous Day Low (PDL)
+  if(pdl != null && !isNaN(pdl)){
+    if(tl != null && !isNaN(tl) && Math.abs(tl - pdl) < (isGold(scan.symbol) ? 0.05 : 0.0001)){
+      rawLevels.push({ name: 'Previous Day Low (PDL) & Today Low', val: pdl, tag: 'PDL / Low', key: 'daily_low' });
+    } else {
+      if(tl != null && !isNaN(tl)){
+        rawLevels.push({ name: "Today's Session Low", val: tl, tag: 'Day Low', key: 'today_low' });
+      }
+      rawLevels.push({ name: 'Previous Day Low (PDL)', val: pdl, tag: 'PDL', key: 'daily_low' });
+    }
+  } else if(tl != null && !isNaN(tl)){
+    rawLevels.push({ name: "Today's Session Low", val: tl, tag: 'Day Low', key: 'today_low' });
+  }
+
+  // Add current market price entry
+  const allRows = rawLevels.concat([{ name: 'CURRENT MARKET PRICE', val: cur, tag: 'LIVE' }]);
+  // Sort descending by price
+  allRows.sort((a,b) => b.val - a.val);
+
+  // Render rows with dynamic S/R classification relative to live price
+  const html = allRows.map(item => {
+    const isCur = item.tag === 'LIVE';
+    const isAbove = item.val > cur;
+    const type = isCur ? 'cur' : (isAbove ? 'res' : 'sup');
+    const srLabel = isCur ? 'AT MARKET' : (isAbove ? 'RESISTANCE' : 'SUPPORT');
+    const dist = calcPipDist(item.val, cur, scan.symbol);
+    const distHtml = isCur ?
+      '<span class="ladder-dist zero">● AT MARKET</span>' :
+      `<span class="ladder-dist ${dist.raw >= 0 ? 'plus' : 'minus'}">[${srLabel}] ${dist.label}</span>`;
+
+    let radarBadge = '';
+    if(item.key && benchMap[item.key]){
+      const bm = benchMap[item.key];
+      if(bm.state === 'TESTING'){
+        radarBadge = `<span class="dz-radar-pill badge-testing" style="font-size:9px;margin-left:6px;padding:1px 5px;">⚡ TESTING</span>`;
+      } else if(bm.state === 'APPROACHING'){
+        radarBadge = `<span class="dz-radar-pill badge-approaching" style="font-size:9px;margin-left:6px;padding:1px 5px;">🎯 APPROACHING</span>`;
+      } else if(item.key === 'daily_open'){
+        radarBadge = cur >= item.val ?
+          `<span class="dz-radar-pill badge-breakout" style="font-size:9px;margin-left:6px;padding:1px 5px;">BULL BIAS ▲</span>` :
+          `<span class="dz-radar-pill badge-rejected" style="font-size:9px;margin-left:6px;padding:1px 5px;">BEAR BIAS ▼</span>`;
+      }
+    }
+
+    return `
+      <div class="ladder-row ${type}">
+        <div class="ladder-left">
+          <span class="ladder-tag ${type}">${item.tag}</span>
+          <span class="ladder-name">${item.name}</span>
+          ${radarBadge}
+        </div>
+        <div class="ladder-right">
+          <span class="ladder-price">${fmt(item.val, D)}</span>
+          ${distHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  $('ladder-container').innerHTML = html;
+}
+
+/* ================= 5. DYNAMIC DECISION ZONES ================= */
+let ACTIVE_DZ_TF = 'm15';
+let CURRENT_SCAN_DATA = null;
+
+function setDecisionZoneTF(tf){
+  ACTIVE_DZ_TF = tf;
+  document.querySelectorAll('.dz-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tf === tf);
+  });
+  if(CURRENT_SCAN_DATA) renderDecisionZones(CURRENT_SCAN_DATA);
+}
+
+function renderDecisionZones(scan){
+  CURRENT_SCAN_DATA = scan;
+  const dzAll = scan.decision_zones;
+  const curPrice = scan.price;
+  const D = dp(scan.symbol);
+  const fp = v => (v == null || isNaN(v)) ? '—' : fmt(v, D);
+
+  if(!dzAll || !dzAll[ACTIVE_DZ_TF]){
+    // Fallback to legacy watchout if decision_zones not calculated
+    const wz = scan.watchout_zones;
+    if(!wz || !wz.buy_zone || !wz.sell_zone){
+      $('dz-content').innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px">No decision zone data available</div>';
+      return;
+    }
+    const buy = wz.buy_zone, sell = wz.sell_zone;
+    $('dz-content').innerHTML = `
+      <div class="dz-stack">
+        <div class="dz-card upper">
+          <div class="dz-header">
+            <span class="dz-tag upper">UPPER DECISION ZONE</span>
+            <span class="dz-dist-badge plus">${fmt(sell.distance_atr, 1)} ATR away</span>
+          </div>
+          <div class="dz-body">
+            <span class="dz-range">${fp(sell.low)} – ${fp(sell.high)}</span>
+            <div class="dz-confluences">${(sell.confluence||[]).map(c=>`<span class="dz-conf-pill">${esc(c)}</span>`).join('')}</div>
+          </div>
+        </div>
+        <div class="dz-card lower">
+          <div class="dz-header">
+            <span class="dz-tag lower">LOWER DECISION ZONE</span>
+            <span class="dz-dist-badge minus">${fmt(buy.distance_atr, 1)} ATR away</span>
+          </div>
+          <div class="dz-body">
+            <span class="dz-range">${fp(buy.low)} – ${fp(buy.high)}</span>
+            <div class="dz-confluences">${(buy.confluence||[]).map(c=>`<span class="dz-conf-pill">${esc(c)}</span>`).join('')}</div>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const tfData = dzAll[ACTIVE_DZ_TF] || {};
+  const radar = tfData.radar || {};
+  const keyRadar = dzAll.key_levels_radar || {};
+
+  // 1. Live Order Flow Proximity Radar Banner
+  const radarState = radar.state || 'IN_TRANSIT';
+  const radarCls = 'radar-' + radarState.toLowerCase().replace('_', '-');
+  const badgeCls = radar.badge_class || 'badge-transit';
+
+  const stateColor = radarState === 'TESTING' ? 'var(--cyan)' :
+                    (radarState === 'APPROACHING' ? 'var(--gold)' :
+                    (radarState === 'REJECTED' ? 'var(--red)' :
+                    (radarState === 'BREAKOUT' ? 'var(--green)' : '#94A3B8')));
+
+  const benchList = keyRadar.benchmarks || [];
+  const benchPillsHtml = benchList.map(b => {
+    const isTest = b.state === 'TESTING';
+    const isApp = b.state === 'APPROACHING';
+    const activeClass = isTest ? 'active-test' : (isApp ? 'active-approach' : '');
+    const icon = isTest ? '⚡' : (isApp ? '🎯' : '•');
+    return `<span class="radar-bench-pill ${activeClass}" title="${esc(b.status_text)}"><b>${esc(b.tag)}:</b> ${fp(b.price)} (${b.dist_pips >= 0 ? '+' : ''}${fmt(b.dist_pips, 1)}p) ${icon}</span>`;
+  }).join('');
+
+  const radarBannerHtml = `
+    <div class="dz-radar-banner ${radarCls}">
+      <div class="radar-header">
+        <div class="radar-lead">
+          <span class="radar-ping-icon">📡</span>
+          <span class="radar-state-badge ${badgeCls}">
+            <span class="radar-ping-dot" style="background:${stateColor}"></span>
+            ${esc(radar.badge_text || radarState)}
+          </span>
+          <span style="color:#94A3B8;font-size:10.5px;letter-spacing:0.04em;">LIVE ORDER FLOW RADAR [${ACTIVE_DZ_TF.toUpperCase()}]</span>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${stateColor};font-weight:700;">
+          ${radarState === 'TESTING' ? '⚡ ORDER FLOW ABSORPTION IN PROGRESS' : (radarState === 'APPROACHING' ? '🎯 PREPARE REACTION PLAN' : (radarState === 'REJECTED' ? '🛡️ ZONE DEFENSE ACTIVE' : (radarState === 'BREAKOUT' ? '🚀 BREAKTHROUGH WATCH' : '⚪ CRUISING IN OPEN RANGE')))}
+        </div>
+      </div>
+      <div class="radar-headline">
+        ${esc(radar.headline)}
+      </div>
+      <div class="radar-detail">
+        ${esc(radar.detail)}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#94A3B8;margin-bottom:8px;background:rgba(255,255,255,0.02);padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);">
+        <span style="color:var(--gold);">💡</span>
+        <span><b>Tactical Playbook:</b> ${esc(radar.action_hint)}</span>
+      </div>
+      ${benchList.length ? `
+        <div class="radar-benchmarks">
+          <span style="font-size:9.5px;text-transform:uppercase;font-weight:700;color:var(--muted);margin-right:2px;">🧭 Key Benchmarks:</span>
+          ${benchPillsHtml}
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  // 2. Decision Zone Card Generator with Real-Time Interactive Badges & Telemetry
+  function cardHtml(z, isUpper){
+    if(!z) return '';
+    const flipHtml = z.is_flip ? `<span class="dz-tag flip">${esc(z.flip_note || '🔁 S/R FLIP')}</span>` : '';
+    const confHtml = (z.confluences || []).map(c => `<span class="dz-conf-pill">${esc(c)}</span>`).join('');
+    const cls = z.is_flip ? 'flip' : (isUpper ? 'upper' : 'lower');
+    const tagCls = z.is_flip ? 'flip' : (isUpper ? 'upper' : 'lower');
+    const distCls = z.distance_pips >= 0 ? 'plus' : 'minus';
+
+    const inter = z.interaction || {};
+    const interState = inter.state || 'IN_TRANSIT';
+    const activeCardCls = interState === 'TESTING' ? 'testing-active' :
+                         (interState === 'APPROACHING' ? 'approaching-active' :
+                         (interState === 'REJECTED' ? 'rejected-active' :
+                         (interState === 'BREAKOUT' ? 'breakout-active' : '')));
+
+    const radarDotColor = interState === 'TESTING' ? 'var(--cyan)' :
+                         (interState === 'APPROACHING' ? 'var(--gold)' :
+                         (interState === 'REJECTED' ? 'var(--red)' :
+                         (interState === 'BREAKOUT' ? 'var(--green)' : '#94A3B8')));
+
+    const radarBadgeHtml = inter.badge_text ? `
+      <span class="dz-radar-pill ${inter.badge_class || 'badge-transit'}">
+        <span class="radar-ping-dot" style="background:${radarDotColor};width:5px;height:5px;"></span>
+        ${esc(inter.badge_text)}
+      </span>
+    ` : '';
+
+    const telemetryHtml = inter.status_text ? `
+      <div class="dz-telemetry-row ${inter.badge_class || 'badge-transit'}">
+        <span class="tele-icon" style="flex-shrink:0;">📡</span>
+        <span><b>Order Flow Telemetry:</b> ${esc(inter.status_text)}</span>
+      </div>
+    ` : '';
+
+    return `
+      <div class="dz-card ${cls} ${activeCardCls}">
+        <div class="dz-header">
+          <div class="dz-title-wrap">
+            <span class="dz-tag ${tagCls}">${esc(z.title)}</span>
+            ${radarBadgeHtml}
+            ${flipHtml}
+            <span class="dz-subtitle">${esc(z.subtitle)}</span>
+          </div>
+          <span class="dz-dist-badge ${distCls}">${esc(z.distance_label)} (${fmt(z.distance_atr, 1)} ATR)</span>
+        </div>
+        <div class="dz-body">
+          <span class="dz-range">${fp(z.low)} – ${fp(z.high)}</span>
+          <div class="dz-confluences">${confHtml}</div>
+        </div>
+        ${telemetryHtml}
+        <div class="dz-playbook">
+          <div class="dz-play-item reject"><b>🔄 Rejection:</b> ${esc(z.playbook_reject)}</div>
+          <div class="dz-play-item break"><b>⚡ Breakout:</b> ${esc(z.playbook_break)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const u2Html = cardHtml(tfData.upper_dz_2, true);
+  const u1Html = cardHtml(tfData.upper_dz_1, true);
+  const l1Html = cardHtml(tfData.lower_dz_1, false);
+  const l2Html = cardHtml(tfData.lower_dz_2, false);
+
+  const liveBar = `
+    <div class="dz-live-divider">
+      <div class="dz-live-left">
+        <span class="dot"></span>
+        <span>CURRENT MARKET PRICE: ${fp(curPrice)}</span>
+      </div>
+      <div class="dz-live-right">
+        <span>${ACTIVE_DZ_TF.toUpperCase()} ATR: ${fmt(tfData.atr, D)} • Floating Dynamic Anchor</span>
+      </div>
+    </div>
+  `;
+
+  $('dz-content').innerHTML = `
+    ${radarBannerHtml}
+    <div class="dz-stack">
+      ${u2Html}
+      ${u1Html}
+      ${liveBar}
+      ${l1Html}
+      ${l2Html}
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#94A3B8;margin-top:10px;line-height:1.5;display:flex;align-items:flex-start;gap:6px;">
+      <span>💡</span>
+      <span><b>Day Trader Rule of Thumb:</b> Decision Zones are inflection areas, not blind entry signals. At each zone, price either <b>REJECTS</b> (fade toward mean) or <b>BREAKS</b> (wait for pullback retest as S/R flip). Avoid chasing unconfirmed momentum.</span>
+    </div>
+  `;
+}
+
+/* ================= 6. FUNDAMENTAL // NEWS FILTER ================= */
 function safeCalValue(v){ if(v==null||v==='') return '—'; const s=String(v); if(s.indexOf('-922337203685')===0) return '—'; return s; }
 function truncEv(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'…' : s; }
 function parseCalNum(val){
@@ -270,21 +1213,6 @@ function calcDeviation(actual, forecast, impactDir){
   if(Math.abs(diff) < 0.0001) return 'inline';
   if(impactDir === 2) return diff < 0 ? 'beat' : 'miss';
   return diff > 0 ? 'beat' : 'miss';
-}
-function relMinStr(relMin, timeStr){
-  if(timeStr){
-    const d = parseEvTime(timeStr);
-    if(d){
-      relMin = (d.getTime() - Date.now()) / 60000;
-    }
-  }
-  if(relMin==null||isNaN(relMin)) return '—';
-  const v=Math.round(relMin);
-  if(v<0) return Math.abs(Math.floor(v/60))+'h ago';
-  const days=Math.floor(v/1440), h=Math.floor((v%1440)/60), m=Math.floor(v%60);
-  if(days>0) return 'in '+days+'d '+h+'h';
-  if(h>0) return 'in '+h+'h'+(m?' '+m+'m':'');
-  return 'in '+m+'m';
 }
 function parseEvTime(s){
   if(!s) return null;
@@ -303,165 +1231,70 @@ function calTime(s){
   const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   return days[d.getDay()]+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
 }
+function relMinStr(relMin, timeStr){
+  if(timeStr){
+    const d = parseEvTime(timeStr);
+    if(d) relMin = (d.getTime() - Date.now()) / 60000;
+  }
+  if(relMin==null||isNaN(relMin)) return '—';
+  const v=Math.round(relMin);
+  if(v<0) return Math.abs(Math.floor(v/60))+'h ago';
+  const days=Math.floor(v/1440), h=Math.floor((v%1440)/60), m=Math.floor(v%60);
+  if(days>0) return 'in '+days+'d '+h+'h';
+  if(h>0) return 'in '+h+'h'+(m?' '+m+'m':'');
+  return 'in '+m+'m';
+}
 function getImportance(ev){
   if(!ev) return { pri: 1, label: 'LOW', cls: 'lo', icon: '🟡' };
   const imp = String(ev.importance || '').toUpperCase().trim();
   const pri = Number(ev.priority != null ? ev.priority : (imp === 'HIGH' ? 3 : (imp === 'MEDIUM' || imp === 'MED' || imp === 'MODERATE') ? 2 : 1));
-  if(imp === 'HIGH' || pri >= 3) {
-    return { pri: 3, label: 'HIGH', cls: 'hi', icon: '🔴' };
-  }
-  if(imp === 'MEDIUM' || imp === 'MED' || imp === 'MODERATE' || pri === 2) {
-    return { pri: 2, label: 'MED', cls: 'med', icon: '🟠' };
-  }
+  if(imp === 'HIGH' || pri >= 3) return { pri: 3, label: 'HIGH', cls: 'hi', icon: '🔴' };
+  if(imp === 'MEDIUM' || imp === 'MED' || imp === 'MODERATE' || pri === 2) return { pri: 2, label: 'MED', cls: 'med', icon: '🟠' };
   return { pri: 1, label: 'LOW', cls: 'lo', icon: '🟡' };
-}
-function priceTxt(s,p){ return isGold(s)? fmt(p,3) : fmt(p,5); }
-
-/* Render Macro Confluence Box */
-function renderMacroConfluence(conf, matrix){
-  if(!conf) return;
-  const badge = $('mc-badge');
-  badge.textContent = conf.status || 'NEUTRAL';
-  badge.className = 'macro-conf-badge ' + (conf.class || 'neut');
-
-  $('mc-regime').textContent = conf.regime || 'BALANCED';
-  $('mc-rationale').textContent = conf.rationale || 'Macro conditions evaluated.';
-
-  if(matrix){
-    const tips = matrix.TIPS_HYBRID || {};
-    const dxy = matrix.DXY || {};
-    const us10y = matrix.US10Y || {};
-
-    if(isGold(symbol)){
-      $('mc-driver1-title').textContent = '10Y Real Yield (TIPS)';
-      $('mc-driver1-val').textContent = fmt(tips.real_yield_pct, 2) + '% (' + (tips.yield_pressure || 'STEADY') + ')';
-      $('mc-driver2-title').textContent = 'DXY Momentum';
-      $('mc-driver2-val').textContent = fmt(dxy.price, 2) + ' (' + (dxy.change_pct>=0?'+':'') + fmt(dxy.change_pct,2) + '%)';
-    } else if(symbol === 'USDJPY'){
-      $('mc-driver1-title').textContent = 'US 10Y Yield Spread';
-      $('mc-driver1-val').textContent = fmt(us10y.price, 2) + '% (' + (us10y.change_pct>=0?'+':'') + fmt(us10y.change_pct*100,0) + ' bps)';
-      $('mc-driver2-title').textContent = 'DXY Momentum';
-      $('mc-driver2-val').textContent = fmt(dxy.price, 2) + ' (' + (dxy.change_pct>=0?'+':'') + fmt(dxy.change_pct,2) + '%)';
-    } else {
-      $('mc-driver1-title').textContent = 'DXY Index';
-      $('mc-driver1-val').textContent = fmt(dxy.price, 2) + ' ' + arrow(dxy.trend);
-      $('mc-driver2-title').textContent = '10Y Nominal Yield';
-      $('mc-driver2-val').textContent = fmt(us10y.price, 2) + '%';
-    }
-  }
-}
-
-function renderOverview(scan){
-  const h4 = scan.h4 || {}, h1 = scan.h1 || {};
-  const ax = dirWord(h4.direction);
-  const alDot = ax==='BULL'?'HIGH':ax==='BEAR'?'MEDIUM':'LOW';
-  $('pd-badges').innerHTML = biasBadge('H4', h4.direction) + biasBadge('H1', h1.bias) + biasBadge('M15', scan.m15_bias);
-  const actColor = String(scan.action).startsWith('LIMIT AT LIQ') ? 'var(--gold)' : 'var(--text)';
-  $('overview').innerHTML =
-    `<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
-       <div class="align-dot lvl-${alDot}"></div>
-       <span class="badge ${ax==='BULL'?'bull':ax==='BEAR'?'bear':'neut'}" style="font-size:11px">H4 ${h4.gate||'--'} ${h4.direction||'--'}</span>
-       <span style="color:var(--muted);font-size:10px">ADX ${fmt(h4.adx,1)} • ATRx ${fmt(h4.atr_ratio,1)}</span>
-     </div>
-     <div class="v">H4 ${h4.gate||'--'} ${h4.direction||'--'} ADX ${fmt(h4.adx,1)} ATRx${fmt(h4.atr_ratio,1)} |
-       H1 Dist ${fmt(h1.dist_ema21_atr,2)} ATR | M15 ${scan.m15_bias||'--'} | ${scan.action||'--'}</div>
-     <div style="margin-top:10px;font-weight:700;font-size:13px;color:${actColor};font-family:'JetBrains Mono',monospace">${scan.action||'--'}</div>
-     ${scan.reason?`<div style="margin-top:4px;font-size:11px;color:var(--muted);line-height:1.5">${esc(scan.reason)}</div>`:''}
-     <div style="margin-top:10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)">LOOK — EARLY: prepare, don't chase. Wait for confirmation before entry.</div>`;
-}
-
-function scCell(label, key, bd, tips){
-  const v = bd[key] ?? '—';
-  const t = (tips && tips[key]) || '';
-  return `<div class="sc" title="${esc(t)}"><div class="k">${label}</div><div class="n">${v}</div></div>`;
-}
-
-function renderScoreBreakdown(scan){
-  const bd = scan.score_breakdown || {};
-  const tips = scan.score_tooltips || {};
-  const s = scan.score;
-  const sc = scoreColor(s);
-  $('score-breakdown').innerHTML =
-    `<div class="score-grid">
-       ${scCell('struct','structural',bd,tips)}
-       ${scCell('vol','volatility',bd,tips)}
-       ${scCell('levels','levels',bd,tips)}
-       ${scCell('inter','intermarket',bd,tips)}
-       ${scCell('news','news',bd,tips)}
-     </div>
-     <div class="score-total">real score <b style="color:${sc.bg}">${s??'—'}</b></div>`;
-}
-
-function renderLevels(scan){
-  const lv = scan.levels || {}, p = scan.price;
-  if(!lv.daily_low && lv.daily_low!==0){ $('key-levels').innerHTML = '<div class="ph">—</div>'; return; }
-  const vals=[lv.daily_low, lv.weekly_open, p, lv.daily_high, lv.liq_high, lv.liq_low].map(v=>isNaN(v)?0:v);
-  const min=Math.min(...vals), max=Math.max(...vals);
-  const range=(max-min)||1;
-  const pct=v=>((v-min)/range*100);
-  const row=(name,v,cur)=>`<div class="lvl-row ${cur?'cur':''}"><div class="name">${name}</div>
-    <div class="track"><div class="dot2" style="left:${pct(v)}%"></div></div>
-    <div class="val">${fmt(v, dp(scan.symbol))}</div></div>`;
-  $('key-levels').innerHTML =
-    row('Daily Low', lv.daily_low) + row('Weekly Open', lv.weekly_open) +
-    row('Current', p, true) + row('Daily High', lv.daily_high) +
-    row('Liq High', lv.liq_high) + row('Liq Low', lv.liq_low);
-}
-
-function renderWatchout(scan){
-  const wz = scan.watchout_zones;
-  $('watchout').innerHTML = '<div class="ph">—</div>';
-  if(!wz || !wz.buy_zone || !wz.sell_zone) return;
-  const D = dp(scan.symbol);
-  const fp = v => (isNaN(v)||v===null||v===undefined) ? '—' : fmt(v, D);
-  const buy = wz.buy_zone, sell = wz.sell_zone;
-  const PD = wz.premium_discount || {};
-  const curPct = PD.current_pct!=null ? Math.round(PD.current_pct) : null;
-  const pos = curPct==null ? '—' : (curPct>=50 ? 'PREMIUM' : curPct<=50 ? 'DISCOUNT' : 'EQUILIBRIUM');
-  const atrRatio = v => (v==null||isNaN(v)) ? '' : ` (${Number(v).toFixed(2)} ATR)`;
-  const buyCard =
-    `<div class="wo-card buy"><span class="pill">${buy.type||'DISCOUNT'}</span>` +
-    `<div class="rng">${fp(buy.low)} – ${fp(buy.high)}</div>` +
-    `<div class="meta2">Current is ${Number(buy.distance_atr)>0?'above':'below'} zone ${atrRatio(buy.distance_atr)} • ${buy.discount_pct!=null?Math.round(buy.discount_pct):'—'}% of range</div>` +
-    `<ul>${(buy.confluence||[]).map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`;
-  const sellCard =
-    `<div class="wo-card sell"><span class="pill">${sell.type||'PREMIUM'}</span>` +
-    `<div class="rng">${fp(sell.low)} – ${fp(sell.high)}</div>` +
-    `<div class="meta2">Current is ${Number(sell.distance_atr)>0?'below':'above'} zone ${atrRatio(sell.distance_atr)} • ${sell.premium_pct!=null?Math.round(sell.premium_pct):'—'}% of range</div>` +
-    `<ul>${(sell.confluence||[]).map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`;
-  $('watchout').innerHTML =
-    `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-       <span style="font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:.05em;color:var(--neut);border:1px solid rgba(255,184,0,0.4);background:rgba(255,184,0,0.08);padding:2px 6px;border-radius:5px">WATCHOUT ZONES // NOT A SIGNAL – WATCH AREA</span>
-       <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#94A3B8">POSITION: <b style="color:${pos==='PREMIUM'?'var(--bear)':pos==='DISCOUNT'?'var(--bull)':'var(--neut)'}">${pos||'—'}</b> ${curPct!=null?curPct+'% of range':''}</span>
-     </div>` +
-    `<div class="wo-cards">${buyCard}${sellCard}</div>` +
-    `<div class="wo-disclaimer">Zones are watch areas based on confluence, not entry signals. Wait for confirmation. Premium = 50-100% daily range, Discount = 0-50%. In uptrend, buy discount.</div>`;
 }
 
 function renderFundamental(scan, currencies){
   const news = scan.news || {};
-  const fund = scan.fundamental || {};
   const isClean = news.is_clean === true;
-  const src = news.source || 'decoupled_macro_calendar';
-  const cnt = news.count != null ? news.count : (news.total_events != null ? news.total_events : 0);
   const blk = news.blocking || [];
-  const badge = isClean ? '<span class="fn-badge clean">NO HIGH IMPACT RISK</span>' : '<span class="fn-badge blocked">HIGH IMPACT EVENT</span>';
-  const srcLabel = (src === 'decoupled_macro_calendar' || !src) ? 'Macro Calendar' : (src === 'mt5_terminal_calendar' ? 'MT5 Calendar' : src);
-  let sub = `${srcLabel} • ${cnt} events • Risk: ${isClean?'RISK-ON':'RISK-OFF'}`;
+  const events = news.upcoming_events || [];
+
+  const statusBadge = isClean ?
+    '<span class="fn-badge clean">✓ NO HIGH-IMPACT RISK IN 60M</span>' :
+    '<span class="fn-badge blocked">🚨 HIGH-IMPACT RELEASE IMMINENT</span>';
+  $('fn-status-badge').innerHTML = statusBadge;
+
   let banner = '';
   if(blk.length){
     const ev0 = blk[0];
     const ev0Time = calTime(ev0.time);
-    sub = `${srcLabel} • ${cnt} events • ${esc(ev0Time)} ${esc(ev0.event)} [HIGH] AVOID ${esc(ev0.currency)} • Risk: RISK-OFF`;
-    banner = `<div style="min-height:36px;display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;background:rgba(255,184,0,0.10);border:1px solid rgba(255,184,0,0.20);border-radius:8px;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;color:#FFB800">⛔ ${esc(ev0Time)} ${esc(ev0.event)} HIGH (${esc(ev0.currency)}) - STAY OUT</div>`;
+    banner = `
+      <div style="min-height:38px;display:flex;align-items:center;gap:10px;padding:9px 14px;margin-bottom:12px;background:rgba(255,77,77,0.12);border:1px solid rgba(255,77,77,0.35);border-radius:8px;font-family:'Inter',sans-serif;font-size:12.5px;font-weight:700;color:#FCA5A5">
+        <span>🚨 RED FOLDER LOCKOUT:</span>
+        <span>${esc(ev0Time)} ${esc(ev0.event)} [${esc(ev0.currency)}] — Avoid fresh entries within 30m of release.</span>
+      </div>
+    `;
   }
-  const events = news.upcoming_events || [];
-  let tbl = '<div class="cal-wrap"><table><thead><tr>' +
-    '<th style="width:110px">Time</th><th style="width:35px">Cur</th><th>Event</th>' +
-    '<th style="width:40px">P</th><th style="width:75px;text-align:right">Actual</th><th style="width:55px;text-align:right">Fore</th><th style="width:55px;text-align:right">Prev</th>' +
-    '</tr></thead><tbody>';
+
+  let tbl = `
+    <div class="cal-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:115px">Time</th>
+            <th style="width:40px;text-align:center">Cur</th>
+            <th>Event Details</th>
+            <th style="width:45px">Impact</th>
+            <th style="width:75px;text-align:right">Actual</th>
+            <th style="width:60px;text-align:right">Forecast</th>
+            <th style="width:60px;text-align:right">Previous</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
   if(events.length){
-    for(const ev of events.slice(0,14)){
+    for(const ev of events.slice(0, 14)){
       const imp = getImportance(ev);
       const d = parseEvTime(ev.time);
       const isPast = d ? (d.getTime() < Date.now()) : (ev._rel_min < 0);
@@ -476,60 +1309,121 @@ function renderFundamental(scan, currencies){
           let cls = dev === 'beat' ? ' green' : dev === 'miss' ? ' red' : '';
           actHtml = `<span class="fn-num${cls}">${esc(actVal)}</span>${tag}`;
         } else {
-          actHtml = '<span class="fn-perf archived">ARCH</span>';
+          actHtml = '<span class="fn-perf" style="background:rgba(255,255,255,0.05);color:#94A3B8">ARCH</span>';
         }
       } else {
         actHtml = actVal !== '—' ? `<span class="fn-num">${esc(actVal)}</span>` : '<span class="fn-num" style="color:#555">—</span>';
       }
 
-      const relHtml = isPast ? `<span class="cal-rel released">✓ ${relMinStr(ev._rel_min, ev.time)}</span>` : `<span class="cal-rel">${relMinStr(ev._rel_min, ev.time)}</span>`;
+      const relHtml = isPast ? `<span class="cal-rel" style="color:#94A3B8">✓ ${relMinStr(ev._rel_min, ev.time)}</span>` : `<span class="cal-rel">${relMinStr(ev._rel_min, ev.time)}</span>`;
 
-      tbl += `<tr class="${rowCls}">` +
-        `<td class="cal-time">${esc(calTime(ev.time))}${relHtml}</td>` +
-        `<td class="cal-cur">${esc(ev.currency)}</td>` +
-        `<td class="cal-event" title="${esc(ev.event)}">${esc(truncEv(ev.event,24))}</td>` +
-        `<td class="cal-p"><span class="fn-pill ${imp.cls}">${imp.label}</span></td>` +
-        `<td style="text-align:right">${actHtml}</td>` +
-        `<td class="fn-num">${esc(safeCalValue(ev.forecast))}</td>` +
-        `<td class="fn-num">${esc(safeCalValue(ev.previous))}</td>` +
-        `</tr>`;
+      tbl += `
+        <tr class="${rowCls}">
+          <td class="cal-time">${esc(calTime(ev.time))}${relHtml}</td>
+          <td class="cal-cur">${esc(ev.currency)}</td>
+          <td class="cal-event" title="${esc(ev.event)}">${esc(truncEv(ev.event, 28))}</td>
+          <td><span class="fn-pill ${imp.cls}">${imp.label}</span></td>
+          <td style="text-align:right">${actHtml}</td>
+          <td class="fn-num">${esc(safeCalValue(ev.forecast))}</td>
+          <td class="fn-num">${esc(safeCalValue(ev.previous))}</td>
+        </tr>
+      `;
     }
     tbl += '</tbody></table></div>';
   } else {
-    tbl += `<tr><td colspan="7" class="fn-empty" style="text-align:center;padding:12px">No upcoming events for ${(Array.isArray(currencies)? currencies.join('/') : (currencies || '—'))}</td></tr></tbody></table></div>`;
+    tbl += `<tr><td colspan="7" style="text-align:center;padding:16px;color:#94A3B8">No upcoming events scheduled for ${(Array.isArray(currencies)? currencies.join('/') : (currencies || 'this pair'))}</td></tr></tbody></table></div>`;
   }
-  $('fundamental').innerHTML =
-    `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.12em">NEWS FILTER</span>${badge}</div>` +
-    `<div class="fn-sub${blk.length?' warn':''}">${sub}</div>` +
-    banner +
-    `<div class="fn-bias">${esc(fund.bias||'—')}</div>` +
-    tbl;
+
+  $('fn-content').innerHTML = banner + tbl;
 }
 
-function renderInfoFeed(scan){
+/* ================= 7. TECHNICAL TELEMETRY TILES ================= */
+function renderTelemetry(scan){
   const h4 = scan.h4 || {}, h1 = scan.h1 || {};
-  $('info-feed').innerHTML =
-    `<div class="v">H4 gate ${h4.gate||'--'} ${h4.direction||'--'}\n` +
-    `ADX ${fmt(h4.adx,1)}  ATRx ${fmt(h4.atr_ratio,2)}\n` +
-    `EMA20 ${fmt(h4.ema20, dp(scan.symbol))} / EMA50 ${fmt(h4.ema50, dp(scan.symbol))}\n` +
-    `Dist EMA21 ${fmt(h4.dist_ema21_atr,2)} ATR\n` +
-    `H1 rsi ${fmt(h1.rsi,1)} · pullback ${h1.is_pullback?'YES':'NO'}</div>`;
+  const D = dp(scan.symbol);
+
+  const adxVal = Number(h4.adx) || 0;
+  const adxDesc = adxVal >= 25 ? 'Strong Trend (>25)' : 'Ranging / Low Trend (<25)';
+  const adxColor = adxVal >= 25 ? 'var(--bull)' : 'var(--neut)';
+
+  const atrRatio = Number(h4.atr_ratio) || 1.0;
+  const atrDesc = atrRatio > 1.3 ? 'High Volatility Expansion' : atrRatio < 0.7 ? 'Low Volatility Squeeze' : 'Normal / Sustainable Vol';
+  const atrColor = (atrRatio >= 0.8 && atrRatio <= 1.25) ? 'var(--bull)' : 'var(--neut)';
+
+  const ema20 = Number(h4.ema20) || 0;
+  const ema50 = Number(h4.ema50) || 0;
+  const emaAlign = ema20 > ema50 ? 'BULLISH STACK (EMA20 > EMA50)' : 'BEARISH STACK (EMA20 < EMA50)';
+  const emaColor = ema20 > ema50 ? 'var(--bull)' : 'var(--bear)';
+
+  const distH1 = Number(h1.dist_ema21_atr) || 0;
+  const distDesc = distH1 <= 0.5 ? 'Pullback Zone (≤0.5 ATR)' : 'Extended from EMA21';
+  const distColor = distH1 <= 0.5 ? 'var(--bull)' : 'var(--neut)';
+
+  const rsiVal = Number(h1.rsi) || 50;
+  const rsiDesc = rsiVal > 70 ? 'Overbought (>70)' : rsiVal < 30 ? 'Oversold (<30)' : 'Balanced Momentum (30-70)';
+
+  $('tele-grid').innerHTML = `
+    <div class="tele-box">
+      <div class="tele-label">H4 Trend Strength (ADX)</div>
+      <div class="tele-val" style="color:${adxColor}">${fmt(adxVal, 1)}</div>
+      <div class="tele-sub">${adxDesc}</div>
+    </div>
+    <div class="tele-box">
+      <div class="tele-label">H4 Volatility Ratio (ATRx)</div>
+      <div class="tele-val" style="color:${atrColor}">${fmt(atrRatio, 2)}x</div>
+      <div class="tele-sub">${atrDesc}</div>
+    </div>
+    <div class="tele-box">
+      <div class="tele-label">H4 Moving Averages</div>
+      <div class="tele-val" style="color:${emaColor};font-size:12px">${emaAlign}</div>
+      <div class="tele-sub">EMA20: ${fmt(ema20, D)} · EMA50: ${fmt(ema50, D)}</div>
+    </div>
+    <div class="tele-box">
+      <div class="tele-label">H1 Distance to EMA21</div>
+      <div class="tele-val" style="color:${distColor}">${fmt(distH1, 2)} ATR</div>
+      <div class="tele-sub">${distDesc}</div>
+    </div>
+    <div class="tele-box">
+      <div class="tele-label">H1 Relative Strength (RSI)</div>
+      <div class="tele-val">${fmt(rsiVal, 1)}</div>
+      <div class="tele-sub">${rsiDesc}</div>
+    </div>
+    <div class="tele-box">
+      <div class="tele-label">H1 Pullback Status</div>
+      <div class="tele-val" style="color:${h1.is_pullback ? 'var(--bull)' : 'var(--muted)'}">${h1.is_pullback ? 'ACTIVE PULLBACK ✓' : 'NO PULLBACK'}</div>
+      <div class="tele-sub">Close vs EMA21: ${h1.close_vs_ema || 'At Level'}</div>
+    </div>
+  `;
 }
 
+/* Master Render */
 function renderAll(d){
   const scan = d.scan || {};
   $('pd-symbol').textContent = d.symbol || symbol;
-  $('pd-price').textContent = priceTxt(d.symbol, scan.price);
-  const sc = scoreColor(scan.score);
+  $('pd-sym-name').textContent = PAIR_NAMES[d.symbol || symbol] || 'Global Trading Pair';
+  $('pd-price').textContent = fmt(scan.price, dp(d.symbol || symbol));
+
+  // Score Badge
+  const score = scan.score != null ? scan.score : (d.heatmap && d.heatmap.score);
+  const sc = scoreInfo(score);
   const el = $('pd-score');
-  el.textContent = scan.score!=null ? scan.score : (d.heatmap && d.heatmap.score);
-  el.style.background = sc.bg; el.style.color = sc.fg; el.style.boxShadow = '0 0 14px ' + sc.bg;
-  renderOverview(scan);
+  el.textContent = score != null ? score : '--';
+  el.style.background = sc.bg;
+  el.style.color = sc.fg;
+  el.style.boxShadow = '0 0 14px ' + sc.bg;
+  $('pd-score-tier').textContent = sc.tier;
+  $('pd-score-tier').style.color = sc.bg;
+
+  // Header badges
+  const h4 = scan.h4 || {}, h1 = scan.h1 || {};
+  $('pd-badges').innerHTML = biasBadge('H4', h4.direction) + biasBadge('H1', scan.h1_bias || h1.bias) + biasBadge('M15', scan.m15_bias);
+
+  renderBattlePlan(scan);
   renderScoreBreakdown(scan);
-  renderLevels(scan);
-  renderWatchout(scan);
+  renderPriceLadder(scan);
+  renderDecisionZones(scan);
   renderFundamental(scan, d.currencies);
-  renderInfoFeed(scan);
+  renderTelemetry(scan);
 }
 
 let pollInFlight = false;
@@ -540,9 +1434,9 @@ async function poll(){
     const r = await fetch('/api/pair/' + symbol + '/deep_dive');
     const j = await r.json();
     if(j && j.scan) renderAll(j);
-    else $('overview').innerHTML = '<div class="ph">No data for ' + esc(symbol) + '</div>';
+    else $('bp-thesis').textContent = 'No active telemetry data for ' + esc(symbol);
   }catch(e){
-    $('overview').innerHTML = '<div class="ph">API error: ' + esc(e.message) + '</div>';
+    $('bp-thesis').textContent = 'API connection error: ' + esc(e.message);
   }finally{
     pollInFlight = false;
   }
@@ -556,7 +1450,7 @@ async function poll(){
     }
   }catch(e){}
 
-  setTimeout(poll, 10000);
+  setTimeout(poll, 8000);
 }
 
 function tick(){

@@ -28,6 +28,7 @@ from core.brain_score import (calculate_brain_score, get_manual_action,
                              score_volatility, score_levels)
 from core.fundamental_engine import FundamentalEngine
 from core.watchout_zones import calculate_watchout_zones
+from core.decision_zones import calculate_all_decision_zones
 from core.intermarket_engine import IntermarketEngine
 from core.performance_tracker import PerformanceTracker
 from core.context_feed import ContextFeed
@@ -248,6 +249,7 @@ def _no_data_scan(symbol, reason="NO_DATA"):
                  "source": WAITING_SOURCE, "status": WAITING_SOURCE, "count": 0,
                  "total_events": 0, "risk": "RISK-ON"},
         "watchout_zones": None,
+        "decision_zones": None,
         "atr": 0,
         "ema21": 0,
     }
@@ -320,6 +322,15 @@ def _scan(symbol: str, cal=None):
         print("watchout zones failed:", e)
         _atr = 0.0
         watchout_zones = None
+
+    # --- Multi-timeframe Decision Zones (floating relative to current price) ---
+    try:
+        decision_zones = calculate_all_decision_zones(
+            df_m15, df_h1, df_h4, price, levels, symbol=symbol
+        )
+    except Exception as e:
+        print("decision zones calculation failed:", e)
+        decision_zones = None
 
     # --- Real brain score ---
     # structural / intermarket / news come from the engines; volatility and
@@ -398,6 +409,7 @@ def _scan(symbol: str, cal=None):
         "fundamental": fund,
         "news": news,
         "watchout_zones": watchout_zones,
+        "decision_zones": decision_zones,
         "atr": _atr,
         "ema21": _ema21,
     }
