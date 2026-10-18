@@ -35,6 +35,7 @@ from core.context_feed import ContextFeed
 from core.macro_intelligence_engine import MacroIntelligenceEngine
 from core.news_engine import NewsEngine, WAITING_SOURCE, _parse_event_time
 from core.world_news_engine import get_world_news_engine
+from core.session_briefing_engine import SessionBriefingEngine
 import config
 
 tracker = PerformanceTracker()
@@ -574,10 +575,17 @@ def get_pair_deep(symbol: str):
     heatmap_row = heatmap[0] if heatmap else None
     upcoming = get_news_engine().get_upcoming_events(symbol, hours_ahead=168)
     currencies = get_price_engine().get_currencies(symbol)
+    briefing = get_session_briefing_engine().get_briefing(symbol)
     return sanitize_for_json({
         "symbol": symbol,
         "currencies": currencies,
         "scan": scan,
+        "ai_battle_plan": briefing.get("plan", {}),
+        "ai_session_info": {
+            "session": briefing.get("session"),
+            "generated_at_utc": briefing.get("generated_at_utc"),
+            "global_macro_executive_thesis": briefing.get("global_macro_executive_thesis"),
+        },
         "heatmap": heatmap_row,
         "calendar": upcoming,
         "calendar_count": len(upcoming),
@@ -585,6 +593,26 @@ def get_pair_deep(symbol: str):
         "calendar_source": (scan.get("news") or {}).get("source", "decoupled_faireconomy_tradays"),
         "generated": datetime.now().isoformat(),
     })
+
+
+_session_briefing_engine = None
+
+def get_session_briefing_engine():
+    global _session_briefing_engine
+    if _session_briefing_engine is None:
+        _session_briefing_engine = SessionBriefingEngine(
+            price_engine=get_price_engine(),
+            levels_engine=LevelsEngine(),
+            news_engine=get_news_engine(),
+            macro_engine=get_macro_engine(),
+        )
+    return _session_briefing_engine
+
+
+@app.get("/api/session_briefing")
+def get_session_briefing_api(symbol: Optional[str] = None):
+    """Returns the latest scheduled institutional Pre-Session AI Trade Battle-Plan."""
+    return sanitize_for_json(get_session_briefing_engine().get_briefing(symbol))
 
 
 _macro_engine = None

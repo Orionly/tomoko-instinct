@@ -1,3 +1,5 @@
+import os
+
 # Tomoko Brain - Original Brain - Config
 PROJECT_NAME = "Tomoko"
 VERSION = "V1-Brain-Scanner-Desktop"
@@ -11,6 +13,16 @@ PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "EURGBP", "XAUUSD"]
 
 # Finnhub API Key for Decoupled Live WebSocket
 FINNHUB_API_KEY = "db8aja9r01qmvbh6ojdgdb8aja9r01qmvbh6oje0"
+
+# Gemini Cloud AI for Automated Pre-Session Institutional Battle-Plans
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+if not GEMINI_API_KEY:
+    try:
+        from config_local import GEMINI_API_KEY as _LOCAL_KEY
+        GEMINI_API_KEY = _LOCAL_KEY
+    except ImportError:
+        pass
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Web API (uvicorn)
 API_HOST = "127.0.0.1"

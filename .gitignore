@@ -17,3 +17,5 @@ diagnostic_prompt1.py
 backend/static/
 models/
 *.gguf
+config_local.py
+.env*
