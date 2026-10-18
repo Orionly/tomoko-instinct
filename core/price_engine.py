@@ -82,13 +82,95 @@ CURRENCY_MAP = {
 }
 
 
+def _fetch_tradingview_spot() -> Dict[str, Dict]:
+    """
+    Queries TradingView public CFD and Forex scanner endpoints.
+    Delivers identical institutional quotes to the TradingView desktop/web terminal
+    without API keys or monthly quotas.
+    """
+    headers = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+    results = {}
+    # 1. Gold CFD scan
+    try:
+        req_cfd = urllib.request.Request(
+            "https://scanner.tradingview.com/cfd/scan",
+            data=json.dumps({
+                "symbols": {"tickers": ["OANDA:XAUUSD", "TVC:GOLD"]},
+                "columns": ["close", "bid", "ask"]
+            }).encode(),
+            headers=headers
+        )
+        with urllib.request.urlopen(req_cfd, timeout=3.0) as resp:
+            d = json.loads(resp.read().decode())
+            items = d.get("data", [])
+            if items:
+                gold_item = next((x for x in items if x.get("s") == "OANDA:XAUUSD"), items[0])
+                c, b, a = gold_item.get("d", [0, 0, 0])
+                if c > 0:
+                    bid = b if b > 0 else round(c - 0.25, 2)
+                    ask = a if a > 0 else round(c + 0.25, 2)
+                    spread_pts = max(1, int(round((ask - bid) / 0.01)))
+                    results["XAUUSD"] = {
+                        "price": float(c),
+                        "bid": float(bid),
+                        "ask": float(ask),
+                        "spread": spread_pts,
+                        "point": 0.01,
+                        "source": "tradingview_oracle",
+                    }
+    except Exception as e:
+        log.debug("[PriceEngine] TV CFD gold note: %s", e)
+
+    # 2. Forex scan
+    try:
+        fx_map = {
+            "OANDA:EURUSD": "EURUSD",
+            "OANDA:GBPUSD": "GBPUSD",
+            "OANDA:USDJPY": "USDJPY",
+            "OANDA:GBPJPY": "GBPJPY",
+            "OANDA:EURJPY": "EURJPY",
+            "OANDA:EURGBP": "EURGBP",
+        }
+        req_fx = urllib.request.Request(
+            "https://scanner.tradingview.com/forex/scan",
+            data=json.dumps({
+                "symbols": {"tickers": list(fx_map.keys())},
+                "columns": ["close", "bid", "ask"]
+            }).encode(),
+            headers=headers
+        )
+        with urllib.request.urlopen(req_fx, timeout=3.0) as resp:
+            d = json.loads(resp.read().decode())
+            for item in d.get("data", []):
+                sym = item.get("s")
+                pair = fx_map.get(sym)
+                if pair:
+                    c, b, a = item.get("d", [0, 0, 0])
+                    if c > 0:
+                        pt = POINTS_MAP.get(pair, 0.00001)
+                        sp = DEFAULT_SPREADS.get(pair, 15)
+                        digits = 3 if "JPY" in pair else 5
+                        bid = b if b > 0 else round(c - (sp * pt) / 2.0, digits)
+                        ask = a if a > 0 else round(c + (sp * pt) / 2.0, digits)
+                        results[pair] = {
+                            "price": float(c),
+                            "bid": float(bid),
+                            "ask": float(ask),
+                            "spread": sp,
+                            "point": pt,
+                            "source": "tradingview_oracle",
+                        }
+    except Exception as e:
+        log.debug("[PriceEngine] TV Forex note: %s", e)
+
+    return results
+
+
 def _fetch_gold_spot() -> Optional[Dict]:
     """
-    Fetches live Physical Spot Gold (PAXG/USD) from Kraken with Coinbase & Yahoo fallback.
-    Tracks spot gold down to the cent without requiring an API key or monthly limits.
+    Tier-2 Fallback: Fetches live Physical Spot Gold (PAXG/USD) from Kraken with Coinbase & Yahoo fallback.
     """
     headers = {"User-Agent": "Mozilla/5.0"}
-    # 1. Primary: Kraken public ticker
     try:
         url = "https://api.kraken.com/0/public/Ticker?pair=PAXGUSD"
         req = urllib.request.Request(url, headers=headers)
@@ -106,12 +188,11 @@ def _fetch_gold_spot() -> Optional[Dict]:
                     "ask": ask,
                     "spread": spread_pts,
                     "point": 0.01,
-                    "source": "spot_oracle",
+                    "source": "kraken_spot",
                 }
     except Exception as e:
         log.debug("[PriceEngine] Kraken gold fetch note: %s", e)
 
-    # 2. Secondary: Coinbase public ticker
     try:
         url = "https://api.exchange.coinbase.com/products/PAXG-USD/ticker"
         req = urllib.request.Request(url, headers=headers)
@@ -127,12 +208,11 @@ def _fetch_gold_spot() -> Optional[Dict]:
                 "ask": ask,
                 "spread": spread_pts,
                 "point": 0.01,
-                "source": "spot_oracle",
+                "source": "coinbase_spot",
             }
     except Exception as e:
         log.debug("[PriceEngine] Coinbase gold fetch note: %s", e)
 
-    # 3. Tertiary: Yahoo Finance PAXG-USD chart
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/PAXG-USD?interval=1m&range=1d"
         req = urllib.request.Request(url, headers=headers)
@@ -146,7 +226,7 @@ def _fetch_gold_spot() -> Optional[Dict]:
                 "ask": round(price + 0.25, 2),
                 "spread": 25,
                 "point": 0.01,
-                "source": "spot_oracle",
+                "source": "yf_paxg_spot",
             }
     except Exception as e:
         log.debug("[PriceEngine] Yahoo PAXG-USD fetch note: %s", e)
@@ -155,7 +235,7 @@ def _fetch_gold_spot() -> Optional[Dict]:
 
 
 def _fetch_forex_spot(pair: str, yf_sym: str) -> Optional[Dict]:
-    """Fetches live interbank Forex spot price from Yahoo Finance v8 chart."""
+    """Tier-2 Fallback: Fetches live interbank Forex spot price from Yahoo Finance v8 chart."""
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=1m&range=1d"
@@ -176,7 +256,7 @@ def _fetch_forex_spot(pair: str, yf_sym: str) -> Optional[Dict]:
                 "ask": ask,
                 "spread": spread_pts,
                 "point": point,
-                "source": "spot_oracle",
+                "source": "interbank_spot",
             }
     except Exception as e:
         log.debug("[PriceEngine] Forex spot fetch %s note: %s", pair, e)
@@ -216,28 +296,41 @@ class PriceEngine:
         self._candle_thread.start()
 
     def poll_spot_oracle_all(self):
-        """Queries all 7 symbols concurrently in <600ms and updates latest_prices."""
+        """Queries all 7 symbols in <600ms prioritizing TradingView, with Yahoo/Kraken fallback."""
         now_sec = time.time()
         updates = {}
 
-        with ThreadPoolExecutor(max_workers=7) as executor:
-            futures = {}
-            for pair, yf_sym in YF_MAP.items():
-                if pair == "XAUUSD":
-                    futures[executor.submit(_fetch_gold_spot)] = pair
-                else:
-                    futures[executor.submit(_fetch_forex_spot, pair, yf_sym)] = pair
+        # 1. Tier 1: Try TradingView public scanner
+        try:
+            tv_data = _fetch_tradingview_spot()
+            for pair, data in tv_data.items():
+                data["time"] = now_sec
+                data["symbol"] = pair
+                updates[pair] = data
+        except Exception as e:
+            log.debug("[PriceEngine] TV scan attempt note: %s", e)
 
-            for fut in as_completed(futures):
-                pair = futures[fut]
-                try:
-                    res = fut.result()
-                    if res:
-                        res["time"] = now_sec
-                        res["symbol"] = pair
-                        updates[pair] = res
-                except Exception as ex:
-                    log.debug("[PriceEngine] Spot oracle future error for %s: %s", pair, ex)
+        # 2. Tier 2: Check for any missing pairs and fetch via fallbacks
+        missing = [p for p in YF_MAP.keys() if p not in updates]
+        if missing:
+            with ThreadPoolExecutor(max_workers=len(missing)) as executor:
+                futures = {}
+                for pair in missing:
+                    if pair == "XAUUSD":
+                        futures[executor.submit(_fetch_gold_spot)] = pair
+                    else:
+                        futures[executor.submit(_fetch_forex_spot, pair, YF_MAP[pair])] = pair
+
+                for fut in as_completed(futures):
+                    pair = futures[fut]
+                    try:
+                        res = fut.result()
+                        if res:
+                            res["time"] = now_sec
+                            res["symbol"] = pair
+                            updates[pair] = res
+                    except Exception as ex:
+                        log.debug("[PriceEngine] Spot fallback error for %s: %s", pair, ex)
 
         if updates:
             with self._lock:
@@ -412,6 +505,17 @@ class PriceEngine:
                         }).dropna()
 
                     if not sub.empty:
+                        # Normalize XAUUSD bars to live TradingView spot oracle price if offset exists
+                        if pair == "XAUUSD" and "XAUUSD" in self.latest_prices:
+                            spot_p = self.latest_prices["XAUUSD"]["price"]
+                            last_c = float(sub["close"].iloc[-1])
+                            diff = spot_p - last_c
+                            if abs(diff) > 0.1:
+                                sub["open"] = (sub["open"] + diff).round(2)
+                                sub["high"] = (sub["high"] + diff).round(2)
+                                sub["low"] = (sub["low"] + diff).round(2)
+                                sub["close"] = (sub["close"] + diff).round(2)
+
                         sub.index = pd.to_datetime(sub.index)
                         if sub.index.tz is None:
                             sub.index = sub.index.tz_localize("UTC").tz_convert("Asia/Kuala_Lumpur")
@@ -486,6 +590,17 @@ class PriceEngine:
                             "volume": df_m15_raw["Volume"][yf_sym] if "Volume" in df_m15_raw else 0,
                         }).dropna()
                     if not sub.empty:
+                        # Normalize XAUUSD bars to live TradingView spot oracle price if offset exists
+                        if pair == "XAUUSD" and "XAUUSD" in self.latest_prices:
+                            spot_p = self.latest_prices["XAUUSD"]["price"]
+                            last_c = float(sub["close"].iloc[-1])
+                            diff = spot_p - last_c
+                            if abs(diff) > 0.1:
+                                sub["open"] = (sub["open"] + diff).round(2)
+                                sub["high"] = (sub["high"] + diff).round(2)
+                                sub["low"] = (sub["low"] + diff).round(2)
+                                sub["close"] = (sub["close"] + diff).round(2)
+
                         sub.index = pd.to_datetime(sub.index)
                         if sub.index.tz is None:
                             sub.index = sub.index.tz_localize("UTC").tz_convert("Asia/Kuala_Lumpur")
