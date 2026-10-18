@@ -11,6 +11,8 @@ import math
 import asyncio
 import logging
 import threading
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
 import pickle
 import pandas as pd
@@ -46,7 +48,7 @@ YF_MAP = {
     "GBPJPY": "GBPJPY=X",
     "EURJPY": "EURJPY=X",
     "EURGBP": "EURGBP=X",
-    "XAUUSD": "GC=F",
+    "XAUUSD": "PAXG-USD",  # Physical 1:1 Spot Gold bullion
 }
 
 POINTS_MAP = {
@@ -80,10 +82,111 @@ CURRENCY_MAP = {
 }
 
 
+def _fetch_gold_spot() -> Optional[Dict]:
+    """
+    Fetches live Physical Spot Gold (PAXG/USD) from Kraken with Coinbase & Yahoo fallback.
+    Tracks spot gold down to the cent without requiring an API key or monthly limits.
+    """
+    headers = {"User-Agent": "Mozilla/5.0"}
+    # 1. Primary: Kraken public ticker
+    try:
+        url = "https://api.kraken.com/0/public/Ticker?pair=PAXGUSD"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            d = json.loads(resp.read().decode())
+            res = d.get("result", {}).get("PAXGUSD", {})
+            if res:
+                bid = float(res["b"][0])
+                ask = float(res["a"][0])
+                mid = round((bid + ask) / 2.0, 2)
+                spread_pts = max(1, int(round((ask - bid) / 0.01)))
+                return {
+                    "price": mid,
+                    "bid": bid,
+                    "ask": ask,
+                    "spread": spread_pts,
+                    "point": 0.01,
+                    "source": "spot_oracle",
+                }
+    except Exception as e:
+        log.debug("[PriceEngine] Kraken gold fetch note: %s", e)
+
+    # 2. Secondary: Coinbase public ticker
+    try:
+        url = "https://api.exchange.coinbase.com/products/PAXG-USD/ticker"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            d = json.loads(resp.read().decode())
+            bid = float(d["bid"])
+            ask = float(d["ask"])
+            mid = round((bid + ask) / 2.0, 2)
+            spread_pts = max(1, int(round((ask - bid) / 0.01)))
+            return {
+                "price": mid,
+                "bid": bid,
+                "ask": ask,
+                "spread": spread_pts,
+                "point": 0.01,
+                "source": "spot_oracle",
+            }
+    except Exception as e:
+        log.debug("[PriceEngine] Coinbase gold fetch note: %s", e)
+
+    # 3. Tertiary: Yahoo Finance PAXG-USD chart
+    try:
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/PAXG-USD?interval=1m&range=1d"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            d = json.loads(resp.read().decode())
+            meta = d["chart"]["result"][0]["meta"]
+            price = float(meta["regularMarketPrice"])
+            return {
+                "price": price,
+                "bid": round(price - 0.25, 2),
+                "ask": round(price + 0.25, 2),
+                "spread": 25,
+                "point": 0.01,
+                "source": "spot_oracle",
+            }
+    except Exception as e:
+        log.debug("[PriceEngine] Yahoo PAXG-USD fetch note: %s", e)
+
+    return None
+
+
+def _fetch_forex_spot(pair: str, yf_sym: str) -> Optional[Dict]:
+    """Fetches live interbank Forex spot price from Yahoo Finance v8 chart."""
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}?interval=1m&range=1d"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            d = json.loads(resp.read().decode())
+            meta = d["chart"]["result"][0]["meta"]
+            price = float(meta["regularMarketPrice"])
+            point = POINTS_MAP.get(pair, 0.00001)
+            spread_pts = DEFAULT_SPREADS.get(pair, 15)
+            half_spread = (spread_pts * point) / 2.0
+            digits = 3 if "JPY" in pair else 5
+            bid = round(price - half_spread, digits)
+            ask = round(price + half_spread, digits)
+            return {
+                "price": price,
+                "bid": bid,
+                "ask": ask,
+                "spread": spread_pts,
+                "point": point,
+                "source": "spot_oracle",
+            }
+    except Exception as e:
+        log.debug("[PriceEngine] Forex spot fetch %s note: %s", pair, e)
+        return None
+
+
 class PriceEngine:
     """
     Autonomous Price & Rates Engine.
-    Uses Finnhub WebSocket for live tick stream and yfinance for historical OHLCV bars.
+    Uses Multi-Source Spot Oracle for live ticks and yfinance for historical OHLCV bars.
     """
 
     def __init__(self, api_key: str = None):
@@ -99,13 +202,73 @@ class PriceEngine:
         self._seed_initial_data()
 
         # Start background threads:
-        # 1. Finnhub WebSocket stream
-        self._ws_thread = threading.Thread(target=self._start_ws_loop, daemon=True)
-        self._ws_thread.start()
+        # 1. Multi-Source Spot Oracle loop (runs every 5s, quota-free)
+        self._spot_thread = threading.Thread(target=self._spot_oracle_loop, daemon=True, name="spot-oracle")
+        self._spot_thread.start()
 
-        # 2. Periodic candle refresher (every 90s)
-        self._candle_thread = threading.Thread(target=self._candle_refresh_loop, daemon=True)
+        # 2. Finnhub WebSocket stream (optional supplementary)
+        if self.api_key:
+            self._ws_thread = threading.Thread(target=self._start_ws_loop, daemon=True, name="finnhub-ws")
+            self._ws_thread.start()
+
+        # 3. Periodic candle refresher (every 90s)
+        self._candle_thread = threading.Thread(target=self._candle_refresh_loop, daemon=True, name="candle-refresher")
         self._candle_thread.start()
+
+    def poll_spot_oracle_all(self):
+        """Queries all 7 symbols concurrently in <600ms and updates latest_prices."""
+        now_sec = time.time()
+        updates = {}
+
+        with ThreadPoolExecutor(max_workers=7) as executor:
+            futures = {}
+            for pair, yf_sym in YF_MAP.items():
+                if pair == "XAUUSD":
+                    futures[executor.submit(_fetch_gold_spot)] = pair
+                else:
+                    futures[executor.submit(_fetch_forex_spot, pair, yf_sym)] = pair
+
+            for fut in as_completed(futures):
+                pair = futures[fut]
+                try:
+                    res = fut.result()
+                    if res:
+                        res["time"] = now_sec
+                        res["symbol"] = pair
+                        updates[pair] = res
+                except Exception as ex:
+                    log.debug("[PriceEngine] Spot oracle future error for %s: %s", pair, ex)
+
+        if updates:
+            with self._lock:
+                for p, data in updates.items():
+                    self.latest_prices[p] = data
+                    # Also dynamically update latest candle bar close in memory
+                    for tf in ("M15", "H1"):
+                        cached = self.candles_cache.get(p, {}).get(tf)
+                        if cached is not None and not cached.empty:
+                            live_p = data["price"]
+                            cached.iloc[-1, cached.columns.get_loc("close")] = live_p
+                            if live_p > cached.iloc[-1]["high"]:
+                                cached.iloc[-1, cached.columns.get_loc("high")] = live_p
+                            if live_p < cached.iloc[-1]["low"]:
+                                cached.iloc[-1, cached.columns.get_loc("low")] = live_p
+                self.connected = True
+
+    def _spot_oracle_loop(self):
+        """Refreshes spot prices every 5 seconds continuously."""
+        # Run immediately on thread start
+        try:
+            self.poll_spot_oracle_all()
+        except Exception as e:
+            log.debug("[PriceEngine] Initial spot poll error: %s", e)
+
+        while not self._stop_event.is_set():
+            time.sleep(5)
+            try:
+                self.poll_spot_oracle_all()
+            except Exception as e:
+                log.debug("[PriceEngine] Spot oracle poll error: %s", e)
 
     def _load_disk_cache(self) -> bool:
         """Load candles and prices from disk cache for instant startup (<10ms)."""

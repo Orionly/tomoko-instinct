@@ -36,7 +36,7 @@ CONTEXT_SYMBOLS = {
     "VIX": "^VIX",
     "SPX": "^GSPC",
     "OIL": "CL=F",
-    "GOLD": "GC=F",
+    "GOLD": "PAXG-USD",
     "NIKKEI": "^N225"
 }
 

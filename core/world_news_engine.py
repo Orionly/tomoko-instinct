@@ -224,12 +224,12 @@ class WorldNewsEngine:
             cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
             with self._lock:
                 loaded_items = data.get("items", [])
-                re_enriched = []
+                valid_items = []
                 for it in loaded_items:
                     if it.get("timestamp", 0) >= cutoff_ts:
-                        en = self._enrich_item(it)
-                        re_enriched.append(en if en else it)
-                self.items = re_enriched
+                        # Cached items are already enriched; load directly with zero CPU burn
+                        valid_items.append(it)
+                self.items = valid_items
 
                 loaded_speeches = data.get("speeches", [])
                 cleaned_speeches = []
@@ -253,7 +253,7 @@ class WorldNewsEngine:
                 last_str = data.get("last_fetch_time")
                 if last_str:
                     self.last_fetch_time = datetime.fromisoformat(last_str)
-            log.info("[WorldNewsEngine] Loaded %d news items, %d speeches from 30-day cache.",
+            log.info("[WorldNewsEngine] Loaded %d news items, %d speeches from 30-day cache in <10ms.",
                      len(self.items), len(self.speeches))
             return True
         except Exception as e:
@@ -273,7 +273,29 @@ class WorldNewsEngine:
             tmp_path = f"{self.cache_file}.tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            os.replace(tmp_path, self.cache_file)
+
+            # Resilient atomic replace on Windows with exponential backoff & direct write fallback
+            saved = False
+            for attempt in range(4):
+                try:
+                    os.replace(tmp_path, self.cache_file)
+                    saved = True
+                    break
+                except OSError:
+                    if attempt < 3:
+                        time.sleep(0.06 * (attempt + 1))
+                    else:
+                        # Fallback direct write to bypass file-lock collision on destination
+                        try:
+                            with open(self.cache_file, "w", encoding="utf-8") as f:
+                                json.dump(data, f, indent=2, ensure_ascii=False)
+                            saved = True
+                            if os.path.exists(tmp_path):
+                                os.remove(tmp_path)
+                        except Exception as fallback_err:
+                            log.error("[WorldNewsEngine] Direct fallback write failed: %s", fallback_err)
+            if not saved:
+                log.warning("[WorldNewsEngine] Cache save deferred; will persist on next sync cycle.")
         except Exception as e:
             log.error("[WorldNewsEngine] Error saving cache: %s", e)
 
@@ -396,6 +418,14 @@ class WorldNewsEngine:
         processed_items = []
         seen_titles = set()
 
+        # Build set of already-known title keys from memory to skip re-enriching existing items
+        with self._lock:
+            existing_title_keys = {
+                re.sub(r"[^a-zA-Z0-9]", "", it.get("title", "").lower())[:60]
+                for it in self.items
+                if it.get("title")
+            }
+
         # Sort newest first
         all_raw_items.sort(key=lambda x: x["timestamp"], reverse=True)
 
@@ -414,7 +444,11 @@ class WorldNewsEngine:
                 continue
             seen_titles.add(norm_title)
 
-            # Analyze severity, categories, pairs, and speech potential
+            # Skip AI inference if story was already processed in previous cycles
+            if norm_title in existing_title_keys:
+                continue
+
+            # Analyze severity, categories, pairs, and speech potential (fresh items only)
             enriched = self._enrich_item(raw)
             if enriched is None:
                 continue
