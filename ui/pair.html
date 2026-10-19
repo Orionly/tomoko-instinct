@@ -1577,7 +1577,10 @@ function renderDecisionZones(scan){
           <span class="dz-dist-badge ${distCls}">${esc(z.distance_label)} (${fmt(z.distance_atr, 1)} ATR)</span>
         </div>
         <div class="dz-body">
-          <span class="dz-range">${fp(z.low)} – ${fp(z.high)}</span>
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+            <span class="dz-range">${fp(z.low)} – ${fp(z.high)}</span>
+            ${z.midline ? `<span class="dz-midline-badge" style="font-size:11px;color:#C084FC;font-family:'JetBrains Mono',monospace;font-weight:600;" title="50% Consequent Encroachment Midline">· 50% CE: ${fp(z.midline)}</span>` : ''}
+          </div>
           <div class="dz-confluences">${confHtml}</div>
         </div>
         ${telemetryHtml}
