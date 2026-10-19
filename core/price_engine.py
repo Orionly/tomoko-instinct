@@ -106,12 +106,21 @@ def _fetch_tradingview_spot() -> Dict[str, Dict]:
             if items:
                 gold_item = next((x for x in items if x.get("s") == "OANDA:XAUUSD"), items[0])
                 c, b, a = gold_item.get("d", [0, 0, 0])
-                if c > 0:
-                    bid = b if b > 0 else round(c - 0.25, 2)
-                    ask = a if a > 0 else round(c + 0.25, 2)
+                if b > 0 and a > 0:
+                    mid = round((float(b) + float(a)) / 2.0, 2)
+                    bid = float(b)
+                    ask = float(a)
+                elif c > 0:
+                    mid = float(c)
+                    bid = round(mid - 0.25, 2)
+                    ask = round(mid + 0.25, 2)
+                else:
+                    mid = 0.0
+
+                if mid > 0:
                     spread_pts = max(1, int(round((ask - bid) / 0.01)))
                     results["XAUUSD"] = {
-                        "price": float(c),
+                        "price": float(mid),
                         "bid": float(bid),
                         "ask": float(ask),
                         "spread": spread_pts,
@@ -146,14 +155,23 @@ def _fetch_tradingview_spot() -> Dict[str, Dict]:
                 pair = fx_map.get(sym)
                 if pair:
                     c, b, a = item.get("d", [0, 0, 0])
-                    if c > 0:
-                        pt = POINTS_MAP.get(pair, 0.00001)
-                        sp = DEFAULT_SPREADS.get(pair, 15)
-                        digits = 3 if "JPY" in pair else 5
-                        bid = b if b > 0 else round(c - (sp * pt) / 2.0, digits)
-                        ask = a if a > 0 else round(c + (sp * pt) / 2.0, digits)
+                    digits = 3 if "JPY" in pair else 5
+                    pt = POINTS_MAP.get(pair, 0.00001)
+                    sp = DEFAULT_SPREADS.get(pair, 15)
+                    if b > 0 and a > 0:
+                        mid = round((float(b) + float(a)) / 2.0, digits)
+                        bid = float(b)
+                        ask = float(a)
+                    elif c > 0:
+                        mid = float(c)
+                        bid = round(mid - (sp * pt) / 2.0, digits)
+                        ask = round(mid + (sp * pt) / 2.0, digits)
+                    else:
+                        mid = 0.0
+
+                    if mid > 0:
                         results[pair] = {
-                            "price": float(c),
+                            "price": float(mid),
                             "bid": float(bid),
                             "ask": float(ask),
                             "spread": sp,

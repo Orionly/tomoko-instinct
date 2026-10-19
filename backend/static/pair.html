@@ -137,43 +137,190 @@
 
   /* ================= 2. TACTICAL BATTLE-PLAN & ACTION ================= */
   .battle-card{
-    background:linear-gradient(180deg, rgba(16,23,38,0.85), rgba(12,16,26,0.85));
-    border:1px solid rgba(255,255,255,0.08);
+    background:linear-gradient(180deg, rgba(16,23,38,0.92), rgba(10,14,22,0.92));
+    border:1px solid rgba(0,229,255,0.22);
+    box-shadow:0 8px 32px rgba(0,0,0,0.36);
   }
+  .bp-header-meta{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+  .bp-session-pill{
+    display:inline-flex; align-items:center; gap:6px; padding:3px 9px;
+    background:rgba(0,229,255,0.08); border:1px solid rgba(0,229,255,0.25);
+    border-radius:6px; font-family:'JetBrains Mono',monospace; font-size:10.5px;
+    font-weight:700; color:var(--cyan);
+  }
+  .bp-live-dot{
+    width:6px; height:6px; border-radius:9999px; background:var(--cyan);
+    box-shadow:0 0 8px var(--cyan); animation:pulseDot 2s infinite;
+  }
+
   .action-banner{
     display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
     padding:12px 16px; border-radius:9px; font-family:'JetBrains Mono',monospace;
     font-size:13px; font-weight:800; letter-spacing:.04em; margin-bottom:12px;
   }
   .action-banner.buy{
-    background:rgba(0, 255, 136, 0.12); border:1px solid rgba(0, 255, 136, 0.4);
-    color:var(--bull); box-shadow:0 0 16px rgba(0, 255, 136, 0.12);
+    background:linear-gradient(90deg, rgba(0, 255, 136, 0.18), rgba(0, 255, 136, 0.05));
+    border:1px solid rgba(0, 255, 136, 0.45); color:var(--bull);
+    box-shadow:0 0 16px rgba(0, 255, 136, 0.15);
   }
   .action-banner.sell{
-    background:rgba(255, 90, 121, 0.12); border:1px solid rgba(255, 90, 121, 0.4);
-    color:var(--bear); box-shadow:0 0 16px rgba(255, 90, 121, 0.12);
+    background:linear-gradient(90deg, rgba(255, 90, 121, 0.18), rgba(255, 90, 121, 0.05));
+    border:1px solid rgba(255, 90, 121, 0.45); color:var(--bear);
+    box-shadow:0 0 16px rgba(255, 90, 121, 0.15);
   }
   .action-banner.wait{
-    background:rgba(255, 184, 0, 0.10); border:1px solid rgba(255, 184, 0, 0.35);
-    color:var(--gold);
+    background:linear-gradient(90deg, rgba(255, 184, 0, 0.15), rgba(255, 184, 0, 0.04));
+    border:1px solid rgba(255, 184, 0, 0.35); color:var(--gold);
   }
   .action-banner.neutral{
     background:rgba(148, 163, 184, 0.08); border:1px solid rgba(148, 163, 184, 0.25);
     color:#94A3B8;
   }
   .action-type-pill{
-    font-size:10px; font-weight:800; padding:2px 8px; border-radius:5px;
-    background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.1);
+    font-size:10px; font-weight:800; padding:3px 9px; border-radius:5px;
+    background:rgba(0,0,0,0.35); border:1px solid rgba(255,255,255,0.12);
   }
 
-  .thesis-box{
-    background:rgba(10,14,20,0.6); border:1px solid var(--border); border-radius:8px;
-    padding:12px 14px; margin-bottom:12px;
+  /* Executive Bottom Line Box */
+  .bp-bottom-line-box{
+    background:rgba(12,18,30,0.85); border:1px solid rgba(255,255,255,0.08);
+    border-left:4px solid var(--cyan); border-radius:9px; padding:12px 16px; margin-bottom:12px;
+    display:flex; flex-direction:column; gap:6px;
   }
-  .thesis-text{ font-size:12.5px; color:#E2E8F0; line-height:1.55; }
-  .thesis-meta{ display:flex; align-items:center; gap:8px; margin-top:6px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#94A3B8; }
+  .bp-bl-label{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:800;
+    color:var(--cyan); letter-spacing:.08em; text-transform:uppercase; display:flex; align-items:center; gap:6px;
+  }
+  .bp-bl-text{
+    font-size:13.5px; line-height:1.6; color:#F1F5F9; font-weight:500;
+  }
 
-  .timeframe-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:10px; }
+  /* 4-Metric Execution Grid */
+  .bp-exec-grid{
+    display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:14px;
+  }
+  @media(max-width:900px){ .bp-exec-grid{ grid-template-columns:repeat(2, 1fr); } }
+  @media(max-width:540px){ .bp-exec-grid{ grid-template-columns:1fr; } }
+
+  .bp-exec-box{
+    background:rgba(15,21,34,0.7); border:1px solid var(--border); border-radius:8px;
+    padding:10px 12px; display:flex; flex-direction:column; gap:3px;
+    transition:all .15s ease-out;
+  }
+  .bp-exec-box:hover{ border-color:rgba(0,229,255,0.3); background:rgba(18,26,42,0.85); }
+  .bp-exec-lbl{
+    font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:800;
+    color:var(--muted); text-transform:uppercase; letter-spacing:.06em; display:flex; align-items:center; gap:5px;
+  }
+  .bp-exec-val{
+    font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:800;
+    color:#FFFFFF; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .bp-exec-val.cyan{ color:var(--cyan); }
+  .bp-exec-val.red{ color:var(--red); }
+  .bp-exec-val.green{ color:var(--bull); }
+  .bp-exec-val.gold{ color:var(--gold); }
+  .bp-exec-sub{ font-size:10px; color:#94A3B8; }
+
+  /* Target Ladder Pills */
+  .bp-target-ladder{
+    display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-top:2px;
+  }
+  .bp-target-pill{
+    display:inline-flex; align-items:center; gap:4px; padding:2px 7px;
+    background:rgba(0,255,136,0.12); border:1px solid rgba(0,255,136,0.35);
+    border-radius:4px; font-family:'JetBrains Mono',monospace; font-size:11px;
+    font-weight:700; color:var(--bull);
+  }
+  .bp-target-pill .tp-tag{ font-size:8.5px; opacity:0.75; }
+
+  /* Tab Navigation */
+  .bp-tabs-nav{
+    display:flex; align-items:center; gap:6px; border-bottom:1px solid rgba(255,255,255,0.08);
+    padding-bottom:10px; margin-bottom:12px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  .bp-tab-btn{
+    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700;
+    padding:6px 13px; border-radius:7px; border:1px solid rgba(255,255,255,0.08);
+    background:rgba(255,255,255,0.02); color:#94A3B8; cursor:pointer;
+    transition:all .2s ease-out; white-space:nowrap; display:inline-flex; align-items:center; gap:6px;
+  }
+  .bp-tab-btn:hover{ color:#FFFFFF; background:rgba(0,229,255,0.08); border-color:rgba(0,229,255,0.25); }
+  .bp-tab-btn.active{
+    color:var(--cyan); background:rgba(0,229,255,0.14); border-color:var(--cyan);
+    box-shadow:0 0 12px rgba(0,229,255,0.2);
+  }
+
+  /* Tab Panes */
+  .bp-tab-pane{ display:none; flex-direction:column; gap:10px; animation:fadeIn 0.25s ease-out; }
+  .bp-tab-pane.active{ display:flex; }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(3px);} to{opacity:1; transform:translateY(0);} }
+
+  /* Tab 1: Execution & Trigger */
+  .bp-card-box{
+    background:rgba(12,17,28,0.7); border:1px solid var(--border); border-radius:8px;
+    padding:11px 14px;
+  }
+  .bp-card-box-header{
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800;
+    color:var(--muted); text-transform:uppercase; letter-spacing:.05em;
+    margin-bottom:6px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .bp-trigger-callout{
+    background:rgba(0,229,255,0.06); border:1px solid rgba(0,229,255,0.22);
+    border-radius:7px; padding:10px 12px; font-size:12.5px; color:#E2E8F0; line-height:1.55;
+  }
+  .bp-trap-callout{
+    background:rgba(255,184,0,0.08); border:1px solid rgba(255,184,0,0.28);
+    border-radius:7px; padding:10px 12px; font-size:12px; color:#FDE68A; line-height:1.5;
+  }
+  .bp-checklist-list{
+    display:flex; flex-direction:column; gap:6px; margin-top:4px;
+  }
+  .bp-checklist-item{
+    display:flex; align-items:flex-start; gap:8px; font-size:11.5px; color:#CBD5E1;
+    background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04);
+    padding:7px 10px; border-radius:6px; line-height:1.45;
+  }
+  .bp-chk-icon{ color:var(--cyan); font-weight:800; flex-shrink:0; font-size:11px; }
+
+  /* Tab 2: Macro & Catalysts */
+  .bp-ifthen-grid{
+    display:flex; flex-direction:column; gap:7px; margin-top:4px;
+  }
+  .bp-ifthen-card{
+    background:rgba(12,17,28,0.6); border:1px solid var(--border); border-radius:7px;
+    padding:9px 12px; font-size:12px; line-height:1.5; color:#E2E8F0;
+  }
+  .bp-ifthen-card .if-tag{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:800;
+    color:var(--cyan); background:rgba(0,229,255,0.12); padding:1px 5px; border-radius:4px;
+    margin-right:4px;
+  }
+  .bp-ifthen-card .then-tag{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:800;
+    color:var(--gold); background:rgba(255,184,0,0.12); padding:1px 5px; border-radius:4px;
+    margin:0 4px;
+  }
+
+  /* Tab 3: Contingency & Shock */
+  .bp-contingency-box{
+    background:rgba(255,90,121,0.06); border:1px solid rgba(255,90,121,0.25);
+    border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:8px;
+  }
+  .bp-contingency-split{
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px;
+  }
+  @media(max-width:600px){ .bp-contingency-split{ grid-template-columns:1fr; } }
+  .bp-cont-subbox{
+    background:rgba(10,14,22,0.65); border:1px solid var(--border); border-radius:6px;
+    padding:8px 11px;
+  }
+
+  /* Preserved Timeframe Grid for Tab 4 */
+  .timeframe-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
   @media(max-width:650px){ .timeframe-grid{ grid-template-columns:1fr; } }
   .tf-box{
     background:rgba(18,24,36,0.6); border:1px solid var(--border); border-radius:7px;
@@ -554,13 +701,19 @@
       </div>
     </section>
 
-    <!-- 2. TACTICAL BATTLE-PLAN & EXECUTION STATUS -->
+    <!-- 2. PRE-SESSION INSTITUTIONAL BATTLE-PLAN -->
     <section id="battle-plan-panel" class="panel battle-card">
       <div class="panel-header">
         <h3 class="panel-title">
-          <span>🎯 Tactical Battle-Plan & Execution Status</span>
+          <span>🎯 Pre-Session Institutional Battle-Plan</span>
         </h3>
-        <span class="panel-subtitle" id="bp-alignment-tag">3/3 ALIGNED</span>
+        <div class="bp-header-meta">
+          <span class="bp-session-pill">
+            <span class="bp-live-dot"></span>
+            <span id="bp-session-badge">SCHEDULED BRIEFING</span>
+          </span>
+          <span class="panel-subtitle" id="bp-alignment-tag">3/3 ALIGNED</span>
+        </div>
       </div>
 
       <!-- Action Banner -->
@@ -569,40 +722,169 @@
         <span class="action-type-pill" id="bp-action-pill">MONITOR</span>
       </div>
 
-      <!-- Executive Thesis -->
-      <div class="thesis-box">
-        <div class="thesis-text" id="bp-thesis">
+      <!-- Top Beginner Executive Bottom Line Box -->
+      <div class="bp-bottom-line-box" id="bp-bottom-line-box">
+        <div class="bp-bl-label">
+          <span>💡</span>
+          <span>Executive Bottom Line (At a Glance)</span>
+        </div>
+        <div class="bp-bl-text" id="bp-thesis">
           Evaluating multi-timeframe candle close, EMA21 distance, and market structure...
         </div>
-        <div class="thesis-meta">
-          <span>SETUP CONFIRMATION:</span>
-          <b style="color:var(--cyan)" id="bp-confirmation">CONFIRM ON M15 REJECTION</b>
+      </div>
+
+      <!-- 4-Metric Quick Execution Matrix -->
+      <div class="bp-exec-grid">
+        <div class="bp-exec-box">
+          <div class="bp-exec-lbl"><span>🎯</span> <span>Entry Zone</span></div>
+          <div class="bp-exec-val cyan" id="bp-entry-zone">—</div>
+          <div class="bp-exec-sub">Optimal Execution Area</div>
+        </div>
+        <div class="bp-exec-box">
+          <div class="bp-exec-lbl"><span>🛑</span> <span>Hard Stop Loss</span></div>
+          <div class="bp-exec-val red" id="bp-stop-loss">—</div>
+          <div class="bp-exec-sub" id="bp-stop-sub">Structural Invalidation</div>
+        </div>
+        <div class="bp-exec-box">
+          <div class="bp-exec-lbl"><span>🏁</span> <span>Target Ladder</span></div>
+          <div class="bp-target-ladder" id="bp-targets-ladder">
+            <span class="bp-target-pill"><span class="tp-tag">TP1</span> —</span>
+          </div>
+          <div class="bp-exec-sub">Staged Profit Realization</div>
+        </div>
+        <div class="bp-exec-box">
+          <div class="bp-exec-lbl"><span>⚖️</span> <span>Trade Management</span></div>
+          <div class="bp-exec-val gold" id="bp-trade-mgmt" style="font-size:11.5px;font-family:'Inter',sans-serif;font-weight:600;">BE at TP1</div>
+          <div class="bp-exec-sub">Risk & Position Governance</div>
         </div>
       </div>
 
-      <!-- 3 Timeframe Alignment Grid -->
-      <div class="timeframe-grid">
-        <div class="tf-box">
-          <div class="tf-head"><span>H4 MACRO TREND</span><span id="tf-h4-adx">ADX --</span></div>
-          <div class="tf-val" id="tf-h4-status">—</div>
-          <div class="tf-sub" id="tf-h4-gate">Structure: Inside Value</div>
+      <!-- Tab Navigation -->
+      <nav class="bp-tabs-nav" id="bp-tabs-nav">
+        <button class="bp-tab-btn active" data-tab="execution" onclick="switchBpTab('execution')">
+          <span>⚡</span> <span>Execution & Trigger</span>
+        </button>
+        <button class="bp-tab-btn" data-tab="macro" onclick="switchBpTab('macro')">
+          <span>🌐</span> <span>Macro & Catalysts</span>
+        </button>
+        <button class="bp-tab-btn" data-tab="contingency" onclick="switchBpTab('contingency')">
+          <span>🛡️</span> <span>Contingency & Shock</span>
+        </button>
+        <button class="bp-tab-btn" data-tab="quant" onclick="switchBpTab('quant')">
+          <span>📊</span> <span>Quant Timeframes</span>
+        </button>
+      </nav>
+
+      <!-- TAB 1: EXECUTION & TRIGGER -->
+      <div class="bp-tab-pane active" id="bp-tab-execution">
+        <div class="bp-card-box">
+          <div class="bp-card-box-header">
+            <span>⚡ M5 Candlestick Trigger & Entry Confirmation</span>
+            <span id="bp-confirmation-tag" style="color:var(--cyan);font-weight:700;">PRECISION ENTRY</span>
+          </div>
+          <div class="bp-trigger-callout" id="bp-trigger-text">
+            Awaiting session trigger confirmation...
+          </div>
         </div>
-        <div class="tf-box">
-          <div class="tf-head"><span>H1 EXECUTION GATE</span><span id="tf-h1-rsi">RSI --</span></div>
-          <div class="tf-val" id="tf-h1-status">—</div>
-          <div class="tf-sub" id="tf-h1-pullback">Pullback: -- ATR to EMA21</div>
+        <div class="bp-card-box">
+          <div class="bp-card-box-header">
+            <span>⚠️ Institutional Trap & Judas Swing Warning</span>
+            <span style="color:var(--gold);font-weight:700;">CAPITAL PRESERVATION</span>
+          </div>
+          <div class="bp-trap-callout" id="bp-trap-text">
+            Avoid chasing opening candle spikes. Monitor liquidity pools for exhaustion.
+          </div>
         </div>
-        <div class="tf-box">
-          <div class="tf-head"><span>M15 TRIGGER</span><span id="tf-m15-vol">VOL --</span></div>
-          <div class="tf-val" id="tf-m15-status">—</div>
-          <div class="tf-sub" id="tf-m15-timing">Timing: Immediate Entry Window</div>
+        <div class="bp-card-box">
+          <div class="bp-card-box-header">
+            <span>📋 Pre-Session Trader Action Checklist</span>
+            <span style="color:var(--muted);">DISCIPLINE GATE</span>
+          </div>
+          <div class="bp-checklist-list" id="bp-checklist-container">
+            <div class="bp-checklist-item"><span class="bp-chk-icon">✓</span><span>Verify spread within tolerance prior to placing order</span></div>
+          </div>
         </div>
       </div>
 
-      <!-- Risk Advisory -->
-      <div class="risk-advisory" id="bp-advisory">
-        <span>🛡️</span>
-        <span id="bp-advisory-text">Institutional Discipline: Avoid chasing extreme wicks. Allow price to test EMA21 or value boundaries before committing risk.</span>
+      <!-- TAB 2: MACRO & CATALYSTS -->
+      <div class="bp-tab-pane" id="bp-tab-macro">
+        <div class="bp-card-box">
+          <div class="bp-card-box-header">
+            <span>🌐 Global Session Macro Regime</span>
+            <span style="color:var(--cyan);">INSTITUTIONAL TONE</span>
+          </div>
+          <div style="font-size:12.5px;color:#CBD5E1;line-height:1.6;" id="bp-global-macro-text">
+            Evaluating global intermarket yield & liquidity drivers...
+          </div>
+        </div>
+        <div class="bp-card-box">
+          <div class="bp-card-box-header">
+            <span>🔥 Primary Valuation Catalyst for this Pair</span>
+            <span style="color:var(--gold);">DRIVING ENGINE</span>
+          </div>
+          <div style="font-size:12.5px;color:#F1F5F9;font-weight:600;" id="bp-primary-driver-text">
+            Real Yields & Dollar Transmission
+          </div>
+        </div>
+        <div class="bp-card-box">
+          <div class="bp-card-box-header">
+            <span>🌲 IF / THEN Scenario Decision Tree</span>
+            <span style="color:var(--muted);">CATALYST BRANCHING</span>
+          </div>
+          <div class="bp-ifthen-grid" id="bp-ifthen-container">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: CONTINGENCY & SHOCK -->
+      <div class="bp-tab-pane" id="bp-tab-contingency">
+        <div class="bp-contingency-box">
+          <div class="bp-card-box-header" style="color:var(--bear);">
+            <span>🛡️ Low-Probability Counter Scenario</span>
+            <span id="bp-contingency-prob" style="padding:2px 7px;border-radius:4px;background:rgba(255,90,121,0.2);color:var(--bear);font-weight:800;">35% PROBABILITY</span>
+          </div>
+          <div style="font-size:12.5px;color:#F1F5F9;line-height:1.55;" id="bp-contingency-scenario">
+            Evaluating unexpected macro shifts or geopolitical disruption...
+          </div>
+          <div class="bp-contingency-split">
+            <div class="bp-cont-subbox">
+              <div class="bp-exec-lbl"><span>🎯</span> <span>Counter-Attack Zone</span></div>
+              <div class="bp-exec-val green" id="bp-contingency-zone" style="font-size:12px;margin-top:2px;">—</div>
+              <div class="bp-exec-sub">Secondary Reaction Level</div>
+            </div>
+            <div class="bp-cont-subbox">
+              <div class="bp-exec-lbl"><span>🛑</span> <span>Structural Invalidation</span></div>
+              <div class="bp-exec-val red" id="bp-contingency-invalidation" style="font-size:12px;margin-top:2px;">—</div>
+              <div class="bp-exec-sub">Hard Stop on Thesis</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: QUANT TIMEFRAMES -->
+      <div class="bp-tab-pane" id="bp-tab-quant">
+        <div class="timeframe-grid">
+          <div class="tf-box">
+            <div class="tf-head"><span>H4 MACRO TREND</span><span id="tf-h4-adx">ADX --</span></div>
+            <div class="tf-val" id="tf-h4-status">—</div>
+            <div class="tf-sub" id="tf-h4-gate">Structure: Inside Value</div>
+          </div>
+          <div class="tf-box">
+            <div class="tf-head"><span>H1 EXECUTION GATE</span><span id="tf-h1-rsi">RSI --</span></div>
+            <div class="tf-val" id="tf-h1-status">—</div>
+            <div class="tf-sub" id="tf-h1-pullback">Pullback: -- ATR to EMA21</div>
+          </div>
+          <div class="tf-box">
+            <div class="tf-head"><span>M15 TRIGGER</span><span id="tf-m15-vol">VOL --</span></div>
+            <div class="tf-val" id="tf-m15-status">—</div>
+            <div class="tf-sub" id="tf-m15-timing">Timing: Immediate Entry Window</div>
+          </div>
+        </div>
+        <div class="risk-advisory" id="bp-advisory" style="margin-top:6px;">
+          <span>🛡️</span>
+          <span id="bp-advisory-text">Institutional Discipline: Avoid chasing extreme wicks. Allow price to test EMA21 or value boundaries before committing risk.</span>
+        </div>
       </div>
     </section>
 
@@ -778,40 +1060,183 @@ function renderMacroConfluence(conf, matrix){
 }
 
 /* ================= 2. BATTLE-PLAN & ACTION ================= */
-function renderBattlePlan(scan){
-  const h4 = scan.h4 || {}, h1 = scan.h1 || {};
-  const action = scan.action || 'WAIT FOR SETUP';
-  const reason = scan.reason || '';
-  const isBuy = action.toUpperCase().includes('BUY') || action.toUpperCase().includes('LONG');
-  const isSell = action.toUpperCase().includes('SELL') || action.toUpperCase().includes('SHORT');
-  const isLimit = action.toUpperCase().startsWith('LIMIT');
+function switchBpTab(tabKey){
+  document.querySelectorAll('.bp-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabKey);
+  });
+  document.querySelectorAll('.bp-tab-pane').forEach(pane => {
+    pane.classList.toggle('active', pane.id === 'bp-tab-' + tabKey);
+  });
+}
 
+function renderBattlePlan(scan, plan, sessionInfo){
+  const h4 = scan.h4 || {}, h1 = scan.h1 || {};
   const banner = $('bp-action-banner');
   const actionText = $('bp-action-text');
   const pill = $('bp-action-pill');
 
-  if(isBuy){
-    banner.className = 'action-banner buy';
-    actionText.innerHTML = `🟢 ${action}`;
-    pill.textContent = isLimit ? 'LIMIT ORDER' : 'BUY SETUP';
-    pill.style.color = 'var(--bull)';
-  } else if(isSell){
-    banner.className = 'action-banner sell';
-    actionText.innerHTML = `🔴 ${action}`;
-    pill.textContent = isLimit ? 'LIMIT ORDER' : 'SELL SETUP';
-    pill.style.color = 'var(--bear)';
+  // Session pill header
+  if(sessionInfo && (sessionInfo.session || sessionInfo.generated_at_utc)){
+    const sName = sessionInfo.session ? sessionInfo.session.toUpperCase().replace(' SESSION', '') : 'SCHEDULED BRIEFING';
+    const sTime = sessionInfo.generated_at_utc ? sessionInfo.generated_at_utc.replace(' UTC', 'Z') : '';
+    $('bp-session-badge').textContent = `${sName} · ${sTime}`;
   } else {
-    banner.className = 'action-banner wait';
-    actionText.innerHTML = `🟡 ${action}`;
-    pill.textContent = 'MONITOR';
-    pill.style.color = 'var(--gold)';
+    $('bp-session-badge').textContent = 'SCHEDULED BRIEFING';
   }
 
-  // Thesis
-  $('bp-thesis').textContent = reason ? reason :
-    `H4 structure is ${h4.direction || 'Neutral'}. Price is positioned ${fmt(h1.dist_ema21_atr, 2)} ATR from H1 EMA21. Await confirmation before commitment.`;
+  // 1. Action Banner & Edge Probability
+  const primary = (plan && plan.primary_setup) ? plan.primary_setup : null;
+  if(primary && primary.bias){
+    const bias = String(primary.bias).toUpperCase();
+    const prob = primary.probability ? ` [${primary.probability} PROBABILITY]` : '';
+    const isLong = bias.includes('LONG') || bias.includes('BUY');
+    const isShort = bias.includes('SHORT') || bias.includes('SELL');
 
-  // Timeframe pills
+    if(isLong){
+      banner.className = 'action-banner buy';
+      actionText.innerHTML = `🟢 HIGH-PROBABILITY LONG${prob}`;
+      pill.textContent = 'LONG SETUP';
+      pill.style.color = 'var(--bull)';
+    } else if(isShort){
+      banner.className = 'action-banner sell';
+      actionText.innerHTML = `🔴 HIGH-PROBABILITY SHORT${prob}`;
+      pill.textContent = 'SHORT SETUP';
+      pill.style.color = 'var(--bear)';
+    } else {
+      banner.className = 'action-banner wait';
+      actionText.innerHTML = `🟡 MONITOR / WAIT FOR CONFIRMATION`;
+      pill.textContent = 'MONITOR';
+      pill.style.color = 'var(--gold)';
+    }
+  } else {
+    // Fallback to quantitative action
+    const action = scan.action || 'WAIT FOR SETUP';
+    const isBuy = action.toUpperCase().includes('BUY') || action.toUpperCase().includes('LONG');
+    const isSell = action.toUpperCase().includes('SELL') || action.toUpperCase().includes('SHORT');
+    const isLimit = action.toUpperCase().startsWith('LIMIT');
+    if(isBuy){
+      banner.className = 'action-banner buy';
+      actionText.innerHTML = `🟢 ${action}`;
+      pill.textContent = isLimit ? 'LIMIT ORDER' : 'BUY SETUP';
+      pill.style.color = 'var(--bull)';
+    } else if(isSell){
+      banner.className = 'action-banner sell';
+      actionText.innerHTML = `🔴 ${action}`;
+      pill.textContent = isLimit ? 'LIMIT ORDER' : 'SELL SETUP';
+      pill.style.color = 'var(--bear)';
+    } else {
+      banner.className = 'action-banner wait';
+      actionText.innerHTML = `🟡 ${action}`;
+      pill.textContent = 'MONITOR';
+      pill.style.color = 'var(--gold)';
+    }
+  }
+
+  // 2. Executive Bottom Line (At a Glance)
+  if(plan && plan.executive_bottom_line){
+    $('bp-thesis').textContent = plan.executive_bottom_line;
+  } else if(scan.reason){
+    $('bp-thesis').textContent = scan.reason;
+  } else {
+    $('bp-thesis').textContent = `H4 structure is ${h4.direction || 'Neutral'}. Price is positioned ${fmt(h1.dist_ema21_atr, 2)} ATR from H1 EMA21. Await confirmation before commitment.`;
+  }
+
+  // 3. 4-Metric Quick Execution Matrix
+  if(primary){
+    $('bp-entry-zone').textContent = primary.entry_zone || '—';
+    $('bp-stop-loss').textContent = primary.stop_loss || '—';
+    if(primary.invalidation_note){
+      $('bp-stop-sub').textContent = primary.invalidation_note;
+    } else {
+      $('bp-stop-sub').textContent = 'Structural Invalidation';
+    }
+
+    const tgts = primary.targets || [];
+    const tgtList = Array.isArray(tgts) ? tgts : [tgts];
+    if(tgtList.length > 0){
+      $('bp-targets-ladder').innerHTML = tgtList.map((t, idx) => `
+        <span class="bp-target-pill"><span class="tp-tag">TP${idx+1}</span> ${esc(t)}</span>
+      `).join('');
+    } else {
+      $('bp-targets-ladder').innerHTML = '<span class="bp-target-pill">—</span>';
+    }
+
+    $('bp-trade-mgmt').textContent = primary.trade_management || 'Move stop loss to BE at TP1';
+  } else {
+    $('bp-entry-zone').textContent = 'Dynamic Pullback';
+    $('bp-stop-loss').textContent = 'EMA21 ± 1.5 ATR';
+    $('bp-targets-ladder').innerHTML = '<span class="bp-target-pill">Key S/R</span>';
+    $('bp-trade-mgmt').textContent = 'Trail stop on H1 candle close';
+  }
+
+  // 4. Tab 1: Execution & Trigger
+  if(primary && primary.trigger_confirmation){
+    $('bp-trigger-text').textContent = primary.trigger_confirmation;
+  } else {
+    $('bp-trigger-text').textContent = 'Confirm on M15 rejection wick / engulfing close at EMA21 confluence.';
+  }
+
+  const traps = (plan && plan.traps_and_checklist) ? plan.traps_and_checklist : null;
+  if(traps && traps.trap_warning){
+    $('bp-trap-text').textContent = traps.trap_warning;
+  } else {
+    $('bp-trap-text').textContent = 'Avoid chasing impulsive breakout spikes. Confirm liquidity pool absorption before entry.';
+  }
+
+  if(traps && traps.checklist && traps.checklist.length > 0){
+    const items = Array.isArray(traps.checklist) ? traps.checklist : [traps.checklist];
+    $('bp-checklist-container').innerHTML = items.map(c => `
+      <div class="bp-checklist-item"><span class="bp-chk-icon">✓</span><span>${esc(c)}</span></div>
+    `).join('');
+  } else {
+    $('bp-checklist-container').innerHTML = `
+      <div class="bp-checklist-item"><span class="bp-chk-icon">✓</span><span>Verify spread within tolerance prior to placing order</span></div>
+      <div class="bp-checklist-item"><span class="bp-chk-icon">✓</span><span>Verify no Tier-1 high-impact news in next 30 minutes</span></div>
+      <div class="bp-checklist-item"><span class="bp-chk-icon">✓</span><span>Limit risk to 1.0% maximum account equity</span></div>
+    `;
+  }
+
+  // 5. Tab 2: Macro & Catalysts
+  if(sessionInfo && sessionInfo.global_macro_executive_thesis){
+    $('bp-global-macro-text').textContent = sessionInfo.global_macro_executive_thesis;
+  } else {
+    $('bp-global-macro-text').textContent = 'Global intermarket yield and liquidity drivers are active. Maintain session discipline.';
+  }
+
+  const cat = (plan && plan.macro_catalyst) ? plan.macro_catalyst : null;
+  if(cat && cat.primary_driver){
+    $('bp-primary-driver-text').textContent = cat.primary_driver;
+  } else {
+    $('bp-primary-driver-text').textContent = 'Real Yields, US Dollar transmission & Intermarket risk appetite';
+  }
+
+  if(cat && cat.if_then_branches && cat.if_then_branches.length > 0){
+    const branches = Array.isArray(cat.if_then_branches) ? cat.if_then_branches : [cat.if_then_branches];
+    $('bp-ifthen-container').innerHTML = branches.map(b => {
+      let text = esc(b);
+      text = text.replace(/^IF\s+/i, '<span class="if-tag">IF</span> ')
+                 .replace(/\s+THEN\s+/i, ' <span class="then-tag">THEN</span> ');
+      return `<div class="bp-ifthen-card">${text}</div>`;
+    }).join('');
+  } else {
+    $('bp-ifthen-container').innerHTML = '<div class="bp-ifthen-card">No scenario branches for this session.</div>';
+  }
+
+  // 6. Tab 3: Contingency & Shock
+  const cont = (plan && plan.contingency_plan) ? plan.contingency_plan : null;
+  if(cont){
+    if(cont.probability) $('bp-contingency-prob').textContent = `${cont.probability} PROBABILITY`;
+    if(cont.scenario) $('bp-contingency-scenario').textContent = cont.scenario;
+    $('bp-contingency-zone').textContent = cont.counter_zone || '—';
+    $('bp-contingency-invalidation').textContent = cont.invalidation || '—';
+  } else {
+    $('bp-contingency-prob').textContent = '30% PROBABILITY';
+    $('bp-contingency-scenario').textContent = 'Unexpected counter-trend liquidity squeeze or macroeconomic news shock.';
+    $('bp-contingency-zone').textContent = 'H4 Opposite Liquidity Pool';
+    $('bp-contingency-invalidation').textContent = 'H1 Close past Swing High/Low';
+  }
+
+  // 7. Tab 4: Timeframe pills & Alignment (preserving quantitative indicators)
   const h4Dir = dirWord(h4.direction);
   $('tf-h4-status').innerHTML = `${h4Dir} ${arrow(h4Dir)}`;
   $('tf-h4-status').style.color = h4Dir==='BULL'?'var(--bull)':h4Dir==='BEAR'?'var(--bear)':'var(--neut)';
@@ -1418,7 +1843,7 @@ function renderAll(d){
   const h4 = scan.h4 || {}, h1 = scan.h1 || {};
   $('pd-badges').innerHTML = biasBadge('H4', h4.direction) + biasBadge('H1', scan.h1_bias || h1.bias) + biasBadge('M15', scan.m15_bias);
 
-  renderBattlePlan(scan);
+  renderBattlePlan(scan, d.ai_battle_plan, d.ai_session_info);
   renderScoreBreakdown(scan);
   renderPriceLadder(scan);
   renderDecisionZones(scan);

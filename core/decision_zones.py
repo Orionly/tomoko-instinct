@@ -206,11 +206,11 @@ def calculate_tf_decision_zones(
 
         # Proximity threshold: 5–15 pips (or 0.30 ATR)
         if is_gold:
-            proximity_pips = max(15.0, min(50.0, (atr * 0.30) / pip_size))
-            rejection_pips_thresh = max(2.5, (atr * 0.08) / pip_size)
+            proximity_dist = max(1.5, min(5.0, (atr * 0.30)))
+            rejection_thresh = max(0.6, (atr * 0.12))
         else:
-            proximity_pips = max(5.0, min(15.0, (atr * 0.30) / pip_size))
-            rejection_pips_thresh = max(2.0, (atr * 0.08) / pip_size)
+            proximity_dist = max(5.0, min(15.0, (atr * 0.30) / pip_size))
+            rejection_thresh = max(2.0, (atr * 0.08) / pip_size)
 
         # 1. State: TESTING (Price currently trading inside [zone_low, zone_high])
         if low <= current_price <= high:
@@ -223,104 +223,122 @@ def calculate_tf_decision_zones(
                 "action_hint": "Wait for candle close confirmation — do not anticipate the breakout."
             }
 
-        # Inspect latest 3-5 candles for wick rejection
+        # Inspect latest 1-2 bars only (rejection must be active/fresh, not from 1-2 hours ago)
         recent_high = current_price
         recent_low = current_price
         last_close = current_price
         if df is not None and len(df) >= 2:
-            last_bars = df.tail(min(5, len(df)))
+            last_bars = df.tail(2)
             recent_high = max([_safe_float(h) for h in last_bars["high"]] + [current_price])
             recent_low = min([_safe_float(l) for l in last_bars["low"]] + [current_price])
             last_close = _safe_float(df["close"].iloc[-1])
 
+        unit_str = "pts" if is_gold else "pips"
+        unit_abbr = "pts" if is_gold else "p"
+
         if is_upper:
+            # Upper Zone (Resistance)
             if current_price < low:
-                dist_pips = (low - current_price) / pip_size
-                # 2. State: REJECTED (Price wicked into zone but closed back outside with rejection momentum)
-                if recent_high >= low:
-                    drop_pips = (recent_high - current_price) / pip_size
-                    if drop_pips >= rejection_pips_thresh and last_close <= (high + 0.0001):
-                        return {
-                            "state": "REJECTED",
-                            "badge_text": f"🛡️ REJECTED (-{drop_pips:.1f}p)",
-                            "badge_class": "badge-rejected",
-                            "status_text": f"Rejection Confirmed: Tested {z_title} at {_fmt_p(recent_high)} and dropped -{drop_pips:.1f} pips. Seller defense.",
-                            "pips_dist": round(dist_pips, 1),
-                            "action_hint": "Bearish rejection confirmed. Look for confirmation before entering fade."
-                        }
-                # 3. State: APPROACHING (Within 5-15 pips or 0.3 ATR of zone boundary)
-                if dist_pips <= proximity_pips:
+                diff = low - current_price
+                dist_val = diff if is_gold else (diff / pip_size)
+
+                # Active Rejection: Price recently reached into the zone and was rejected downward
+                # Must have reached at least to the zone edge [low - 0.05*atr, high + zone_half]
+                in_zone_reach = (recent_high >= (low - 0.05 * atr)) and (recent_high <= (high + zone_half))
+                drop_val = (recent_high - current_price) if is_gold else ((recent_high - current_price) / pip_size)
+
+                if in_zone_reach and drop_val >= rejection_thresh and current_price >= (low - atr * 0.65):
+                    tested_p = min(recent_high, high)
+                    return {
+                        "state": "REJECTED",
+                        "badge_text": f"🛡️ REJECTED (-{drop_val:.1f}{unit_abbr})",
+                        "badge_class": "badge-rejected",
+                        "status_text": f"Rejection Confirmed: Tested {z_title} at {_fmt_p(tested_p)} and dropped -{drop_val:.1f} {unit_str}. Seller defense.",
+                        "pips_dist": round(dist_val, 1),
+                        "action_hint": "Bearish rejection confirmed. Look for confirmation before entering fade."
+                    }
+
+                # Approaching
+                if dist_val <= proximity_dist:
                     return {
                         "state": "APPROACHING",
-                        "badge_text": f"🎯 APPROACHING ({dist_pips:.1f}p)",
+                        "badge_text": f"🎯 APPROACHING ({dist_val:.1f}{unit_abbr})",
                         "badge_class": "badge-approaching",
-                        "status_text": f"Approaching {z_title} ({_fmt_p(low)} – {_fmt_p(high)}) · {dist_pips:.1f} pips away. Prepare reaction plan.",
-                        "pips_dist": round(dist_pips, 1),
+                        "status_text": f"Approaching {z_title} ({_fmt_p(low)} – {_fmt_p(high)}) · {dist_val:.1f} {unit_str} away. Prepare reaction plan.",
+                        "pips_dist": round(dist_val, 1),
                         "action_hint": "Approaching resistance. Observe whether buyers absorb liquidity or stall."
                     }
-                # 4. State: IN TRANSIT (Cruising freely outside zone)
+
+                # In Transit
                 return {
                     "state": "IN_TRANSIT",
-                    "badge_text": f"⏳ IN TRANSIT (+{dist_pips:.1f}p)",
+                    "badge_text": f"⏳ IN TRANSIT (+{dist_val:.1f}{unit_abbr})",
                     "badge_class": "badge-transit",
-                    "status_text": f"Ceiling sitting +{dist_pips:.1f} pips above current price ({_fmt_p(low)} – {_fmt_p(high)}).",
-                    "pips_dist": round(dist_pips, 1),
+                    "status_text": f"Ceiling sitting +{dist_val:.1f} {unit_str} above current price ({_fmt_p(low)} – {_fmt_p(high)}).",
+                    "pips_dist": round(dist_val, 1),
                     "action_hint": "Structure mapped. No immediate zone pressure."
                 }
             else:
-                # 5. State: BREAKOUT (Candle closed through opposite edge of zone)
-                surpass_pips = (current_price - high) / pip_size
+                # Breakout through resistance
+                surpass_val = (current_price - high) if is_gold else ((current_price - high) / pip_size)
                 return {
                     "state": "BREAKOUT",
-                    "badge_text": f"🚀 BROKE THROUGH (+{surpass_pips:.1f}p)",
+                    "badge_text": f"🚀 BROKE THROUGH (+{surpass_val:.1f}{unit_abbr})",
                     "badge_class": "badge-breakout",
                     "status_text": f"Breakthrough: Cleared {z_title} ({_fmt_p(high)}). Watch for pullback & S/R flip retest.",
-                    "pips_dist": round(-surpass_pips, 1),
+                    "pips_dist": round(-surpass_val, 1),
                     "action_hint": "Breakthrough in progress. Do not chase; await pullback retest of broken zone."
                 }
         else:
+            # Lower Zone (Support)
             if current_price > high:
-                dist_pips = (current_price - high) / pip_size
-                # 2. State: REJECTED (Price wicked down into zone but bounced back out)
-                if recent_low <= high:
-                    bounce_pips = (current_price - recent_low) / pip_size
-                    if bounce_pips >= rejection_pips_thresh and last_close >= (low - 0.0001):
-                        return {
-                            "state": "REJECTED",
-                            "badge_text": f"🛡️ REJECTED (+{bounce_pips:.1f}p)",
-                            "badge_class": "badge-rejected",
-                            "status_text": f"Rejection Confirmed: Tested {z_title} at {_fmt_p(recent_low)} and bounced +{bounce_pips:.1f} pips. Buyer defense.",
-                            "pips_dist": round(dist_pips, 1),
-                            "action_hint": "Bullish absorption confirmed. Look for continuation confirmation."
-                        }
-                # 3. State: APPROACHING
-                if dist_pips <= proximity_pips:
+                diff = current_price - high
+                dist_val = diff if is_gold else (diff / pip_size)
+
+                # Active Rejection: Price dipped into support [low - zone_half, high + 0.05*atr] and bounced upward
+                in_zone_reach = (recent_low <= (high + 0.05 * atr)) and (recent_low >= (low - zone_half))
+                bounce_val = (current_price - recent_low) if is_gold else ((current_price - recent_low) / pip_size)
+
+                if in_zone_reach and bounce_val >= rejection_thresh and current_price <= (high + atr * 0.65):
+                    tested_p = max(recent_low, low)
+                    return {
+                        "state": "REJECTED",
+                        "badge_text": f"🛡️ REJECTED (+{bounce_val:.1f}{unit_abbr})",
+                        "badge_class": "badge-rejected",
+                        "status_text": f"Rejection Confirmed: Tested {z_title} at {_fmt_p(tested_p)} and bounced +{bounce_val:.1f} {unit_str}. Buyer defense.",
+                        "pips_dist": round(dist_val, 1),
+                        "action_hint": "Bullish absorption confirmed. Look for continuation confirmation."
+                    }
+
+                # Approaching
+                if dist_val <= proximity_dist:
                     return {
                         "state": "APPROACHING",
-                        "badge_text": f"🎯 APPROACHING ({dist_pips:.1f}p)",
+                        "badge_text": f"🎯 APPROACHING ({dist_val:.1f}{unit_abbr})",
                         "badge_class": "badge-approaching",
-                        "status_text": f"Approaching {z_title} ({_fmt_p(low)} – {_fmt_p(high)}) · {dist_pips:.1f} pips away. Prepare reaction plan.",
-                        "pips_dist": round(dist_pips, 1),
+                        "status_text": f"Approaching {z_title} ({_fmt_p(low)} – {_fmt_p(high)}) · {dist_val:.1f} {unit_str} away. Prepare reaction plan.",
+                        "pips_dist": round(dist_val, 1),
                         "action_hint": "Approaching support. Observe whether sellers exhaust or punch through."
                     }
-                # 4. State: IN TRANSIT
+
+                # In Transit
                 return {
                     "state": "IN_TRANSIT",
-                    "badge_text": f"⏳ IN TRANSIT (-{dist_pips:.1f}p)",
+                    "badge_text": f"⏳ IN TRANSIT (-{dist_val:.1f}{unit_abbr})",
                     "badge_class": "badge-transit",
-                    "status_text": f"Floor sitting -{dist_pips:.1f} pips below current price ({_fmt_p(low)} – {_fmt_p(high)}).",
-                    "pips_dist": round(dist_pips, 1),
+                    "status_text": f"Floor sitting -{dist_val:.1f} {unit_str} below current price ({_fmt_p(low)} – {_fmt_p(high)}).",
+                    "pips_dist": round(dist_val, 1),
                     "action_hint": "Structure mapped. No immediate zone pressure."
                 }
             else:
-                # 5. State: BREAKOUT
-                break_pips = (low - current_price) / pip_size
+                # Breakdown below support
+                break_val = (low - current_price) if is_gold else ((low - current_price) / pip_size)
                 return {
                     "state": "BREAKOUT",
-                    "badge_text": f"🚀 BROKE THROUGH (-{break_pips:.1f}p)",
+                    "badge_text": f"🚀 BROKE THROUGH (-{break_val:.1f}{unit_abbr})",
                     "badge_class": "badge-breakout",
                     "status_text": f"Breakthrough: Cleared below {z_title} ({_fmt_p(low)}). Watch for pullback & S/R flip retest.",
-                    "pips_dist": round(-break_pips, 1),
+                    "pips_dist": round(-break_val, 1),
                     "action_hint": "Floor broken. Watch for weak retest from below."
                 }
 
@@ -378,15 +396,39 @@ def calculate_tf_decision_zones(
 
     # Upper DZ 1 (Immediate) & Upper DZ 2 (Secondary)
     u1 = above_levels[0] if len(above_levels) >= 1 else None
-    u2 = above_levels[1] if len(above_levels) >= 2 else None
     upper_dz_1 = build_zone(u1, "upper_dz_1", atr * 0.8, is_upper=True)
-    upper_dz_2 = build_zone(u2, "upper_dz_2", atr * 1.8, is_upper=True)
+
+    # Upper DZ 2 (Secondary / Expansion) - MUST sit strictly above Upper DZ 1
+    min_u2_center = upper_dz_1["high"] + max(zone_half * 2.0, atr * 0.8)
+    u2 = None
+    for cand in above_levels[1:]:
+        if cand["price"] >= min_u2_center:
+            u2 = cand
+            break
+
+    if u2 is not None:
+        upper_dz_2 = build_zone(u2, "upper_dz_2", atr * 1.8, is_upper=True)
+    else:
+        synthetic_offset = max(atr * 1.8, (upper_dz_1["high"] + atr * 0.8) - current_price)
+        upper_dz_2 = build_zone(None, "upper_dz_2", synthetic_offset, is_upper=True)
 
     # Lower DZ 1 (Immediate) & Lower DZ 2 (Secondary)
     l1 = below_levels[0] if len(below_levels) >= 1 else None
-    l2 = below_levels[1] if len(below_levels) >= 2 else None
     lower_dz_1 = build_zone(l1, "lower_dz_1", -atr * 0.8, is_upper=False)
-    lower_dz_2 = build_zone(l2, "lower_dz_2", -atr * 1.8, is_upper=False)
+
+    # Lower DZ 2 (Secondary / Expansion) - MUST sit strictly below Lower DZ 1
+    max_l2_center = lower_dz_1["low"] - max(zone_half * 2.0, atr * 0.8)
+    l2 = None
+    for cand in below_levels[1:]:
+        if cand["price"] <= max_l2_center:
+            l2 = cand
+            break
+
+    if l2 is not None:
+        lower_dz_2 = build_zone(l2, "lower_dz_2", -atr * 1.8, is_upper=False)
+    else:
+        synthetic_offset = -max(atr * 1.8, current_price - (lower_dz_1["low"] - atr * 0.8))
+        lower_dz_2 = build_zone(None, "lower_dz_2", synthetic_offset, is_upper=False)
 
     # Determine active proximity radar for this timeframe
     zones_list = [upper_dz_1, lower_dz_1, upper_dz_2, lower_dz_2]
@@ -499,8 +541,11 @@ def calculate_key_levels_radar(
         {"key": "today_low", "name": "Today Session Low", "tag": "Day Low", "is_floor": True},
     ]
 
-    test_threshold = max(2.5, (atr * 0.08) / pip_size if not is_gold else 2.0)
-    approach_threshold = max(12.0, min(25.0, (atr * 0.35) / pip_size if not is_gold else 40.0))
+    unit = "pts" if is_gold else "p"
+    unit_full = "pts" if is_gold else "pips"
+
+    test_threshold = max(2.5, (atr * 0.08) / pip_size if not is_gold else 1.5)
+    approach_threshold = max(12.0, min(25.0, (atr * 0.35) / pip_size if not is_gold else 4.0))
 
     evaluated = []
     primary_interaction = None
@@ -509,15 +554,26 @@ def calculate_key_levels_radar(
         val = _safe_float(levels.get(b["key"]))
         if val <= 0:
             continue
-        diff = val - current_price
-        dist_pips = diff / pip_size
-        abs_pips = abs(dist_pips)
+
+        if b["key"] in ("daily_open", "weekly_open"):
+            # Session net performance: +14.8 pts if above open
+            perf = current_price - val
+            dist_val = perf if is_gold else (perf / pip_size)
+            abs_dist = abs(dist_val)
+            dist_label = f"{'+' if dist_val >= 0 else ''}{dist_val:.1f}{unit}"
+            abs_check = abs(perf if is_gold else (perf / pip_size))
+        else:
+            diff = val - current_price
+            dist_val = diff if is_gold else (diff / pip_size)
+            abs_dist = abs(dist_val)
+            dist_label = f"{'+' if dist_val >= 0 else ''}{dist_val:.1f}{unit}"
+            abs_check = abs(diff if is_gold else (diff / pip_size))
 
         # Classify state
-        if abs_pips <= test_threshold:
+        if abs_check <= test_threshold:
             state = "TESTING"
             badge_class = "badge-testing"
-            badge_text = f"⚡ TESTING ({abs_pips:.1f}p)"
+            badge_text = f"⚡ TESTING ({abs_dist:.1f}{unit})"
             if b["key"] == "daily_open":
                 status = f"Price is testing Daily Open ({_fmt_p(val)}) — Bullish intraday bias holds while price stays above."
             elif b.get("is_ceiling"):
@@ -526,30 +582,32 @@ def calculate_key_levels_radar(
                 status = f"Price is testing {b['name']} ({_fmt_p(val)}) — Watching for floor defense or breakdown."
             else:
                 status = f"Price is testing {b['name']} ({_fmt_p(val)})."
-        elif abs_pips <= approach_threshold:
+        elif abs_check <= approach_threshold:
             state = "APPROACHING"
             badge_class = "badge-approaching"
-            badge_text = f"🎯 APPROACHING ({abs_pips:.1f}p)"
-            direction = "above" if dist_pips > 0 else "below"
-            status = f"Approaching {b['name']} ({_fmt_p(val)}) · Sitting {abs_pips:.1f} pips {direction} market."
+            badge_text = f"🎯 APPROACHING ({abs_dist:.1f}{unit})"
+            direction = "above" if dist_val > 0 else "below"
+            status = f"Approaching {b['name']} ({_fmt_p(val)}) · Sitting {abs_dist:.1f} {unit_full} {direction} market."
         else:
             state = "IN_TRANSIT"
             badge_class = "badge-transit"
-            badge_text = f"{'+' if dist_pips >= 0 else ''}{dist_pips:.1f}p"
-            if b["key"] == "daily_open":
+            badge_text = dist_label
+            if b["key"] in ("daily_open", "weekly_open"):
                 above = current_price >= val
                 bias_word = "BULLISH" if above else "BEARISH"
-                status = f"Trading {abs_pips:.1f} pips {'above' if above else 'below'} Daily Open ({_fmt_p(val)}) — Intraday bias is {bias_word}."
+                status = f"Trading {abs_dist:.1f} {unit_full} {'above' if above else 'below'} {b['name']} ({_fmt_p(val)}) — Intraday bias is {bias_word}."
             else:
-                status = f"{b['name']} sits {abs_pips:.1f} pips {'above' if dist_pips > 0 else 'below'} current price."
+                direction = "above" if dist_val > 0 else "below"
+                status = f"{b['name']} sits {abs_dist:.1f} {unit_full} {direction} current price."
 
         item = {
             "key": b["key"],
             "name": b["name"],
             "tag": b["tag"],
             "price": val,
-            "dist_pips": round(dist_pips, 1),
-            "abs_pips": round(abs_pips, 1),
+            "dist_pips": round(dist_val, 1),
+            "dist_label": dist_label,
+            "abs_pips": round(abs_dist, 1),
             "state": state,
             "badge_class": badge_class,
             "badge_text": badge_text,

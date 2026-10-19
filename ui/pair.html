@@ -1492,7 +1492,8 @@ function renderDecisionZones(scan){
     const isApp = b.state === 'APPROACHING';
     const activeClass = isTest ? 'active-test' : (isApp ? 'active-approach' : '');
     const icon = isTest ? '⚡' : (isApp ? '🎯' : '•');
-    return `<span class="radar-bench-pill ${activeClass}" title="${esc(b.status_text)}"><b>${esc(b.tag)}:</b> ${fp(b.price)} (${b.dist_pips >= 0 ? '+' : ''}${fmt(b.dist_pips, 1)}p) ${icon}</span>`;
+    const distStr = b.dist_label || `${b.dist_pips >= 0 ? '+' : ''}${fmt(b.dist_pips, 1)}p`;
+    return `<span class="radar-bench-pill ${activeClass}" title="${esc(b.status_text)}"><b>${esc(b.tag)}:</b> ${fp(b.price)} (${distStr}) ${icon}</span>`;
   }).join('');
 
   const radarBannerHtml = `
