@@ -19,3 +19,6 @@ models/
 *.gguf
 config_local.py
 .env*
+# Trader proprietary chart markups & private profile
+markups/
+data/
