@@ -92,7 +92,11 @@ Analyze this TradingView chart screenshot and extract the trader's marked zones.
 File saved timestamp: {file_dt_str}
 
 Look carefully at:
-1. The symbol (e.g. XAUUSD) and timeframe (e.g. 15m, 1h, 4h).
+1. The symbol (e.g. XAUUSD) and timeframe. Use the candle countdown timer displayed immediately below the blue market price pill on the right price axis:
+   - If the countdown timer shows hours (e.g. "03:36:01" or > 60 minutes), the timeframe is strictly "H4".
+   - If the countdown timer is between 15:01 and 60:00 (e.g. "33:24"), the timeframe is strictly "H1".
+   - If the countdown timer is <= 15:00 (e.g. "02:06"), the timeframe is strictly "M15".
+   - If no timer is visible, determine timeframe from the candle density and interval.
 2. The current market price displayed in the blue badge on the right axis.
 3. The horizontal rectangular zones marked on the chart.
    For each zone:
