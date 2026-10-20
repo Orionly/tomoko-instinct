@@ -214,7 +214,61 @@ def purge_old_archives(retention_days: int = 3) -> int:
                 purged_count += 1
                 print(f"[PURGE] Auto-deleted expired file: {item}")
 
-    return purged_count
+def get_pending_markups(max_files: int = 3) -> List[str]:
+    """Return up to max_files newest chart images in markups/ folder waiting to be ingested."""
+    _ensure_dirs()
+    image_exts = {".png", ".jpg", ".jpeg", ".webp"}
+    candidates = []
+    for f in os.listdir(MARKUPS_DIR):
+        full_path = os.path.join(MARKUPS_DIR, f)
+        if os.path.isfile(full_path) and os.path.splitext(f)[1].lower() in image_exts:
+            candidates.append(full_path)
+    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return candidates[:max_files]
+
+
+def record_session_zones(
+    session_data: Dict[str, Any],
+    file_paths: Optional[List[str]] = None,
+    archive_files: bool = True
+) -> Dict[str, Any]:
+    """
+    Direct local recording of trader zones (0 external API calls used).
+    Updates active_session, appends to history in data/trader_profile.json,
+    moves processed files to markups/archive/YYYY-MM-DD/, and runs the 3-day rolling purge.
+    """
+    _ensure_dirs()
+    profile = load_trader_profile()
+    today_str = datetime.now(MYT).strftime("%Y-%m-%d")
+
+    if "active_session" not in profile:
+        profile["active_session"] = {}
+
+    for tf, data in session_data.items():
+        tf_key = tf.upper()
+        data["chart_date"] = today_str
+        profile["active_session"][tf_key] = data
+        profile["history"].append(data)
+
+    save_trader_profile(profile)
+
+    # Move processed files to archive
+    if archive_files and file_paths:
+        today_archive_dir = os.path.join(ARCHIVE_DIR, today_str)
+        os.makedirs(today_archive_dir, exist_ok=True)
+        for img_path in file_paths:
+            if os.path.exists(img_path):
+                fname = os.path.basename(img_path)
+                dest_path = os.path.join(today_archive_dir, fname)
+                if os.path.exists(dest_path):
+                    base, ext = os.path.splitext(fname)
+                    timestamp = int(datetime.now(MYT).timestamp())
+                    dest_path = os.path.join(today_archive_dir, f"{base}_{timestamp}{ext}")
+                shutil.move(img_path, dest_path)
+
+    # 3-Day Rolling Purge
+    purge_old_archives(retention_days=3)
+    return profile
 
 
 def ingest_pending_markups(max_files: int = 3) -> List[Dict[str, Any]]:
