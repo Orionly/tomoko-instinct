@@ -173,8 +173,51 @@ Respond ONLY with valid JSON in this exact structure:
     print(f"[ERROR] All Gemini Vision candidate models failed to parse {img_path}.")
     return None
 
-def ingest_pending_markups() -> List[Dict[str, Any]]:
-    """Scan markups/ folder, parse new images, log to trader profile, and archive them."""
+def purge_old_archives(retention_days: int = 3) -> int:
+    """
+    Auto-deletes any archived markup folders/files older than retention_days.
+    With 3 sessions/day x 3 snapshots = 9 images/day, keeps a rolling maximum of 27 images (3 days) at any time.
+    """
+    _ensure_dirs()
+    now = datetime.now(MYT)
+    cutoff = now - timedelta(days=retention_days)
+    purged_count = 0
+
+    if not os.path.exists(ARCHIVE_DIR):
+        return 0
+
+    for item in os.listdir(ARCHIVE_DIR):
+        item_path = os.path.join(ARCHIVE_DIR, item)
+        if os.path.isdir(item_path):
+            try:
+                folder_date = datetime.strptime(item, "%Y-%m-%d").replace(tzinfo=MYT)
+                if folder_date.date() < cutoff.date():
+                    shutil.rmtree(item_path)
+                    purged_count += 1
+                    print(f"[PURGE] Auto-deleted expired archive folder: {item} (older than {retention_days} days)")
+            except ValueError:
+                mtime = os.path.getmtime(item_path)
+                folder_dt = datetime.fromtimestamp(mtime, tz=MYT)
+                if folder_dt < cutoff:
+                    shutil.rmtree(item_path)
+                    purged_count += 1
+                    print(f"[PURGE] Auto-deleted expired archive folder: {item}")
+        elif os.path.isfile(item_path):
+            mtime = os.path.getmtime(item_path)
+            file_dt = datetime.fromtimestamp(mtime, tz=MYT)
+            if file_dt < cutoff:
+                os.remove(item_path)
+                purged_count += 1
+                print(f"[PURGE] Auto-deleted expired file: {item}")
+
+    return purged_count
+
+
+def ingest_pending_markups(max_files: int = 3) -> List[Dict[str, Any]]:
+    """
+    Scan markups/ folder, sort by creation time (newest first), take strictly the 3 latest snapshots,
+    parse them, log to trader profile, and move to archive. Then auto-purges archives older than 3 days.
+    """
     _ensure_dirs()
     image_exts = {".png", ".jpg", ".jpeg", ".webp"}
     candidates = []
@@ -187,7 +230,15 @@ def ingest_pending_markups() -> List[Dict[str, Any]]:
                 candidates.append(full_path)
 
     if not candidates:
+        # Run retention purge even if no new files
+        purge_old_archives(retention_days=3)
         return []
+
+    # Sort descending by Windows creation / modification time (newest first)
+    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    if len(candidates) > max_files:
+        print(f"[*] Found {len(candidates)} snapshots in markups/. Taking strictly the {max_files} most recent...")
+        candidates = candidates[:max_files]
 
     profile = load_trader_profile()
     today_str = datetime.now(MYT).strftime("%Y-%m-%d")
@@ -201,16 +252,15 @@ def ingest_pending_markups() -> List[Dict[str, Any]]:
         parsed = parse_chart_image(img_path)
         if parsed:
             results.append(parsed)
-            # Update active session by timeframe
+            # Update active session by timeframe (H4, H1, M15)
             tf = parsed.get("timeframe", "M15").upper()
             if "active_session" not in profile:
                 profile["active_session"] = {}
             profile["active_session"][tf] = parsed
             profile["history"].append(parsed)
 
-            # Archive file
+            # Move out of markups/ into archive immediately so dropzone is clean
             dest_path = os.path.join(today_archive_dir, fname)
-            # Avoid overwriting existing archive
             if os.path.exists(dest_path):
                 base, ext = os.path.splitext(fname)
                 timestamp = int(datetime.now(MYT).timestamp())
@@ -221,6 +271,12 @@ def ingest_pending_markups() -> List[Dict[str, Any]]:
             print(f"[-] Could not parse {fname}. Leaving in markups/ for inspection.")
 
     save_trader_profile(profile)
+
+    # 3-Day Rolling Purge: delete archives older than 3 days
+    purged = purge_old_archives(retention_days=3)
+    if purged > 0:
+        print(f"[*] Purged {purged} old archive batch(es) (strictly 3 days retained).")
+
     return results
 
 if __name__ == "__main__":
