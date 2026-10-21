@@ -22,3 +22,10 @@ config_local.py
 # Trader proprietary chart markups & private profile
 markups/
 data/
+
+# Trader Private Shadow Project (Trader DNA & Vault Engine)
+core/trader_dna*
+scripts/trader_dna*
+backend/private_routes*
+*trader_vault*
+*trader_dna*
