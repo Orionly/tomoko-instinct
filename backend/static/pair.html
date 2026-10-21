@@ -498,6 +498,111 @@
   .dz-radar-banner.radar-in-transit, .dz-radar-banner.radar-transit { border-color: var(--border); }
   .dz-radar-banner.radar-in-transit::before, .dz-radar-banner.radar-transit::before { background: #64748B; }
 
+  /* ================= INSTITUTIONAL TRAP RADAR & SCENARIO TREE STYLES ================= */
+  .trap-radar-wrap {
+    background: linear-gradient(135deg, rgba(16,24,40,0.85) 0%, rgba(10,15,28,0.95) 100%);
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; padding: 12px; margin-top: 6px;
+  }
+  .trap-banner-alert {
+    padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 10px;
+    font-size: 12px; line-height: 1.5; font-family: 'Inter', sans-serif;
+  }
+  .trap-banner-alert.bull-trap {
+    background: rgba(255,77,77,0.12); border: 1px solid rgba(255,77,77,0.4); color: #FCA5A5;
+    box-shadow: 0 0 16px rgba(255,77,77,0.18);
+  }
+  .trap-banner-alert.bear-trap {
+    background: rgba(0,229,255,0.12); border: 1px solid rgba(0,229,255,0.4); color: #A5F3FC;
+    box-shadow: 0 0 16px rgba(0,229,255,0.18);
+  }
+  .trap-banner-alert.squeeze {
+    background: rgba(255,184,0,0.12); border: 1px solid rgba(255,184,0,0.4); color: #FDE68A;
+    box-shadow: 0 0 16px rgba(255,184,0,0.18);
+  }
+  .trap-banner-alert.normal {
+    background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.25); color: #86EFAC;
+  }
+
+  .trap-pools-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;
+  }
+  @media(max-width:600px){ .trap-pools-grid { grid-template-columns: 1fr; } }
+  .trap-pool-col {
+    background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.05); border-radius: 7px; padding: 8px 10px;
+  }
+  .trap-pool-title {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 6px; display: flex; justify-content: space-between;
+  }
+  .trap-pool-pills { display: flex; flex-direction: column; gap: 4px; }
+  .trap-pool-item {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; display: flex; justify-content: space-between;
+    padding: 3px 6px; border-radius: 4px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .trap-skew-box {
+    margin-bottom: 10px; padding: 8px 10px; background: rgba(0,0,0,0.25); border-radius: 7px; border: 1px solid rgba(255,255,255,0.05);
+  }
+  .trap-skew-labels {
+    display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; margin-bottom: 4px;
+  }
+  .trap-skew-bar {
+    height: 8px; border-radius: 4px; display: flex; overflow: hidden; background: #1E293B;
+  }
+  .trap-skew-long { background: var(--green); height: 100%; transition: width .3s; }
+  .trap-skew-short { background: var(--red); height: 100%; transition: width .3s; }
+
+  .trap-dual-guide {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;
+  }
+  @media(max-width:640px){ .trap-dual-guide { grid-template-columns: 1fr; } }
+  .trap-guide-card {
+    padding: 9px 12px; border-radius: 7px; font-size: 11.5px; line-height: 1.45;
+  }
+  .trap-guide-card.beginner {
+    background: rgba(255,184,0,0.08); border: 1px solid rgba(255,184,0,0.25); color: #FEF3C7;
+  }
+  .trap-guide-card.veteran {
+    background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.25); color: #E0F2FE;
+  }
+  .trap-guide-header {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 4px; display: flex; align-items: center; gap: 5px;
+  }
+
+  /* Scenario Tree 3-Column Matrix */
+  .scenario-catalyst-block {
+    margin-bottom: 14px; background: rgba(12,17,27,0.7); border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 9px; padding: 12px;
+  }
+  .scenario-cat-head {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;
+  }
+  .scenario-cat-title {
+    font-family: 'JetBrains Mono', monospace; font-size: 12.5px; font-weight: 800; color: #FFFFFF;
+  }
+  .scenario-matrix-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px;
+  }
+  @media(max-width:768px){ .scenario-matrix-grid { grid-template-columns: 1fr; } }
+  .sc-branch-card {
+    background: rgba(16,24,40,0.6); border: 1px solid rgba(255,255,255,0.06); border-radius: 7px;
+    padding: 9px 11px; display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .sc-branch-card.beat { border-top: 3px solid var(--red); background: linear-gradient(180deg, rgba(255,77,77,0.08) 0%, rgba(16,24,40,0.4) 100%); }
+  .sc-branch-card.miss { border-top: 3px solid var(--green); background: linear-gradient(180deg, rgba(34,197,94,0.08) 0%, rgba(16,24,40,0.4) 100%); }
+  .sc-branch-card.inline { border-top: 3px solid var(--gold); background: linear-gradient(180deg, rgba(255,184,0,0.08) 0%, rgba(16,24,40,0.4) 100%); }
+  .sc-branch-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 800; text-transform: uppercase;
+    margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .sc-branch-trigger {
+    font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 700; color: #FFFFFF; margin-bottom: 5px;
+  }
+  .sc-branch-play {
+    font-size: 11px; color: #CBD5E1; line-height: 1.45;
+  }
+
   .radar-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
   .radar-lead { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 800; }
   .radar-ping-icon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.06); font-size: 12px; }
@@ -786,13 +891,15 @@
             Awaiting session trigger confirmation...
           </div>
         </div>
-        <div class="bp-card-box">
+        <div class="bp-card-box" id="bp-trap-card-box">
           <div class="bp-card-box-header">
-            <span>⚠️ Institutional Trap & Judas Swing Warning</span>
-            <span style="color:var(--gold);font-weight:700;">CAPITAL PRESERVATION</span>
+            <span>⚠️ Institutional Trap & Liquidity Sweep Radar</span>
+            <span id="bp-trap-state-badge" style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;padding:2px 8px;border-radius:4px;background:rgba(34,197,94,0.15);color:var(--green);border:1px solid rgba(34,197,94,0.35);">MONITORING</span>
           </div>
-          <div class="bp-trap-callout" id="bp-trap-text">
-            Avoid chasing opening candle spikes. Monitor liquidity pools for exhaustion.
+          <div id="bp-trap-radar-container">
+            <div class="bp-trap-callout" id="bp-trap-text">
+              Scanning order flow and liquidity pools for manipulation wicks...
+            </div>
           </div>
         </div>
         <div class="bp-card-box">
@@ -1069,7 +1176,220 @@ function switchBpTab(tabKey){
   });
 }
 
-function renderBattlePlan(scan, plan, sessionInfo){
+function renderTrapRadarComponent(trap){
+  const badge = $('bp-trap-state-badge');
+  const container = $('bp-trap-radar-container');
+  if(!container) return;
+
+  if(!trap || !trap.trap_state || trap.trap_state === 'ERROR'){
+    if(badge){
+      badge.textContent = 'STANDBY';
+      badge.style.background = 'rgba(148,163,184,0.15)';
+      badge.style.color = '#94A3B8';
+      badge.style.borderColor = 'rgba(148,163,184,0.3)';
+    }
+    container.innerHTML = '<div class="bp-trap-callout">Scanning liquidity pools for trap mechanics...</div>';
+    return;
+  }
+
+  const state = trap.trap_state;
+  const isBullTrap = state === 'BULL_TRAP_ACTIVE';
+  const isBearTrap = state === 'BEAR_TRAP_ACTIVE';
+  const isSqueeze = state.includes('SQUEEZE') || state.includes('LIQUIDATION');
+  const isNormal = state === 'NONE';
+
+  let alertCls = isBullTrap ? 'bull-trap' : (isBearTrap ? 'bear-trap' : (isSqueeze ? 'squeeze' : 'normal'));
+  let badgeColor = isBullTrap ? 'var(--red)' : (isBearTrap ? 'var(--cyan)' : (isSqueeze ? 'var(--gold)' : 'var(--green)'));
+  let badgeBg = isBullTrap ? 'rgba(255,77,77,0.18)' : (isBearTrap ? 'rgba(0,229,255,0.18)' : (isSqueeze ? 'rgba(255,184,0,0.18)' : 'rgba(34,197,94,0.15)'));
+  let badgeBorder = isBullTrap ? 'rgba(255,77,77,0.45)' : (isBearTrap ? 'rgba(0,229,255,0.45)' : (isSqueeze ? 'rgba(255,184,0,0.45)' : 'rgba(34,197,94,0.35)'));
+
+  if(badge){
+    badge.textContent = trap.trap_title || state;
+    badge.style.color = badgeColor;
+    badge.style.background = badgeBg;
+    badge.style.borderColor = badgeBorder;
+  }
+
+  // Sentiment Skew
+  const skew = trap.sentiment_skew || {};
+  const longPct = skew.retail_long_pct || 50.0;
+  const shortPct = skew.retail_short_pct || 50.0;
+  const contrarianBias = skew.contrarian_institutional_bias || 'NEUTRAL';
+
+  // Liquidity Pools
+  const bsl = (trap.liquidity_pools && trap.liquidity_pools.buy_side_liquidity_bsl) || [];
+  const ssl = (trap.liquidity_pools && trap.liquidity_pools.sell_side_liquidity_ssl) || [];
+
+  const bslHtml = bsl.map(item => `
+    <div class="trap-pool-item">
+      <span style="color:#CBD5E1">${esc(item.label)}</span>
+      <span style="color:var(--red);font-weight:700">${fmt(item.price, isGold(symbol) ? 2 : 4)}</span>
+    </div>
+  `).join('');
+
+  const sslHtml = ssl.map(item => `
+    <div class="trap-pool-item">
+      <span style="color:#CBD5E1">${esc(item.label)}</span>
+      <span style="color:var(--green);font-weight:700">${fmt(item.price, isGold(symbol) ? 2 : 4)}</span>
+    </div>
+  `).join('');
+
+  const ceMidline = trap.consequent_encroachment_midline ? `
+    <div style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);font-weight:700;">
+      ⚡ 50% Consequent Encroachment (Sweep Midline): ${fmt(trap.consequent_encroachment_midline, isGold(symbol) ? 2 : 4)}
+    </div>
+  ` : '';
+
+  const guide = trap.operational_guidance || {};
+
+  container.innerHTML = `
+    <div class="trap-radar-wrap">
+      <div class="trap-banner-alert ${alertCls}">
+        <span style="font-size:16px">${isBullTrap ? '🚨' : (isBearTrap ? '🛡️' : (isSqueeze ? '⚡' : '🟢'))}</span>
+        <div>
+          <b>${esc(trap.trap_title)}:</b> ${esc(trap.description)}
+          ${ceMidline}
+        </div>
+      </div>
+
+      <!-- Contrarian Crowd Skew -->
+      <div class="trap-skew-box">
+        <div class="trap-skew-labels">
+          <span style="color:var(--green)">Retail Long: ${longPct}%</span>
+          <span style="color:#94A3B8">Contrarian Edge: <b style="color:${contrarianBias === 'LONG' ? 'var(--green)' : (contrarianBias === 'SHORT' ? 'var(--red)' : '#CBD5E1')}">${contrarianBias}</b></span>
+          <span style="color:var(--red)">Retail Short: ${shortPct}%</span>
+        </div>
+        <div class="trap-skew-bar">
+          <div class="trap-skew-long" style="width:${longPct}%"></div>
+          <div class="trap-skew-short" style="width:${shortPct}%"></div>
+        </div>
+      </div>
+
+      <!-- Liquidity Pools Matrix -->
+      <div class="trap-pools-grid">
+        <div class="trap-pool-col">
+          <div class="trap-pool-title" style="color:var(--red)">
+            <span>🎯 Buy-Side Liquidity (BSL)</span>
+            <span>RESTING STOPS ▲</span>
+          </div>
+          <div class="trap-pool-pills">${bslHtml || '<div class="trap-pool-item">No BSL levels</div>'}</div>
+        </div>
+        <div class="trap-pool-col">
+          <div class="trap-pool-title" style="color:var(--green)">
+            <span>🛡️ Sell-Side Liquidity (SSL)</span>
+            <span>RESTING STOPS ▼</span>
+          </div>
+          <div class="trap-pool-pills">${sslHtml || '<div class="trap-pool-item">No SSL levels</div>'}</div>
+        </div>
+      </div>
+
+      <!-- Dual Directives -->
+      <div class="trap-dual-guide">
+        <div class="trap-guide-card beginner">
+          <div class="trap-guide-header" style="color:var(--gold)">
+            <span>🔰</span> <span>Beginner Guardrail</span>
+          </div>
+          <div>${esc(guide.beginners || 'Monitor order flow before entry.')}</div>
+        </div>
+        <div class="trap-guide-card veteran">
+          <div class="trap-guide-header" style="color:var(--cyan)">
+            <span>⚡</span> <span>Veteran Institutional Playbook</span>
+          </div>
+          <div>${esc(guide.veterans || 'Look for 50% CE reaction on M5.')}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderScenarioMatrixComponent(catalysts, catFallback){
+  const container = $('bp-ifthen-container');
+  if(!container) return;
+
+  if(!catalysts || !catalysts.length){
+    if(catFallback && catFallback.if_then_branches && catFallback.if_then_branches.length){
+      container.innerHTML = catFallback.if_then_branches.map(b => {
+        let text = esc(b).replace(/^IF\s+/i, '<span class="if-tag">IF</span> ')
+                         .replace(/\s+THEN\s+/i, ' <span class="then-tag">THEN</span> ');
+        return `<div class="bp-ifthen-card">${text}</div>`;
+      }).join('');
+    } else {
+      container.innerHTML = '<div class="bp-ifthen-card">No scenario branches for this session.</div>';
+    }
+    return;
+  }
+
+  const html = catalysts.map((cat, idx) => {
+    const sc = cat.scenarios || {};
+    const hot = sc.hot_beat || {};
+    const cool = sc.cool_miss || {};
+    const inline = sc.in_line || {};
+    const fv = cat.flash_verdict;
+
+    let fvHtml = '';
+    if(fv){
+      const isHawk = fv.verdict_type === 'HAWKISH';
+      const fvColor = isHawk ? 'var(--red)' : 'var(--green)';
+      fvHtml = `
+        <div style="padding:8px 12px;border-radius:6px;background:rgba(255,255,255,0.04);border:1px solid ${fvColor};margin-bottom:8px;font-family:'JetBrains Mono',monospace;font-size:11px;">
+          <span style="color:${fvColor};font-weight:800">⚡ FLASH VERDICT [${fv.magnitude}]:</span>
+          <span style="color:#FFFFFF;margin-left:5px">${esc(fv.headline)}</span>
+          <div style="color:#94A3B8;font-size:10px;margin-top:2px">Delta: ${fv.delta} (${fv.percentage_deviation}%) · ${esc(fv.direction_summary)}</div>
+        </div>
+      `;
+    }
+
+    const pbHot = (hot.pair_playbook && (hot.pair_playbook[symbol] || hot.pair_playbook['XAUUSD'])) || hot.macro_thesis || '';
+    const pbCool = (cool.pair_playbook && (cool.pair_playbook[symbol] || cool.pair_playbook['XAUUSD'])) || cool.macro_thesis || '';
+    const pbInline = (inline.pair_playbook && (inline.pair_playbook[symbol] || inline.pair_playbook['XAUUSD'])) || inline.macro_thesis || '';
+
+    return `
+      <div class="scenario-catalyst-block">
+        <div class="scenario-cat-head">
+          <div class="scenario-cat-title">
+            <span>📅 ${esc(cat.event_title)}</span>
+            <span style="color:#94A3B8;font-size:11px;margin-left:6px">(${esc(cat.currency)}) · ${esc(cat.time || '')}</span>
+          </div>
+          <span class="fn-pill ${cat.impact === 'HIGH' ? 'hi' : 'med'}">${esc(cat.impact)}</span>
+        </div>
+        ${fvHtml}
+        <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;line-height:1.4;">
+          <b>Transmission:</b> ${esc(cat.transmission_logic || 'Direct rate and currency transmission.')}
+        </div>
+        <div class="scenario-matrix-grid">
+          <div class="sc-branch-card beat">
+            <div class="sc-branch-tag" style="color:var(--red)">
+              <span>🔴 HOT / BEAT</span>
+              <span>HAWKISH</span>
+            </div>
+            <div class="sc-branch-trigger">${esc(hot.trigger_condition || 'Above Forecast')}</div>
+            <div class="sc-branch-play">${esc(pbHot)}</div>
+          </div>
+          <div class="sc-branch-card inline">
+            <div class="sc-branch-tag" style="color:var(--gold)">
+              <span>🟡 IN-LINE</span>
+              <span>CHOP</span>
+            </div>
+            <div class="sc-branch-trigger">${esc(inline.trigger_condition || 'At Consensus')}</div>
+            <div class="sc-branch-play">${esc(pbInline)}</div>
+          </div>
+          <div class="sc-branch-card miss">
+            <div class="sc-branch-tag" style="color:var(--green)">
+              <span>🟢 COOL / MISS</span>
+              <span>DOVISH</span>
+            </div>
+            <div class="sc-branch-trigger">${esc(cool.trigger_condition || 'Below Forecast')}</div>
+            <div class="sc-branch-play">${esc(pbCool)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = html;
+}
+
+function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
   const h4 = scan.h4 || {}, h1 = scan.h1 || {};
   const banner = $('bp-action-banner');
   const actionText = $('bp-action-text');
@@ -1169,7 +1489,7 @@ function renderBattlePlan(scan, plan, sessionInfo){
     $('bp-trade-mgmt').textContent = 'Trail stop on H1 candle close';
   }
 
-  // 4. Tab 1: Execution & Trigger
+  // 4. Tab 1: Execution & Trigger + Trap Radar
   if(primary && primary.trigger_confirmation){
     $('bp-trigger-text').textContent = primary.trigger_confirmation;
   } else {
@@ -1177,11 +1497,8 @@ function renderBattlePlan(scan, plan, sessionInfo){
   }
 
   const traps = (plan && plan.traps_and_checklist) ? plan.traps_and_checklist : null;
-  if(traps && traps.trap_warning){
-    $('bp-trap-text').textContent = traps.trap_warning;
-  } else {
-    $('bp-trap-text').textContent = 'Avoid chasing impulsive breakout spikes. Confirm liquidity pool absorption before entry.';
-  }
+  const trapData = rawTrapData || (plan && plan.trap_radar) || {};
+  renderTrapRadarComponent(trapData);
 
   if(traps && traps.checklist && traps.checklist.length > 0){
     const items = Array.isArray(traps.checklist) ? traps.checklist : [traps.checklist];
@@ -1210,20 +1527,24 @@ function renderBattlePlan(scan, plan, sessionInfo){
     $('bp-primary-driver-text').textContent = 'Real Yields, US Dollar transmission & Intermarket risk appetite';
   }
 
-  if(cat && cat.if_then_branches && cat.if_then_branches.length > 0){
-    const branches = Array.isArray(cat.if_then_branches) ? cat.if_then_branches : [cat.if_then_branches];
-    $('bp-ifthen-container').innerHTML = branches.map(b => {
-      let text = esc(b);
-      text = text.replace(/^IF\s+/i, '<span class="if-tag">IF</span> ')
-                 .replace(/\s+THEN\s+/i, ' <span class="then-tag">THEN</span> ');
-      return `<div class="bp-ifthen-card">${text}</div>`;
-    }).join('');
-  } else {
-    $('bp-ifthen-container').innerHTML = '<div class="bp-ifthen-card">No scenario branches for this session.</div>';
-  }
+  const scenarioTrees = (rawScenarios && rawScenarios.catalysts) ? rawScenarios.catalysts : (plan && plan.catalyst_scenarios ? plan.catalyst_scenarios : []);
+  renderScenarioMatrixComponent(scenarioTrees, cat);
 
   // 6. Tab 3: Contingency & Shock
   const cont = (plan && plan.contingency_plan) ? plan.contingency_plan : null;
+  if(cont){
+    if(cont.probability) $('bp-contingency-prob').textContent = `${cont.probability} PROBABILITY`;
+    if(cont.scenario) $('bp-contingency-scenario').textContent = cont.scenario;
+    $('bp-contingency-zone').textContent = cont.counter_zone || '—';
+    $('bp-contingency-invalidation').textContent = cont.invalidation || '—';
+  } else {
+    $('bp-contingency-prob').textContent = '30% PROBABILITY';
+    $('bp-contingency-scenario').textContent = 'Unexpected counter-trend liquidity squeeze or macroeconomic news shock.';
+    $('bp-contingency-zone').textContent = 'H4 Opposite Liquidity Pool';
+    $('bp-contingency-invalidation').textContent = 'H1 Close past Swing High/Low';
+  }
+
+  // 7. Tab 4: Timeframe pills & Alignment (preserving quantitative indicators)
   if(cont){
     if(cont.probability) $('bp-contingency-prob').textContent = `${cont.probability} PROBABILITY`;
     if(cont.scenario) $('bp-contingency-scenario').textContent = cont.scenario;
@@ -1492,7 +1813,8 @@ function renderDecisionZones(scan){
     const isApp = b.state === 'APPROACHING';
     const activeClass = isTest ? 'active-test' : (isApp ? 'active-approach' : '');
     const icon = isTest ? '⚡' : (isApp ? '🎯' : '•');
-    return `<span class="radar-bench-pill ${activeClass}" title="${esc(b.status_text)}"><b>${esc(b.tag)}:</b> ${fp(b.price)} (${b.dist_pips >= 0 ? '+' : ''}${fmt(b.dist_pips, 1)}p) ${icon}</span>`;
+    const distStr = b.dist_label || `${b.dist_pips >= 0 ? '+' : ''}${fmt(b.dist_pips, 1)}p`;
+    return `<span class="radar-bench-pill ${activeClass}" title="${esc(b.status_text)}"><b>${esc(b.tag)}:</b> ${fp(b.price)} (${distStr}) ${icon}</span>`;
   }).join('');
 
   const radarBannerHtml = `
@@ -1576,7 +1898,10 @@ function renderDecisionZones(scan){
           <span class="dz-dist-badge ${distCls}">${esc(z.distance_label)} (${fmt(z.distance_atr, 1)} ATR)</span>
         </div>
         <div class="dz-body">
-          <span class="dz-range">${fp(z.low)} – ${fp(z.high)}</span>
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+            <span class="dz-range">${fp(z.low)} – ${fp(z.high)}</span>
+            ${z.midline ? `<span class="dz-midline-badge" style="font-size:11px;color:#C084FC;font-family:'JetBrains Mono',monospace;font-weight:600;" title="50% Consequent Encroachment Midline">· 50% CE: ${fp(z.midline)}</span>` : ''}
+          </div>
           <div class="dz-confluences">${confHtml}</div>
         </div>
         ${telemetryHtml}
@@ -1682,7 +2007,15 @@ function renderFundamental(scan, currencies){
   const news = scan.news || {};
   const isClean = news.is_clean === true;
   const blk = news.blocking || [];
-  const events = news.upcoming_events || [];
+  const rawEvents = news.upcoming_events || [];
+  const nowTs = Date.now();
+  // Option A: Prioritize upcoming/incoming releases (including recent releases from past 30m)
+  const incomingEvents = rawEvents.filter(ev => {
+    const d = parseEvTime(ev.time);
+    const ts = d ? d.getTime() : (nowTs + (Number(ev._rel_min || 0) * 60000));
+    return ts >= (nowTs - 30 * 60000);
+  });
+  const events = incomingEvents.length > 0 ? incomingEvents : rawEvents.slice(-14);
 
   const statusBadge = isClean ?
     '<span class="fn-badge clean">✓ NO HIGH-IMPACT RISK IN 60M</span>' :
@@ -1843,7 +2176,7 @@ function renderAll(d){
   const h4 = scan.h4 || {}, h1 = scan.h1 || {};
   $('pd-badges').innerHTML = biasBadge('H4', h4.direction) + biasBadge('H1', scan.h1_bias || h1.bias) + biasBadge('M15', scan.m15_bias);
 
-  renderBattlePlan(scan, d.ai_battle_plan, d.ai_session_info);
+  renderBattlePlan(scan, d.ai_battle_plan, d.ai_session_info, d.trap_radar, d.macro_scenarios);
   renderScoreBreakdown(scan);
   renderPriceLadder(scan);
   renderDecisionZones(scan);

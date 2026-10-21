@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 import config
+from core.macro_scenario_engine import MacroScenarioEngine
+from core.trap_radar_engine import TrapRadarEngine
 
 log = logging.getLogger(__name__)
 
@@ -36,16 +38,23 @@ You must respond with valid JSON adhering strictly to the requested schema for a
 class SessionBriefingEngine:
     """
     Autonomous Pre-Session Briefing Engine.
-    Executes a single batched prompt for all 7 pairs 30 minutes before each major session.
+    Executes a single batched prompt for all 7 pairs 30 minutes before each major session,
+    with embedded Catalyst-to-Pair scenario trees and deterministic fallback.
     """
 
-    def __init__(self, price_engine=None, levels_engine=None, news_engine=None, macro_engine=None):
+    def __init__(self, price_engine=None, levels_engine=None, news_engine=None, macro_engine=None, macro_scenario_engine=None, trap_radar_engine=None):
         self.api_key = getattr(config, "GEMINI_API_KEY", "")
         self.model = getattr(config, "GEMINI_MODEL", "gemini-2.5-flash")
         self.price_engine = price_engine
         self.levels_engine = levels_engine
         self.news_engine = news_engine
         self.macro_engine = macro_engine
+        self.macro_scenario_engine = macro_scenario_engine or MacroScenarioEngine(
+            news_engine=news_engine, macro_engine=macro_engine, price_engine=price_engine
+        )
+        self.trap_radar_engine = trap_radar_engine or TrapRadarEngine(
+            price_engine=price_engine, levels_engine=levels_engine
+        )
 
         self.latest_briefing: Dict = {}
         self._lock = threading.Lock()
@@ -170,8 +179,25 @@ class SessionBriefingEngine:
                 except Exception as e:
                     log.debug("[SessionBriefing] Levels error for %s: %s", sym, e)
 
-            # News upcoming catalysts
-            if self.news_engine:
+            # MacroScenarioEngine catalyst-to-pair scenario trees
+            if self.macro_scenario_engine:
+                try:
+                    briefing = self.macro_scenario_engine.get_pair_catalyst_briefing(sym)
+                    pair_data["catalyst_briefing"] = briefing
+                    pair_data["catalyst_scenarios"] = briefing.get("catalysts", [])
+                except Exception as e:
+                    log.debug("[SessionBriefing] MacroScenarioEngine error for %s: %s", sym, e)
+
+            # TrapRadarEngine liquidity sweep & trap diagnosis
+            if self.trap_radar_engine:
+                try:
+                    trap_data = self.trap_radar_engine.scan_pair_liquidity_traps(sym)
+                    pair_data["trap_radar"] = trap_data
+                except Exception as e:
+                    log.debug("[SessionBriefing] TrapRadarEngine error for %s: %s", sym, e)
+
+            # News upcoming catalysts fallback
+            if self.news_engine and "catalyst_scenarios" not in pair_data:
                 try:
                     sym_news = self.news_engine.get_news_for_symbol(sym, hours_ahead=24)
                     pair_data["upcoming_events"] = [
@@ -185,23 +211,152 @@ class SessionBriefingEngine:
 
         return payload
 
+    def _generate_rule_based_briefing(self, telemetry: Dict) -> Dict:
+        """
+        Deterministic, zero-API-cost institutional trade briefing generator.
+        Synthesizes live spot prices, key technical pivot levels, macro posture (DXY/Yields),
+        and quantitative MacroScenarioEngine If-Then branches.
+        """
+        session_title = telemetry.get("session", "Active Session")
+        time_utc = telemetry.get("timestamp_utc", "")
+        macro = telemetry.get("macro_telemetry", {})
+        dxy = macro.get("dxy", {})
+        dxy_trend = dxy.get("trend", "FLAT")
+        us10y = macro.get("us10y", {})
+
+        executive_thesis = (
+            f"Macro liquidity is shaped by DXY trending {dxy_trend} ({dxy.get('price', 'N/A')}) "
+            f"with US 10-Year Treasury Yields at {us10y.get('price', 'N/A')}%. "
+            f"Order flow favors disciplined execution around session opening ranges and pre-calculated catalyst thresholds."
+        )
+
+        pairs_plan = {}
+        for sym in PAIRS:
+            p_data = telemetry.get("pairs", {}).get(sym, {})
+            spot = p_data.get("spot_price") or 0.0
+            pdh = p_data.get("pdh") or spot * 1.004
+            pdl = p_data.get("pdl") or spot * 0.996
+            pivot = p_data.get("pivot") or spot
+            scenarios = p_data.get("catalyst_scenarios", [])
+
+            # Determine baseline bias
+            if sym == "XAUUSD":
+                is_bullish = dxy_trend == "DOWN" or spot > pivot
+            elif "USD" in sym and sym.endswith("USD"):
+                is_bullish = dxy_trend == "DOWN" or spot > pivot
+            else:
+                is_bullish = spot >= pivot
+
+            bias = "LONG" if is_bullish else "SHORT"
+            prob = "65%" if spot != 0 else "50%"
+
+            # Formulate levels
+            if bias == "LONG":
+                entry_low = round(min(spot, pivot), 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                entry_high = round(max(spot, pivot), 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                sl = round(pdl * 0.998, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                tp1 = round(spot + abs(spot - sl) * 1.0, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                tp2 = round(pdh, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                tp3 = round(pdh * 1.003, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+            else:
+                entry_low = round(min(spot, pivot), 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                entry_high = round(max(spot, pivot), 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                sl = round(pdh * 1.002, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                tp1 = round(spot - abs(sl - spot) * 1.0, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                tp2 = round(pdl, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                tp3 = round(pdl * 0.997, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+
+            # Pull catalyst branches
+            branches = []
+            primary_driver = "General Market Liquidity & Technical Structure"
+            if scenarios:
+                top_cat = scenarios[0]
+                primary_driver = f"{top_cat.get('event_title', '')} ({top_cat.get('currency', '')})"
+                sc_map = top_cat.get("scenarios", {})
+                hot_b = sc_map.get("hot_beat", {})
+                cool_m = sc_map.get("cool_miss", {})
+                if hot_b:
+                    branches.append(f"HOT PRINT ({hot_b.get('trigger_condition', '')}): {hot_b.get('pair_playbook', {}).get(sym, 'Look for directional impulse')}")
+                if cool_m:
+                    branches.append(f"COOL PRINT ({cool_m.get('trigger_condition', '')}): {cool_m.get('pair_playbook', {}).get(sym, 'Watch for counter-reaction')}")
+            else:
+                branches = [
+                    "IF price sweeps session liquidity and prints M5 rejection -> Enter with confirmation",
+                    "IF H1 closes beyond stop boundary -> Stand down, structure invalidated"
+                ]
+
+            # Incorporate TrapRadar diagnostic if available
+            trap_info = p_data.get("trap_radar", {})
+            trap_state = trap_info.get("trap_state", "NONE")
+            if trap_state != "NONE":
+                trap_warning = f"[{trap_info.get('severity', 'HIGH')}] {trap_info.get('trap_title')}: {trap_info.get('description')}"
+                trap_check = f"Trap Alert: {trap_info.get('operational_guidance', {}).get('beginners')}"
+            else:
+                trap_warning = "Session opening spike / Judas swing often hunts pre-session stops before real expansion."
+                trap_check = "Monitor liquidity boundaries for false breakout wicks."
+
+            pairs_plan[sym] = {
+                    "executive_bottom_line": f"{bias} bias favored while price holds {'above' if bias == 'LONG' else 'below'} pivot {pivot}. Target {tp2}.",
+                    "primary_setup": {
+                        "bias": bias,
+                        "probability": prob,
+                        "entry_zone": f"{entry_low} - {entry_high}",
+                        "trigger_confirmation": f"M5 rejection wick >= 2x candle body at {pivot} + bullish engulfing close" if bias == "LONG" else f"M5 upper wick rejection at {pivot} + bearish engulfing close",
+                        "stop_loss": sl,
+                        "targets": [tp1, tp2, tp3],
+                        "trade_management": "Bank 50% risk off at TP1; trail stop to Breakeven. Avoid holding through unmanaged red folders."
+                    },
+                    "contingency_plan": {
+                        "scenario": "Sudden macro catalyst shock driving adverse breakout through stop loss.",
+                        "probability": "35%",
+                        "counter_zone": f"{pdl} - {pdh}",
+                        "invalidation": f"Hard H1 close {'below ' + str(pdl) if bias == 'LONG' else 'above ' + str(pdh)} voids the setup."
+                    },
+                    "macro_catalyst": {
+                        "primary_driver": primary_driver,
+                        "if_then_branches": branches
+                    },
+                    "traps_and_checklist": {
+                        "trap_warning": trap_warning,
+                        "checklist": [
+                            f"Set alert at entry zone boundary: {entry_low}",
+                            trap_check,
+                            "Check economic calendar 15 minutes before executing"
+                        ]
+                    },
+                    "catalyst_scenarios": scenarios,
+                    "trap_radar": trap_info
+                }
+
+        return {
+            "session": session_title,
+            "generated_at_utc": time_utc,
+            "global_macro_executive_thesis": executive_thesis,
+            "engine_mode": "SYNTHESIZED_RULE_BASED",
+            "pairs": pairs_plan
+        }
+
     def generate_briefing(self) -> Dict:
         """
         Executes a single batched prompt to Gemini 2.5 Flash for all 7 pairs.
-        Saves output to disk cache and updates state.
+        Falls back to rule-based synthesis if API key is absent or network fails.
         """
-        if not self.api_key:
-            log.warning("[SessionBriefing] No GEMINI_API_KEY found in config. Cannot generate AI briefing.")
-            return {}
-
         log.info("[SessionBriefing] Compiling real-time telemetry for all 7 pairs...")
         telemetry = self._build_telemetry_payload()
         session_title = telemetry["session"]
 
+        if not self.api_key:
+            log.info("[SessionBriefing] No GEMINI_API_KEY configured. Utilizing deterministic MacroScenarioEngine synthesis.")
+            briefing = self._generate_rule_based_briefing(telemetry)
+            with self._lock:
+                self.latest_briefing = briefing
+            self._save_cache()
+            return briefing
+
         user_prompt = f"""You are analyzing live institutional market telemetry 30 minutes before the upcoming {session_title}.
 Generate a comprehensive, tactical 5-block battle-plan for EACH of the 7 pairs: EURUSD, GBPUSD, USDJPY, GBPJPY, EURJPY, EURGBP, XAUUSD.
 
-TELEMETRY DATA (100% REAL-TIME LIVE DATA):
+TELEMETRY DATA (100% REAL-TIME LIVE DATA WITH EMBEDDED IF-THEN SCENARIOS):
 {json.dumps(telemetry, indent=2)}
 
 REQUIREMENTS:
@@ -254,7 +409,7 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
         t0 = time.time()
         try:
             log.info("[SessionBriefing] Dispatching single batched call to Gemini (%s)...", self.model)
-            with urllib.request.urlopen(req, timeout=120.0) as resp:
+            with urllib.request.urlopen(req, timeout=15.0) as resp:
                 raw_resp = json.loads(resp.read().decode("utf-8"))
                 text_content = raw_resp["candidates"][0]["content"]["parts"][0]["text"]
                 parsed_data = json.loads(text_content)
@@ -267,8 +422,12 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
                 self._save_cache()
                 return parsed_data
         except Exception as e:
-            log.error("[SessionBriefing] Gemini API call error: %s", e)
-            return {}
+            log.warning("[SessionBriefing] Gemini API call error: %s. Falling back to rule-based synthesis.", e)
+            briefing = self._generate_rule_based_briefing(telemetry)
+            with self._lock:
+                self.latest_briefing = briefing
+            self._save_cache()
+            return briefing
 
     def _scheduler_loop(self):
         """

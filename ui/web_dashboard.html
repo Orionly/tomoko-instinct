@@ -272,6 +272,101 @@
     justify-content: space-between;
   }
 
+  /* ================== TRAP & SWEEP RADAR STRIP ================== */
+  .trap-radar-strip {
+    margin-top: 10px;
+    background: linear-gradient(90deg, rgba(16, 22, 36, 0.95) 0%, rgba(13, 17, 27, 0.95) 100%);
+    border: 1px solid rgba(255, 68, 85, 0.25);
+    border-radius: 8px;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    overflow-x: auto;
+  }
+  .trap-strip-lead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    color: #ff4455;
+    white-space: nowrap;
+    text-transform: uppercase;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    padding-right: 12px;
+  }
+  .trap-strip-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ff4455;
+    box-shadow: 0 0 8px #ff4455;
+    animation: trapPulse 1.8s infinite;
+  }
+  @keyframes trapPulse {
+    0% { transform: scale(0.95); opacity: 0.7; }
+    50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 12px #ff4455; }
+    100% { transform: scale(0.95); opacity: 0.7; }
+  }
+  .trap-strip-items {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    overflow-x: auto;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+  .trap-strip-items::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+  }
+  .trap-item-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    text-decoration: none;
+    color: #cbd5e1;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+  }
+  .trap-item-pill:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 215, 0, 0.4);
+    transform: translateY(-1px);
+  }
+  .trap-item-sym {
+    font-weight: 800;
+    color: #fff;
+  }
+  .trap-item-status-bull {
+    color: #ff4455;
+    font-weight: 700;
+    font-size: 10px;
+  }
+  .trap-item-status-bear {
+    color: #00d4aa;
+    font-weight: 700;
+    font-size: 10px;
+  }
+  .trap-item-status-stalking {
+    color: #ffd700;
+    font-weight: 700;
+    font-size: 10px;
+  }
+  .trap-item-status-clear {
+    color: #64748b;
+    font-weight: 600;
+    font-size: 10px;
+  }
+
   /* ================== MACRO EXECUTIVE DECK ================== */
   .macro-exec-deck {
     display: grid;
@@ -1662,7 +1757,16 @@
     </div>
   </header>
 
-  <div id="api-banner" style="display:none;"></div>
+  <!-- PROMINENT CROWD TRAP & LIQUIDITY SWEEP RADAR STRIP -->
+  <div class="trap-radar-strip" id="trap-radar-strip">
+    <div class="trap-strip-lead">
+      <span class="trap-strip-dot"></span>
+      <span>TRAP & SWEEP RADAR</span>
+    </div>
+    <div class="trap-strip-items" id="trap-strip-items">
+      <span style="font-size:11px;color:#64748b;font-style:italic;">Scanning order flow and liquidity pools...</span>
+    </div>
+  </div>
 
   <!-- MACRO INTELLIGENCE COCKPIT -->
   <div id="macro-cockpit">
@@ -1769,6 +1873,7 @@
         </div>
       </div>
     </div>
+
 
     <!-- 3-CARD MACRO EXECUTIVE DECK -->
     <div class="macro-exec-deck" id="macro-exec-deck">
@@ -3299,6 +3404,58 @@ async function poll(){
       if(gj.events && gj.events.length) renderGlobalCalendar(gj.events);
     }catch(e){}
   }
+
+  // 4. /api/traps (Crowd Trap & Liquidity Sweep Radar)
+  try {
+    const tr = await fetch('/api/traps');
+    const tj = await tr.json();
+    renderTrapRadarStrip(tj);
+  } catch(e){}
+}
+
+function renderTrapRadarStrip(data){
+  const strip = document.getElementById('trap-radar-strip');
+  const itemsBox = document.getElementById('trap-strip-items');
+  if(!strip || !itemsBox) return;
+
+  const traps = (data && (data.pairs || data.traps)) ? (data.pairs || data.traps) : {};
+  const syms = Object.keys(traps);
+  if(!syms.length){
+    return;
+  }
+
+  let html = '';
+  syms.forEach(sym => {
+    const t = traps[sym];
+    const status = t.trap_status || 'MONITORING';
+    let statusClass = 'trap-item-status-clear';
+    let icon = '⚡';
+    if(status.includes('BULL_TRAP')){
+      statusClass = 'trap-item-status-bull';
+      icon = '🚨 BULL TRAP';
+    } else if(status.includes('BEAR_TRAP')){
+      statusClass = 'trap-item-status-bear';
+      icon = '🚨 BEAR TRAP';
+    } else if(status.includes('STALKING') || status.includes('PURGE_WATCH')){
+      statusClass = 'trap-item-status-stalking';
+      icon = '👁️ STALKING';
+    } else {
+      icon = '🟢 ORDERLY';
+    }
+
+    const pool = t.nearest_pool ? ` | Pool: ${t.nearest_pool.level}` : '';
+    const skew = t.retail_skew ? ` (${t.retail_skew.crowd_state})` : '';
+
+    html += `
+      <a class="trap-item-pill" href="/pair/${sym}" title="${t.summary || ''}">
+        <span class="trap-item-sym">${sym}</span>
+        <span class="${statusClass}">${icon}${pool}${skew}</span>
+      </a>
+    `;
+  });
+
+  itemsBox.innerHTML = html;
+  strip.style.display = 'flex';
 }
 
 async function loadLogs(){

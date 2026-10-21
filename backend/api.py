@@ -35,6 +35,8 @@ from core.context_feed import ContextFeed
 from core.macro_intelligence_engine import MacroIntelligenceEngine
 from core.news_engine import NewsEngine, WAITING_SOURCE, _parse_event_time
 from core.world_news_engine import get_world_news_engine
+from core.macro_scenario_engine import MacroScenarioEngine
+from core.trap_radar_engine import TrapRadarEngine
 from core.session_briefing_engine import SessionBriefingEngine
 import config
 
@@ -77,6 +79,70 @@ def get_news_engine():
     if _news_engine is None:
         _news_engine = NewsEngine(get_price_engine())
     return _news_engine
+
+
+_macro_engine = None
+
+
+def get_macro_engine():
+    global _macro_engine
+    if _macro_engine is None:
+        _macro_engine = MacroIntelligenceEngine()
+    return _macro_engine
+
+
+_levels_engine = None
+
+
+def get_levels_engine():
+    global _levels_engine
+    if _levels_engine is None:
+        _levels_engine = LevelsEngine()
+    return _levels_engine
+
+
+_macro_scenario_engine = None
+
+
+def get_macro_scenario_engine():
+    global _macro_scenario_engine
+    if _macro_scenario_engine is None:
+        _macro_scenario_engine = MacroScenarioEngine(
+            news_engine=get_news_engine(),
+            macro_engine=get_macro_engine(),
+            price_engine=get_price_engine(),
+        )
+    return _macro_scenario_engine
+
+
+_trap_radar_engine = None
+
+
+def get_trap_radar_engine():
+    global _trap_radar_engine
+    if _trap_radar_engine is None:
+        _trap_radar_engine = TrapRadarEngine(
+            price_engine=get_price_engine(),
+            levels_engine=get_levels_engine(),
+        )
+    return _trap_radar_engine
+
+
+_session_briefing_engine = None
+
+
+def get_session_briefing_engine():
+    global _session_briefing_engine
+    if _session_briefing_engine is None:
+        _session_briefing_engine = SessionBriefingEngine(
+            price_engine=get_price_engine(),
+            levels_engine=get_levels_engine(),
+            news_engine=get_news_engine(),
+            macro_engine=get_macro_engine(),
+            macro_scenario_engine=get_macro_scenario_engine(),
+            trap_radar_engine=get_trap_radar_engine(),
+        )
+    return _session_briefing_engine
 
 # Calendar module globals - ensure same module instances, not new instances
 
@@ -576,6 +642,8 @@ def get_pair_deep(symbol: str):
     upcoming = get_news_engine().get_upcoming_events(symbol, hours_ahead=168)
     currencies = get_price_engine().get_currencies(symbol)
     briefing = get_session_briefing_engine().get_briefing(symbol)
+    traps = get_trap_radar_engine().scan_pair_liquidity_traps(symbol)
+    scenarios = get_macro_scenario_engine().get_pair_catalyst_briefing(symbol)
     return sanitize_for_json({
         "symbol": symbol,
         "currencies": currencies,
@@ -586,6 +654,8 @@ def get_pair_deep(symbol: str):
             "generated_at_utc": briefing.get("generated_at_utc"),
             "global_macro_executive_thesis": briefing.get("global_macro_executive_thesis"),
         },
+        "trap_radar": traps,
+        "macro_scenarios": scenarios,
         "heatmap": heatmap_row,
         "calendar": upcoming,
         "calendar_count": len(upcoming),
@@ -595,33 +665,10 @@ def get_pair_deep(symbol: str):
     })
 
 
-_session_briefing_engine = None
-
-def get_session_briefing_engine():
-    global _session_briefing_engine
-    if _session_briefing_engine is None:
-        _session_briefing_engine = SessionBriefingEngine(
-            price_engine=get_price_engine(),
-            levels_engine=LevelsEngine(),
-            news_engine=get_news_engine(),
-            macro_engine=get_macro_engine(),
-        )
-    return _session_briefing_engine
-
-
 @app.get("/api/session_briefing")
 def get_session_briefing_api(symbol: Optional[str] = None):
     """Returns the latest scheduled institutional Pre-Session AI Trade Battle-Plan."""
     return sanitize_for_json(get_session_briefing_engine().get_briefing(symbol))
-
-
-_macro_engine = None
-
-def get_macro_engine():
-    global _macro_engine
-    if _macro_engine is None:
-        _macro_engine = MacroIntelligenceEngine()
-    return _macro_engine
 
 
 @app.get("/api/macro_intel")
@@ -688,6 +735,101 @@ def get_geopolitical_shocks(max_age_minutes: int = 60):
         })
     except Exception as e:
         return {"active": False, "count": 0, "shocks": [], "error": str(e)}
+
+
+# --- Pre-Session Battle-Plan & Macro Scenario Routes ------------------------ #
+@app.get("/api/briefing")
+def get_session_briefing():
+    """Retrieve latest institutional Pre-Session Battle-Plan across all pairs."""
+    try:
+        engine = get_session_briefing_engine()
+        briefing = engine.get_briefing()
+        if not briefing:
+            briefing = engine.generate_briefing()
+        return sanitize_for_json(briefing)
+    except Exception as e:
+        return {"error": str(e), "pairs": {}}
+
+
+@app.get("/api/briefing/{symbol}")
+def get_pair_briefing(symbol: str):
+    """Retrieve tactical Pre-Session Battle-Plan for a specific pair."""
+    try:
+        engine = get_session_briefing_engine()
+        briefing = engine.get_briefing(symbol=symbol)
+        if not briefing or not briefing.get("plan"):
+            full = engine.generate_briefing()
+            briefing = engine.get_briefing(symbol=symbol)
+        return sanitize_for_json(briefing)
+    except Exception as e:
+        return {"error": str(e), "symbol": symbol}
+
+
+@app.post("/api/briefing/generate")
+def force_generate_briefing():
+    """Trigger on-demand pre-session briefing generation across all pairs."""
+    try:
+        engine = get_session_briefing_engine()
+        res = engine.generate_briefing()
+        return sanitize_for_json({"success": True, "briefing": res})
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/scenarios")
+def get_macro_scenarios(hours_ahead: int = 48, min_priority: int = 2):
+    """Retrieve all catalyst-to-pair If-Then scenario trees for upcoming high/medium releases."""
+    try:
+        engine = get_macro_scenario_engine()
+        trees = engine.get_upcoming_scenarios(hours_ahead=hours_ahead, min_priority=min_priority)
+        return sanitize_for_json({
+            "count": len(trees),
+            "scenarios": trees,
+        })
+    except Exception as e:
+        return {"count": 0, "scenarios": [], "error": str(e)}
+
+
+@app.get("/api/pair/{symbol}/scenarios")
+def get_pair_macro_scenarios(symbol: str):
+    """Retrieve pair-centric catalyst synthesis, intermarket posture, and If-Then scenario trees."""
+    try:
+        engine = get_macro_scenario_engine()
+        briefing = engine.get_pair_catalyst_briefing(symbol=symbol)
+        return sanitize_for_json(briefing)
+    except Exception as e:
+        return {"symbol": symbol, "error": str(e), "catalysts": []}
+
+
+# --- Crowd Trap & Liquidity Sweep Radar Routes ------------------------------ #
+@app.get("/api/traps")
+def get_all_liquidity_traps():
+    """Scan all 7 pairs for active Buy-Side / Sell-Side liquidity purges and crowd traps."""
+    try:
+        radar = get_trap_radar_engine()
+        results = radar.scan_all_pairs()
+        return sanitize_for_json(results)
+    except Exception as e:
+        return {"scanned_count": 0, "active_traps_count": 0, "active_traps": [], "error": str(e)}
+
+
+@app.get("/api/pair/{symbol}/traps")
+def get_pair_liquidity_traps(symbol: str):
+    """Retrieve deep liquidity pool diagnosis (BSL/SSL), sweep state, and crowd positioning skew."""
+    try:
+        radar = get_trap_radar_engine()
+        res = radar.scan_pair_liquidity_traps(symbol=symbol)
+        return sanitize_for_json(res)
+    except Exception as e:
+        return {"symbol": symbol, "error": str(e), "trap_state": "ERROR"}
+
+
+# --- Local Private Extensions (Auto-loaded if present, git-ignored) --------- #
+try:
+    from backend.private_routes import register_private_routes
+    register_private_routes(app)
+except Exception:
+    pass
 
 
 @app.get("/", response_class=HTMLResponse)
