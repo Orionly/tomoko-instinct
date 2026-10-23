@@ -505,9 +505,9 @@ class PriceEngine:
         """Batch downloads latest bars for H1, M15, D1."""
         tickers = list(YF_MAP.values())
 
-        # 1. Download H1 (used for H1 and resampled to H4)
+        # 1. Download H1 (used for H1 and resampled to H4) - 60 days provides ~1,400 H1 bars and ~350 H4 bars
         try:
-            df_h1_raw = yf.download(tickers, period="10d", interval="1h", progress=False)
+            df_h1_raw = yf.download(tickers, period="60d", interval="1h", progress=False)
             now_ts = time.time()
             for pair, yf_sym in YF_MAP.items():
                 try:
@@ -592,9 +592,9 @@ class PriceEngine:
         except Exception as e:
             log.warning("[PriceEngine] Batch yfinance download warning: %s", e)
 
-        # 2. Download M15 for M15 bias
+        # 2. Download M15 for M15 bias and intraday charting (~1,300 bars)
         try:
-            df_m15_raw = yf.download(tickers, period="3d", interval="15m", progress=False)
+            df_m15_raw = yf.download(tickers, period="14d", interval="15m", progress=False)
             for pair, yf_sym in YF_MAP.items():
                 try:
                     if len(tickers) == 1:
@@ -634,6 +634,44 @@ class PriceEngine:
                     log.debug("[PriceEngine] M15 pair %s error: %s", pair, ex)
         except Exception as e:
             log.warning("[PriceEngine] M15 yfinance download warning: %s", e)
+
+        # 3. Download D1 for long-term daily context (1 year = ~250-365 daily bars)
+        try:
+            df_d1_raw = yf.download(tickers, period="1y", interval="1d", progress=False)
+            for pair, yf_sym in YF_MAP.items():
+                try:
+                    if len(tickers) == 1:
+                        sub = df_d1_raw.copy()
+                    else:
+                        sub = pd.DataFrame({
+                            "open": df_d1_raw["Open"][yf_sym],
+                            "high": df_d1_raw["High"][yf_sym],
+                            "low": df_d1_raw["Low"][yf_sym],
+                            "close": df_d1_raw["Close"][yf_sym],
+                            "volume": df_d1_raw["Volume"][yf_sym] if "Volume" in df_d1_raw else 0,
+                        }).dropna()
+                    if not sub.empty:
+                        if pair == "XAUUSD" and "XAUUSD" in self.latest_prices:
+                            spot_p = self.latest_prices["XAUUSD"]["price"]
+                            last_c = float(sub["close"].iloc[-1])
+                            diff = spot_p - last_c
+                            if abs(diff) > 0.1:
+                                sub["open"] = (sub["open"] + diff).round(2)
+                                sub["high"] = (sub["high"] + diff).round(2)
+                                sub["low"] = (sub["low"] + diff).round(2)
+                                sub["close"] = (sub["close"] + diff).round(2)
+
+                        sub.index = pd.to_datetime(sub.index)
+                        sub["time"] = sub.index
+                        d1_ind = self._add_indicators(sub)
+                        with self._lock:
+                            if pair not in self.candles_cache:
+                                self.candles_cache[pair] = {}
+                            self.candles_cache[pair]["D1"] = d1_ind
+                except Exception as ex:
+                    log.debug("[PriceEngine] D1 pair %s error: %s", pair, ex)
+        except Exception as e:
+            log.warning("[PriceEngine] D1 yfinance download warning: %s", e)
 
         # Save to disk cache for instantaneous reloads
         self._save_disk_cache()
@@ -690,7 +728,7 @@ class PriceEngine:
                 return dict(self.latest_prices[symbol])
         return None
 
-    def get_rates(self, symbol: str, timeframe, count: int = 200) -> pd.DataFrame:
+    def get_rates(self, symbol: str, timeframe, count: int = 600) -> pd.DataFrame:
         """
         Returns indicator-augmented DataFrame for symbol & timeframe.
         Accepts MT5 timeframe constants (16388=H4, 16385=H1, 15=M15, 16408=D1, 32769=W1) or strings.

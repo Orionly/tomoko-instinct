@@ -121,22 +121,23 @@ def calculate_tf_decision_zones(
     if atr <= 0:
         atr = 0.0020 if not is_gold else 2.50
 
-    # Zone width factors by timeframe
+    # Zone width factors and strict buffers by timeframe
+    min_pip = 1.0 if is_gold else (0.02 if is_jpy else 0.0002)
     if timeframe.lower() == "m15":
         lookback = 45
         window = 2
-        zone_half = atr * 0.20
-        min_buffer = atr * 0.08
+        zone_half = max(atr * 0.25, min_pip * 0.8)
+        min_buffer = max(atr * 0.25, min_pip)
     elif timeframe.lower() == "h1":
         lookback = 60
         window = 2
-        zone_half = atr * 0.25
-        min_buffer = atr * 0.12
+        zone_half = max(atr * 0.30, min_pip * 1.0)
+        min_buffer = max(atr * 0.30, min_pip * 1.5)
     else:  # h4
         lookback = 80
         window = 3
-        zone_half = atr * 0.30
-        min_buffer = atr * 0.15
+        zone_half = max(atr * 0.35, min_pip * 1.5)
+        min_buffer = max(atr * 0.35, min_pip * 2.0)
 
     # 1. Collect swing points
     raw_levels = _find_swing_levels(df, lookback=lookback, window=window)
@@ -346,19 +347,29 @@ def calculate_tf_decision_zones(
     def build_zone(item: Optional[Dict[str, Any]], zone_id: str, default_offset: float, is_upper: bool) -> Dict[str, Any]:
         if item is not None:
             center = item["price"]
-            low = min(item["min_price"] - zone_half * 0.3, center - zone_half)
-            high = max(item["max_price"] + zone_half * 0.3, center + zone_half)
+            raw_low = min(item["min_price"] - zone_half * 0.3, center - zone_half)
+            raw_high = max(item["max_price"] + zone_half * 0.3, center + zone_half)
             confluences = item["labels"]
             is_flip = ("SWING_HIGH" in item.get("types", []) and not is_upper) or \
                       ("SWING_LOW" in item.get("types", []) and is_upper)
             flip_note = "🔁 S/R FLIP RETEST ZONE (Broken Structure)" if is_flip else None
         else:
-            # Fallback synthetic structural projection (e.g. in strong trend breakout)
             center = current_price + default_offset
-            low = center - zone_half
-            high = center + zone_half
+            raw_low = center - zone_half
+            raw_high = center + zone_half
             confluences = [f"Structural {timeframe.upper()} ATR Extension (+{abs(default_offset/atr):.1f}x ATR)"]
             flip_note = None
+
+        if is_upper:
+            # Upper Zone (Supply) sits strictly ABOVE current price
+            low = max(raw_low, current_price + min_buffer * 0.4)
+            high = max(raw_high, low + zone_half * 0.6)
+            center = (low + high) / 2
+        else:
+            # Lower Zone (Demand) sits strictly BELOW current price
+            high = min(raw_high, current_price - min_buffer * 0.4)
+            low = min(raw_low, high - zone_half * 0.6)
+            center = (low + high) / 2
 
         diff = center - current_price
         if is_gold:
@@ -672,10 +683,24 @@ def calculate_m15_decision_zones(
         atr = 2.50 if is_gold else (0.15 if is_jpy else 0.0010)
 
     # Box tolerance & separation constraints
-    cluster_tol = max(1.2, atr * 0.35) if is_gold else max(0.0004, atr * 0.35)
-    min_box_h = max(2.0, atr * 0.40) if is_gold else max(0.0006, atr * 0.40)
-    max_box_h = max(5.5, atr * 0.95) if is_gold else max(0.0018, atr * 0.95)
-    min_separation = max(3.5, atr * 0.80) if is_gold else max(0.0010, atr * 0.80)
+    if is_gold:
+        cluster_tol = max(1.2, atr * 0.35)
+        min_box_h = max(2.0, atr * 0.40)
+        max_box_h = max(5.5, atr * 0.95)
+        min_separation = max(3.5, atr * 0.80)
+        min_buffer = max(1.0, atr * 0.25)
+    elif is_jpy:
+        cluster_tol = max(0.04, atr * 0.35)
+        min_box_h = max(0.06, atr * 0.40)
+        max_box_h = max(0.25, atr * 0.95)
+        min_separation = max(0.12, atr * 0.80)
+        min_buffer = max(0.04, atr * 0.25)
+    else:
+        cluster_tol = max(0.0003, atr * 0.35)
+        min_box_h = max(0.0005, atr * 0.40)
+        max_box_h = max(0.0020, atr * 0.95)
+        min_separation = max(0.0008, atr * 0.80)
+        min_buffer = max(0.0003, atr * 0.25)
 
     # 1. Detect candidate shelves from recent M15 action (last 80 bars ~ 20 hours)
     lookback = min(80, len(df)) if df is not None else 0
@@ -790,15 +815,6 @@ def calculate_m15_decision_zones(
     ceilings = merge_shelves(raw_ceilings)
     floors = merge_shelves(raw_floors)
 
-    # Filter Above (Ceilings) & Below (Floors)
-    buffer = atr * 0.08
-    above = [c for c in ceilings if c["low"] >= (current_price - buffer)]
-    below = [f for f in floors if f["high"] <= (current_price + buffer)]
-
-    # Sort above ascending (nearest first), below descending (nearest first)
-    above.sort(key=lambda x: x["center"])
-    below.sort(key=lambda x: x["center"], reverse=True)
-
     # Session extreme peaks/troughs
     if subset is not None and len(subset) > 0:
         session_max_h = _safe_float(subset['high'].max())
@@ -807,69 +823,97 @@ def calculate_m15_decision_zones(
         session_max_h = current_price + atr * 2.0
         session_min_l = current_price - atr * 2.0
 
+    # Upper Zones (Supply / Resistance) MUST sit strictly ABOVE current price
+    valid_ceilings = [c for c in ceilings if c["high"] >= (current_price + min_buffer)]
+    valid_ceilings.sort(key=lambda x: x["center"])
+
     # Upper Zone 1 (Immediate Resistance Shelf)
-    if above:
-        u1_shelf = above[0]
+    if valid_ceilings:
+        c1 = valid_ceilings[0]
+        bot = max(c1["low"], current_price + min_buffer)
+        top = max(c1["high"], bot + min_box_h)
+        if (top - bot) > max_box_h:
+            top = bot + max_box_h
+        u1_shelf = {
+            "low": bot, "high": top, "center": (top + bot) / 2.0,
+            "midline": (top + bot) / 2.0, "strength": c1.get("strength", 1),
+            "bars_ago": c1.get("bars_ago", 0), "type": "SUPPLY_SHELF"
+        }
     else:
-        top = current_price + atr * 0.8
-        bot = top - min_box_h
+        bot = current_price + min_buffer + (atr * 0.40)
+        top = bot + min_box_h
         u1_shelf = {
             "low": bot, "high": top, "center": (top + bot) / 2.0,
             "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "SUPPLY_SHELF"
         }
 
-    # Upper Zone 2 (Secondary Resistance / Liquidity Sweep High)
+    # Upper Zone 2 (Secondary Resistance / Liquidity Sweep High) - strictly above u1_shelf
     min_u2_low = u1_shelf["high"] + min_separation
-    u2_candidates = [c for c in above[1:] if c["low"] >= min_u2_low]
+    u2_candidates = [c for c in valid_ceilings if c["high"] >= (min_u2_low + min_box_h * 0.5)]
     if u2_candidates:
-        u2_shelf = u2_candidates[0]
+        c2 = min(u2_candidates, key=lambda x: abs(x["center"] - (u1_shelf["high"] + atr * 1.5)))
+        bot = max(c2["low"], min_u2_low)
+        top = max(c2["high"], bot + min_box_h)
+        if (top - bot) > max_box_h:
+            top = bot + max_box_h
+        u2_shelf = {
+            "low": bot, "high": top, "center": (top + bot) / 2.0,
+            "midline": (top + bot) / 2.0, "strength": c2.get("strength", 2),
+            "bars_ago": c2.get("bars_ago", 1), "type": "SWEEP_HIGH"
+        }
     else:
-        if session_max_h >= min_u2_low:
-            top = session_max_h
-            bot = top - min_box_h
-            u2_shelf = {
-                "low": bot, "high": top, "center": (top + bot) / 2.0,
-                "midline": (top + bot) / 2.0, "strength": 2, "bars_ago": 1, "type": "SWEEP_HIGH"
-            }
-        else:
-            top = max(u1_shelf["high"] + atr * 1.5, session_max_h)
-            bot = top - min_box_h
-            u2_shelf = {
-                "low": bot, "high": top, "center": (top + bot) / 2.0,
-                "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "SUPPLY_EXPANSION"
-            }
+        bot = max(min_u2_low, session_max_h if session_max_h >= min_u2_low else u1_shelf["high"] + atr * 1.2)
+        top = bot + min_box_h
+        u2_shelf = {
+            "low": bot, "high": top, "center": (top + bot) / 2.0,
+            "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "SUPPLY_EXPANSION"
+        }
+
+    # Lower Zones (Demand / Support) MUST sit strictly BELOW current price
+    valid_floors = [f for f in floors if f["low"] <= (current_price - min_buffer)]
+    valid_floors.sort(key=lambda x: x["center"], reverse=True)
 
     # Lower Zone 1 (Immediate Support Shelf)
-    if below:
-        l1_shelf = below[0]
+    if valid_floors:
+        f1 = valid_floors[0]
+        top = min(f1["high"], current_price - min_buffer)
+        bot = min(f1["low"], top - min_box_h)
+        if (top - bot) > max_box_h:
+            bot = top - max_box_h
+        l1_shelf = {
+            "low": bot, "high": top, "center": (top + bot) / 2.0,
+            "midline": (top + bot) / 2.0, "strength": f1.get("strength", 1),
+            "bars_ago": f1.get("bars_ago", 0), "type": "DEMAND_SHELF"
+        }
     else:
-        bot = current_price - atr * 0.8
-        top = bot + min_box_h
+        top = current_price - min_buffer - (atr * 0.40)
+        bot = top - min_box_h
         l1_shelf = {
             "low": bot, "high": top, "center": (top + bot) / 2.0,
             "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "DEMAND_SHELF"
         }
 
-    # Lower Zone 2 (Secondary Support / Session Launchpad / Sweep Low)
+    # Lower Zone 2 (Secondary Support / Session Launchpad / Sweep Low) - strictly below l1_shelf
     max_l2_high = l1_shelf["low"] - min_separation
-    l2_candidates = [f for f in below[1:] if f["high"] <= max_l2_high]
+    l2_candidates = [f for f in valid_floors if f["low"] <= (max_l2_high - min_box_h * 0.5)]
     if l2_candidates:
-        l2_shelf = l2_candidates[0]
+        f2 = min(l2_candidates, key=lambda x: abs(x["center"] - (l1_shelf["low"] - atr * 1.5)))
+        top = min(f2["high"], max_l2_high)
+        bot = min(f2["low"], top - min_box_h)
+        if (top - bot) > max_box_h:
+            bot = top - max_box_h
+        l2_shelf = {
+            "low": bot, "high": top, "center": (top + bot) / 2.0,
+            "midline": (top + bot) / 2.0, "strength": f2.get("strength", 2),
+            "bars_ago": f2.get("bars_ago", 1), "type": "SWEEP_LOW"
+        }
     else:
-        if session_min_l <= max_l2_high:
-            bot = session_min_l
-            top = bot + min_box_h
-            l2_shelf = {
-                "low": bot, "high": top, "center": (top + bot) / 2.0,
-                "midline": (top + bot) / 2.0, "strength": 2, "bars_ago": 1, "type": "SWEEP_LOW"
-            }
-        else:
-            bot = min(l1_shelf["low"] - atr * 1.5, session_min_l)
-            top = bot + min_box_h
-            l2_shelf = {
-                "low": bot, "high": top, "center": (top + bot) / 2.0,
-                "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "DEMAND_EXPANSION"
-            }
+        top = min(max_l2_high, session_min_l if session_min_l <= max_l2_high else l1_shelf["low"] - atr * 1.2)
+        bot = top - min_box_h
+        l2_shelf = {
+            "low": bot, "high": top, "center": (top + bot) / 2.0,
+            "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "DEMAND_EXPANSION"
+        }
 
     # Helper to evaluate order flow interaction
     def evaluate_zone_interaction(z_low: float, z_high: float, is_upper: bool, z_title: str) -> Dict[str, Any]:

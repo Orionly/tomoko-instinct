@@ -7,6 +7,10 @@ import sys
 import csv
 import time
 import threading
+import logging
+import pandas as pd
+
+log = logging.getLogger(__name__)
 
 # Ensure project root (parent of backend/) is importable
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -627,6 +631,86 @@ def serve_pair(symbol: str):
     html_path = os.path.join(ROOT, "ui", "pair.html")
     return FileResponse(html_path, headers={
         "Cache-Control": "no-cache, no-store, must-revalidate",
+    })
+
+
+@app.get("/ui/lightweight-charts.standalone.production.js")
+def serve_lightweight_charts_js():
+    js_path = os.path.join(ROOT, "ui", "lightweight-charts.standalone.production.js")
+    if os.path.exists(js_path):
+        return FileResponse(js_path, media_type="application/javascript", headers={
+            "Cache-Control": "public, max-age=86400",
+        })
+    raise HTTPException(status_code=404, detail="Library not found")
+
+
+@app.get("/api/pair/{symbol}/candles")
+def get_pair_candles(symbol: str, tf: str = "H1", limit: int = 500):
+    """
+    Returns sanitized OHLC candlestick data formatted for TradingView Lightweight Charts,
+    along with marked zones from trader_profile.json and active decision zones.
+    """
+    symbol = symbol.upper()
+    tf_upper = tf.upper()
+    pe = get_price_engine()
+    df = pe.get_rates(symbol, tf_upper, count=limit)
+    
+    candles = []
+    seen_times = set()
+    dec = 2 if "XAU" in symbol else (3 if "JPY" in symbol else 5)
+    
+    if df is not None and not df.empty:
+        for idx, row in df.iterrows():
+            t_val = row.get("time", idx)
+            ts = None
+            if hasattr(t_val, "timestamp"):
+                ts = int(t_val.timestamp())
+            elif isinstance(idx, (pd.Timestamp, datetime)):
+                ts = int(idx.timestamp())
+            else:
+                try:
+                    ts = int(pd.to_datetime(t_val).timestamp())
+                except Exception:
+                    continue
+            if ts is None or ts in seen_times:
+                continue
+            seen_times.add(ts)
+            candles.append({
+                "time": ts,
+                "open": round(safe_float(row["open"]), dec),
+                "high": round(safe_float(row["high"]), dec),
+                "low": round(safe_float(row["low"]), dec),
+                "close": round(safe_float(row["close"]), dec),
+                "volume": round(safe_float(row.get("volume", 0)), 1),
+            })
+            
+    candles.sort(key=lambda x: x["time"])
+    
+    # Retrieve marked zones from trader_profile.json
+    ingested_zones = []
+    try:
+        from core.markup_ingestion_engine import load_trader_profile
+        prof = load_trader_profile()
+        active = prof.get("active_session", {})
+        tf_session = active.get(tf_upper, {})
+        if tf_session and tf_session.get("symbol") == symbol:
+            ingested_zones = tf_session.get("zones", [])
+        elif not tf_session:
+            for _tf_key, _sess in active.items():
+                if _sess.get("symbol") == symbol and _sess.get("zones"):
+                    ingested_zones = _sess.get("zones")
+                    break
+    except Exception as ex:
+        log.debug("Error loading ingested zones for candles: %s", ex)
+        
+    cur_p = (pe.latest_prices.get(symbol) or {}).get("price", candles[-1]["close"] if candles else 0.0)
+    
+    return sanitize_for_json({
+        "symbol": symbol,
+        "timeframe": tf_upper,
+        "candles": candles,
+        "current_price": cur_p,
+        "ingested_zones": ingested_zones,
     })
 
 

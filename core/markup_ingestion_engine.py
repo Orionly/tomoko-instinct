@@ -195,7 +195,7 @@ def purge_old_archives(retention_days: int = 3) -> int:
         if os.path.isdir(item_path):
             try:
                 folder_date = datetime.strptime(item, "%Y-%m-%d").replace(tzinfo=MYT)
-                if folder_date.date() < cutoff.date():
+                if (now.date() - folder_date.date()).days >= retention_days:
                     shutil.rmtree(item_path)
                     purged_count += 1
                     print(f"[PURGE] Auto-deleted expired archive folder: {item} (older than {retention_days} days)")
@@ -213,6 +213,7 @@ def purge_old_archives(retention_days: int = 3) -> int:
                 os.remove(item_path)
                 purged_count += 1
                 print(f"[PURGE] Auto-deleted expired file: {item}")
+    return purged_count
 
 def get_pending_markups(max_files: int = 3) -> List[str]:
     """Return up to max_files newest chart images in markups/ folder waiting to be ingested."""

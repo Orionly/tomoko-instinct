@@ -6,6 +6,12 @@
 <title>Tomoko // Pair Deep Dive V5.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="/ui/lightweight-charts.standalone.production.js"></script>
+<script>
+  if (typeof LightweightCharts === 'undefined') {
+    document.write('<script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"><\\/script>');
+  }
+</script>
 <style>
   :root{
     --bg:#05070A; --card:#0C111B; --glass:rgba(18,24,36,0.72); --border:#1A2234;
@@ -401,60 +407,96 @@
     box-shadow:0 0 10px rgba(0,229,255,0.25);
   }
 
-  .dz-stack{ display:flex; flex-direction:column; gap:8px; margin-top:8px; }
-  .dz-card{
-    background:rgba(12,17,27,0.7); border:1px solid var(--border); border-radius:10px;
-    padding:12px 14px; position:relative; transition:all .15s ease-out;
+  /* Decision Zone Candlestick Chart Box */
+  .dz-chart-box{
+    background:rgba(8,12,20,0.92); border:1px solid var(--border); border-radius:10px;
+    overflow:hidden; margin-top:10px; position:relative; box-shadow:0 8px 24px rgba(0,0,0,0.35);
   }
-  .dz-card.upper{ border-left:3px solid var(--bear); }
-  .dz-card.lower{ border-left:3px solid var(--bull); }
-  .dz-card.flip{ border-left:3px solid var(--gold); background:rgba(255,184,0,0.04); }
-  .dz-card:hover{ background:rgba(18,25,40,0.85); transform:translateX(2px); }
+  .dz-chart-topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:8px 14px; background:rgba(14,20,32,0.95); border-bottom:1px solid rgba(255,255,255,0.06);
+    flex-wrap:wrap; gap:8px;
+  }
+  .dz-chart-legend{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:10px; font-family:'JetBrains Mono',monospace;
+  }
+  .legend-pill{ display:inline-flex; align-items:center; gap:5px; color:#94A3B8; font-weight:600; }
+  .legend-box.bear{ width:9px; height:9px; border-radius:2px; background:rgba(255,90,121,0.25); border:1px solid var(--bear); }
+  .legend-box.bull{ width:9px; height:9px; border-radius:2px; background:rgba(0,255,136,0.25); border:1px solid var(--bull); }
+  .legend-line.ce{ width:12px; height:2px; background:#C084FC; border-radius:1px; }
+  .legend-dot.live{ width:6px; height:6px; border-radius:50%; background:var(--cyan); box-shadow:0 0 6px var(--cyan); animation:pulseDot 1.5s infinite; }
+  .dz-chart-actions{ display:flex; align-items:center; gap:8px; }
+  .dz-chart-status{ font-family:'JetBrains Mono',monospace; font-size:9.5px; color:#64748B; font-weight:600; }
+  .dz-chart-btn{
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; color:#CBD5E1;
+    background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:5px;
+    padding:3px 9px; cursor:pointer; transition:all 0.15s;
+  }
+  .dz-chart-btn:hover{ background:rgba(0,229,255,0.15); color:var(--cyan); border-color:var(--cyan); }
+  .dz-chart-btn.active{ background:rgba(0,229,255,0.18); color:var(--cyan); border-color:var(--cyan); }
+  .dz-chart-viewport{ position:relative; width:100%; height:380px; background:#070B12; overflow:hidden; }
+  .dz-chart-overlay{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:2; }
+  .dz-chart-loading{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(7,11,18,0.85); color:var(--cyan); font-family:'JetBrains Mono',monospace;
+    font-size:12px; font-weight:700; z-index:3; letter-spacing:0.04em;
+  }
 
-  .dz-header{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; flex-wrap:wrap; gap:6px; }
-  .dz-title-wrap{ display:flex; align-items:center; gap:8px; }
+  /* Compact Zone Telemetry Strip */
+  .dz-compact-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;
+  }
+  @media(max-width:768px){ .dz-compact-grid{ grid-template-columns:1fr; } }
+  .dz-compact-card{
+    background:rgba(12,17,27,0.7); border:1px solid var(--border); border-radius:8px;
+    padding:10px 14px; display:flex; flex-direction:column; gap:6px; position:relative;
+    transition:all .15s ease-out;
+  }
+  .dz-compact-card.upper{ border-left:3px solid var(--bear); }
+  .dz-compact-card.lower{ border-left:3px solid var(--bull); }
+  .dz-compact-card.flip{ border-left:3px solid var(--gold); background:rgba(255,184,0,0.04); }
+  .dz-compact-card:hover{ background:rgba(18,25,40,0.85); }
+  .dz-compact-header{
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;
+  }
+  .dz-compact-title{
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800;
+    display:inline-flex; align-items:center; gap:6px;
+  }
   .dz-tag{
-    font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:800;
-    padding:2px 7px; border-radius:4px; text-transform:uppercase; letter-spacing:.04em;
+    font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:800;
+    padding:2px 6px; border-radius:4px; text-transform:uppercase; letter-spacing:.04em;
   }
   .dz-tag.upper{ background:rgba(255,90,121,0.15); color:var(--bear); border:1px solid rgba(255,90,121,0.3); }
   .dz-tag.lower{ background:rgba(0,255,136,0.15); color:var(--bull); border:1px solid rgba(0,255,136,0.3); }
   .dz-tag.flip{ background:rgba(255,184,0,0.18); color:var(--gold); border:1px solid rgba(255,184,0,0.4); }
-  .dz-subtitle{ font-family:'JetBrains Mono',monospace; font-size:10px; color:#94A3B8; font-weight:600; }
-
+  .dz-compact-range{ font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:800; color:#FFFFFF; }
+  .dz-compact-midline{
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; color:#C084FC;
+    background:rgba(192,132,252,0.1); padding:2px 6px; border-radius:4px; border:1px solid rgba(192,132,252,0.25);
+  }
   .dz-dist-badge{
-    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:800;
-    padding:2px 8px; border-radius:5px;
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:800; padding:2px 7px; border-radius:4px;
   }
   .dz-dist-badge.plus{ background:rgba(255,90,121,0.12); color:var(--bear); }
   .dz-dist-badge.minus{ background:rgba(0,255,136,0.12); color:var(--bull); }
-
-  .dz-body{ display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
-  .dz-range{ font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:800; color:#FFFFFF; }
-  .dz-confluences{ display:flex; gap:5px; flex-wrap:wrap; }
+  .dz-confluences{ display:flex; gap:4px; flex-wrap:wrap; }
   .dz-conf-pill{
-    font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:2px 6px;
+    font-family:'JetBrains Mono',monospace; font-size:9px; padding:2px 5px;
     border-radius:4px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); color:#CBD5E1;
   }
-
-  .dz-playbook{
-    display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px;
-    padding-top:8px; border-top:1px solid rgba(255,255,255,0.04);
+  .dz-compact-playbook{
+    font-size:10px; line-height:1.4; color:#94A3B8; background:rgba(255,255,255,0.02);
+    padding:6px 8px; border-radius:5px; border:1px solid rgba(255,255,255,0.03); display:flex;
+    flex-direction:column; gap:2px;
   }
-  @media(max-width:650px){ .dz-playbook{ grid-template-columns:1fr; } }
-  .dz-play-item{ font-size:10.5px; line-height:1.4; color:#94A3B8; }
-  .dz-play-item b{ font-family:'JetBrains Mono',monospace; font-size:9.5px; text-transform:uppercase; margin-right:4px; }
-  .dz-play-item.reject b{ color:var(--gold); }
-  .dz-play-item.break b{ color:var(--cyan); }
-
-  .dz-live-divider{
-    display:flex; align-items:center; justify-content:space-between; padding:8px 14px;
-    border-radius:7px; background:linear-gradient(90deg, rgba(0,229,255,0.15) 0%, rgba(18,24,36,0.9) 100%);
-    border:1px solid var(--cyan); box-shadow:0 0 14px rgba(0,229,255,0.25);
-    font-family:'JetBrains Mono',monospace; margin:4px 0;
+  .dz-compact-playbook b{ font-family:'JetBrains Mono',monospace; font-size:9px; text-transform:uppercase; margin-right:4px; }
+  .dz-compact-playbook .reject b{ color:var(--gold); }
+  .dz-compact-playbook .break b{ color:var(--cyan); }
+  .dz-rule-tip{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; color:#94A3B8; margin-top:10px;
+    line-height:1.5; display:flex; align-items:flex-start; gap:6px;
   }
-  .dz-live-left{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:12px; color:#FFFFFF; }
-  .dz-live-right{ font-size:10.5px; color:#94A3B8; }
 
   /* ================= ORDER FLOW PROXIMITY RADAR STYLES ================= */
   @keyframes radarPulseAmber {
@@ -1021,11 +1063,11 @@
       </div>
     </section>
 
-    <!-- 5. DYNAMIC MULTI-TIMEFRAME DECISION ZONES -->
+    <!-- 5. DYNAMIC MULTI-TIMEFRAME DECISION ZONES & VISUAL CANDLESTICK CHART -->
     <section id="decision-zones" class="panel">
       <div class="panel-header">
         <h3 class="panel-title">
-          <span>🎯 Dynamic Decision Zones (Swing Tips & SNR)</span>
+          <span>🎯 Dynamic Decision Engine & Visual Order Flow</span>
         </h3>
         <div class="dz-tf-tabs" id="dz-tf-tabs">
           <button class="dz-tab-btn active" data-tf="m15" onclick="setDecisionZoneTF('m15')">M15 INTRADAY</button>
@@ -1033,7 +1075,39 @@
           <button class="dz-tab-btn" data-tf="h4" onclick="setDecisionZoneTF('h4')">H4 MACRO</button>
         </div>
       </div>
-      <div id="dz-content">Loading decision zones…</div>
+      
+      <!-- 1. Live Order Flow Radar Banner (Telemetry HUD) -->
+      <div id="dz-radar-container"></div>
+
+      <!-- 2. Interactive Candlestick Chart with Marked Zones -->
+      <div id="dz-chart-box" class="dz-chart-box">
+        <div class="dz-chart-topbar">
+          <div class="dz-chart-legend">
+            <span class="legend-pill bear"><span class="legend-box bear"></span>Upper Supply Zone</span>
+            <span class="legend-pill bull"><span class="legend-box bull"></span>Lower Demand Zone</span>
+            <span class="legend-pill ce"><span class="legend-line ce"></span>50% CE Midline</span>
+            <span class="legend-pill live"><span class="legend-dot live"></span>Live Bar</span>
+          </div>
+          <div class="dz-chart-actions">
+            <span id="dz-chart-status" class="dz-chart-status">Live Telemetry</span>
+            <button class="dz-chart-btn" id="dz-toggle-labels-btn" onclick="toggleDzLabels()" title="Toggle Minimal Zone Labels">👁️ Labels: Off</button>
+            <button class="dz-chart-btn" onclick="fitDzChart()" title="Fit View / Reset Scale">⛶ Fit View</button>
+          </div>
+        </div>
+        <div id="dz-chart-viewport" class="dz-chart-viewport">
+          <svg id="dz-chart-overlay" class="dz-chart-overlay"></svg>
+          <div id="dz-chart-loading" class="dz-chart-loading">Initializing Candlestick Engine…</div>
+        </div>
+      </div>
+
+      <!-- 3. Compact Zone Telemetry Strip -->
+      <div id="dz-compact-container"></div>
+
+      <!-- 4. Tactical Discipline Rule -->
+      <div class="dz-rule-tip">
+        <span>💡</span>
+        <span><b>Day Trader Rule of Thumb:</b> Decision Zones are inflection areas, not blind entry signals. At each zone, price either <b>REJECTS</b> (fade toward mean) or <b>BREAKS</b> (wait for pullback retest as S/R flip). Avoid chasing unconfirmed momentum.</span>
+      </div>
     </section>
 
     <!-- 6. FUNDAMENTAL // NEWS FILTER -->
@@ -1739,16 +1813,300 @@ function renderPriceLadder(scan){
   $('ladder-container').innerHTML = html;
 }
 
-/* ================= 5. DYNAMIC DECISION ZONES ================= */
+/* ================= 5. DYNAMIC DECISION ZONES & VISUAL CANDLESTICK CHART ================= */
 let ACTIVE_DZ_TF = 'm15';
 let CURRENT_SCAN_DATA = null;
+
+// Chart State
+let dzChart = null;
+let dzCandleSeries = null;
+let dzPriceLines = [];
+let dzChartTf = null;
+let dzChartSymbol = null;
+let dzCurrentZones = [];
+let dzLastCandle = null;
+let dzCandlesLoading = false;
+let dzChartInitialized = false;
+let dzShowLabels = false;
+
+function toggleDzLabels(){
+  dzShowLabels = !dzShowLabels;
+  const btn = $('dz-toggle-labels-btn');
+  if(btn){
+    btn.textContent = dzShowLabels ? '👁️ Labels: On' : '👁️ Labels: Off';
+    btn.classList.toggle('active', dzShowLabels);
+  }
+  updateDzSvgOverlay(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.price : 0, dp(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.symbol : ''));
+}
+
+function fitDzChart(){
+  if(dzChart && dzChart.timeScale) {
+    try { dzChart.timeScale().fitContent(); } catch(e){}
+  }
+}
 
 function setDecisionZoneTF(tf){
   ACTIVE_DZ_TF = tf;
   document.querySelectorAll('.dz-tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tf === tf);
   });
-  if(CURRENT_SCAN_DATA) renderDecisionZones(CURRENT_SCAN_DATA);
+  if(CURRENT_SCAN_DATA) {
+    renderDecisionZones(CURRENT_SCAN_DATA);
+    fetchAndRenderDzCandles(CURRENT_SCAN_DATA.symbol, ACTIVE_DZ_TF, CURRENT_SCAN_DATA.price, true);
+  }
+}
+
+function updateDzSvgOverlay(curPrice, D){
+  const svg = $('dz-chart-overlay');
+  if(!svg || !dzChart || !dzCandleSeries || !dzCurrentZones || !dzCurrentZones.length){
+    if(svg) svg.innerHTML = '';
+    return;
+  }
+  const width = svg.clientWidth || 800;
+
+  let elements = '';
+  dzCurrentZones.forEach(z => {
+    if(!z || z.high == null || z.low == null) return;
+    try {
+      const y1 = dzCandleSeries.priceToCoordinate(z.high);
+      const y2 = dzCandleSeries.priceToCoordinate(z.low);
+      if(y1 == null || y2 == null) return;
+      const top = Math.min(y1, y2);
+      const height = Math.max(Math.abs(y2 - y1), 3);
+      const mid = z.midline || ((z.high + z.low) / 2);
+      const yMid = mid != null ? dzCandleSeries.priceToCoordinate(mid) : null;
+      const isUpper = z.type === 'RESISTANCE' || (z.tag && z.tag.includes('UPPER')) || (z.title && z.title.includes('UPPER'));
+      const fill = isUpper ? 'rgba(255, 90, 121, 0.08)' : 'rgba(0, 255, 136, 0.08)';
+      const stroke = isUpper ? 'rgba(255, 90, 121, 0.35)' : 'rgba(0, 255, 136, 0.35)';
+      const textFill = isUpper ? '#FF5A79' : '#00FF88';
+
+      // 1. Shaded Zone Box (Clean translucent institutional rectangle across canvas)
+      elements += `
+        <rect x="0" y="${top}" width="${width}" height="${height}" fill="${fill}" stroke="${stroke}" stroke-dasharray="3,3" stroke-width="1" />
+      `;
+
+      // 2. 50% CE Dashed Midline inside the zone
+      if(yMid != null){
+        elements += `
+          <line x1="0" y1="${yMid}" x2="${width}" y2="${yMid}" stroke="#C084FC" stroke-dasharray="3,3" stroke-width="1.2" opacity="0.60" />
+        `;
+      }
+
+      // 3. Optional Minimalist Corner Tag (Only when user explicitly enables Labels toggle)
+      if(dzShowLabels){
+        const shortTag = isUpper ? (z.id && z.id.includes('2') ? 'Upper DZ 2' : 'Upper DZ 1') : (z.id && z.id.includes('2') ? 'Lower DZ 2' : 'Lower DZ 1');
+        const tagText = z.name || shortTag;
+        const tagWidth = Math.min(90, Math.max(50, tagText.length * 6.5 + 8));
+        elements += `
+          <g opacity="0.80">
+            <rect x="6" y="${top + 3}" width="${tagWidth}" height="14" rx="3" fill="rgba(7, 11, 18, 0.85)" stroke="${stroke}" stroke-width="0.75" />
+            <text x="10" y="${top + 13}" fill="${textFill}" font-family="'JetBrains Mono',monospace" font-size="8.5" font-weight="700" letter-spacing="0.4">${esc(tagText)}</text>
+          </g>
+        `;
+      }
+    } catch(e){}
+  });
+
+  svg.innerHTML = elements;
+}
+
+function initDzChartInstance(){
+  const container = $('dz-chart-viewport');
+  if(!container) return null;
+  if(typeof LightweightCharts === 'undefined'){
+    const loading = $('dz-chart-loading');
+    if(loading) loading.innerHTML = 'Candlestick library loading…';
+    return null;
+  }
+  if(dzChart){
+    try { dzChart.remove(); } catch(e){}
+    dzChart = null;
+    dzCandleSeries = null;
+    dzPriceLines = [];
+  }
+
+  dzChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth || 800,
+    height: 380,
+    layout: {
+      background: { type: 'solid', color: '#070B12' },
+      textColor: '#94A3B8',
+      fontSize: 11,
+      fontFamily: "'JetBrains Mono', monospace",
+    },
+    grid: {
+      vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
+      horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
+    },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal,
+      vertLine: {
+        color: 'rgba(0, 229, 255, 0.4)',
+        width: 1,
+        style: 1,
+        labelBackgroundColor: '#121824',
+      },
+      horzLine: {
+        color: 'rgba(0, 229, 255, 0.4)',
+        width: 1,
+        style: 1,
+        labelBackgroundColor: '#121824',
+      },
+    },
+    timeScale: {
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+      timeVisible: true,
+      secondsVisible: false,
+    },
+    rightPriceScale: {
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+      autoScale: true,
+      scaleMargins: {
+        top: 0.12,
+        bottom: 0.12,
+      },
+    },
+  });
+
+  const sym = CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.symbol : (dzChartSymbol || 'XAUUSD');
+  const D = dp(sym);
+  const minMove = D === 5 ? 0.00001 : (D === 3 ? 0.001 : 0.01);
+
+  dzCandleSeries = dzChart.addCandlestickSeries({
+    upColor: '#00FF88',
+    downColor: '#FF5A79',
+    borderVisible: false,
+    wickUpColor: '#00FF88',
+    wickDownColor: '#FF5A79',
+    priceFormat: {
+      type: 'price',
+      precision: D,
+      minMove: minMove,
+    },
+  });
+
+  dzChart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+    updateDzSvgOverlay(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.price : 0, dp(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.symbol : ''));
+  });
+
+  window.addEventListener('resize', () => {
+    if(dzChart && container){
+      dzChart.applyOptions({ width: container.clientWidth });
+      updateDzSvgOverlay(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.price : 0, dp(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.symbol : ''));
+    }
+  });
+
+  dzChartInitialized = true;
+  return dzChart;
+}
+
+async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
+  if(dzCandlesLoading) return;
+  const tfUpper = tf.toUpperCase();
+  if(!forceReload && dzChartTf === tfUpper && dzChartSymbol === sym && dzCandleSeries){
+    if(dzLastCandle && curPrice > 0){
+      dzLastCandle.close = curPrice;
+      if(curPrice > dzLastCandle.high) dzLastCandle.high = curPrice;
+      if(curPrice < dzLastCandle.low) dzLastCandle.low = curPrice;
+      dzCandleSeries.update(dzLastCandle);
+    }
+    return;
+  }
+
+  dzCandlesLoading = true;
+  const loadingEl = $('dz-chart-loading');
+  if(loadingEl) { loadingEl.style.display = 'flex'; loadingEl.textContent = `Loading ${tfUpper} Candles for ${esc(sym)}…`; }
+
+  try{
+    const tfLimits = { 'M15': 500, 'H1': 500, 'H4': 350, 'D1': 250 };
+    const fetchLimit = tfLimits[tfUpper] || 450;
+    const r = await fetch(`/api/pair/${sym}/candles?tf=${tfUpper}&limit=${fetchLimit}`);
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+
+    if(!dzChart || !dzCandleSeries){
+      initDzChartInstance();
+    }
+    if(!dzChart || !dzCandleSeries) return;
+
+    // Apply accurate price format for this symbol (5 decimals for Forex, 3 for JPY, 2 for Gold)
+    const D = dp(sym);
+    const minMove = D === 5 ? 0.00001 : (D === 3 ? 0.001 : 0.01);
+    dzCandleSeries.applyOptions({
+      priceFormat: {
+        type: 'price',
+        precision: D,
+        minMove: minMove,
+      },
+    });
+
+    const candles = data.candles || [];
+    if(candles.length > 0){
+      dzCandleSeries.setData(candles);
+      dzLastCandle = { ...candles[candles.length - 1] };
+      dzChart.timeScale().fitContent();
+    }
+
+    dzChartTf = tfUpper;
+    dzChartSymbol = sym;
+
+    // Ingested markups from trader_profile.json or fallback to algorithmic decision zones
+    const ingested = data.ingested_zones || [];
+    let zonesToDraw = [];
+    if(ingested.length > 0){
+      zonesToDraw = ingested.map(z => ({
+        ...z,
+        title: z.name,
+        type: z.type || 'RESISTANCE',
+      }));
+    } else if(CURRENT_SCAN_DATA && CURRENT_SCAN_DATA.decision_zones && CURRENT_SCAN_DATA.decision_zones[tf.toLowerCase()]){
+      const dz = CURRENT_SCAN_DATA.decision_zones[tf.toLowerCase()];
+      if(dz.upper_dz_1) zonesToDraw.push({ ...dz.upper_dz_1, type: 'RESISTANCE' });
+      if(dz.upper_dz_2) zonesToDraw.push({ ...dz.upper_dz_2, type: 'RESISTANCE' });
+      if(dz.lower_dz_1) zonesToDraw.push({ ...dz.lower_dz_1, type: 'SUPPORT' });
+      if(dz.lower_dz_2) zonesToDraw.push({ ...dz.lower_dz_2, type: 'SUPPORT' });
+    }
+
+    dzCurrentZones = zonesToDraw;
+
+    // Clear and redraw price lines on right scale
+    dzPriceLines.forEach(pl => {
+      try { dzCandleSeries.removePriceLine(pl); } catch(e){}
+    });
+    dzPriceLines = [];
+
+    zonesToDraw.forEach(z => {
+      const mid = z.midline || ((z.high + z.low) / 2);
+      if(mid){
+        const isUpper = z.type === 'RESISTANCE' || (z.tag && z.tag.includes('UPPER')) || (z.title && z.title.includes('UPPER'));
+        const label = z.name || z.title || (isUpper ? 'Upper DZ' : 'Lower DZ');
+        try{
+          const pl = dzCandleSeries.createPriceLine({
+            price: mid,
+            color: '#C084FC',
+            lineWidth: 1,
+            lineStyle: 1, // Dashed
+            axisLabelVisible: true,
+            title: '', // Empty title prevents painting a giant white ribbon over candles
+          });
+          dzPriceLines.push(pl);
+        } catch(e){}
+      }
+    });
+
+    if(loadingEl) loadingEl.style.display = 'none';
+    const statusEl = $('dz-chart-status');
+    if(statusEl) statusEl.textContent = `${tfUpper} · ${candles.length} bars · ${zonesToDraw.length} zones`;
+
+    setTimeout(() => {
+      updateDzSvgOverlay(curPrice, dp(sym));
+    }, 50);
+
+  }catch(e){
+    if(loadingEl) loadingEl.textContent = 'Failed to load candles: ' + esc(e.message);
+  }finally{
+    dzCandlesLoading = false;
+  }
 }
 
 function renderDecisionZones(scan){
@@ -1759,43 +2117,16 @@ function renderDecisionZones(scan){
   const fp = v => (v == null || isNaN(v)) ? '—' : fmt(v, D);
 
   if(!dzAll || !dzAll[ACTIVE_DZ_TF]){
-    // Fallback to legacy watchout if decision_zones not calculated
     const wz = scan.watchout_zones;
     if(!wz || !wz.buy_zone || !wz.sell_zone){
-      $('dz-content').innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px">No decision zone data available</div>';
+      if($('dz-radar-container')) $('dz-radar-container').innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px">No decision zone telemetry available</div>';
       return;
     }
-    const buy = wz.buy_zone, sell = wz.sell_zone;
-    $('dz-content').innerHTML = `
-      <div class="dz-stack">
-        <div class="dz-card upper">
-          <div class="dz-header">
-            <span class="dz-tag upper">UPPER DECISION ZONE</span>
-            <span class="dz-dist-badge plus">${fmt(sell.distance_atr, 1)} ATR away</span>
-          </div>
-          <div class="dz-body">
-            <span class="dz-range">${fp(sell.low)} – ${fp(sell.high)}</span>
-            <div class="dz-confluences">${(sell.confluence||[]).map(c=>`<span class="dz-conf-pill">${esc(c)}</span>`).join('')}</div>
-          </div>
-        </div>
-        <div class="dz-card lower">
-          <div class="dz-header">
-            <span class="dz-tag lower">LOWER DECISION ZONE</span>
-            <span class="dz-dist-badge minus">${fmt(buy.distance_atr, 1)} ATR away</span>
-          </div>
-          <div class="dz-body">
-            <span class="dz-range">${fp(buy.low)} – ${fp(buy.high)}</span>
-            <div class="dz-confluences">${(buy.confluence||[]).map(c=>`<span class="dz-conf-pill">${esc(c)}</span>`).join('')}</div>
-          </div>
-        </div>
-      </div>
-    `;
-    return;
   }
 
-  const tfData = dzAll[ACTIVE_DZ_TF] || {};
+  const tfData = (dzAll && dzAll[ACTIVE_DZ_TF]) ? dzAll[ACTIVE_DZ_TF] : {};
   const radar = tfData.radar || {};
-  const keyRadar = dzAll.key_levels_radar || {};
+  const keyRadar = (dzAll && dzAll.key_levels_radar) ? dzAll.key_levels_radar : {};
 
   // 1. Live Order Flow Proximity Radar Banner
   const radarState = radar.state || 'IN_TRANSIT';
@@ -1833,14 +2164,14 @@ function renderDecisionZones(scan){
         </div>
       </div>
       <div class="radar-headline">
-        ${esc(radar.headline)}
+        ${esc(radar.headline || 'Monitoring order flow telemetry…')}
       </div>
       <div class="radar-detail">
-        ${esc(radar.detail)}
+        ${esc(radar.detail || '')}
       </div>
       <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#94A3B8;margin-bottom:8px;background:rgba(255,255,255,0.02);padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);">
         <span style="color:var(--gold);">💡</span>
-        <span><b>Tactical Playbook:</b> ${esc(radar.action_hint)}</span>
+        <span><b>Tactical Playbook:</b> ${esc(radar.action_hint || 'Observe price reaction at zone boundary.')}</span>
       </div>
       ${benchList.length ? `
         <div class="radar-benchmarks">
@@ -1851,99 +2182,60 @@ function renderDecisionZones(scan){
     </div>
   `;
 
-  // 2. Decision Zone Card Generator with Real-Time Interactive Badges & Telemetry
-  function cardHtml(z, isUpper){
+  if($('dz-radar-container')){
+    $('dz-radar-container').innerHTML = radarBannerHtml;
+  }
+
+  // 2. Candlestick Chart Render & Live Tick Feed
+  fetchAndRenderDzCandles(scan.symbol, ACTIVE_DZ_TF, curPrice);
+
+  // 3. Compact Zone Telemetry Strip (Preserves confluences, 50% CE, and playbook)
+  function compactZoneCard(z, isUpper){
     if(!z) return '';
-    const flipHtml = z.is_flip ? `<span class="dz-tag flip">${esc(z.flip_note || '🔁 S/R FLIP')}</span>` : '';
+    const tagCls = isUpper ? 'upper' : 'lower';
+    const distCls = (z.distance_pips || 0) >= 0 ? 'plus' : 'minus';
     const confHtml = (z.confluences || []).map(c => `<span class="dz-conf-pill">${esc(c)}</span>`).join('');
-    const cls = z.is_flip ? 'flip' : (isUpper ? 'upper' : 'lower');
-    const tagCls = z.is_flip ? 'flip' : (isUpper ? 'upper' : 'lower');
-    const distCls = z.distance_pips >= 0 ? 'plus' : 'minus';
-
-    const inter = z.interaction || {};
-    const interState = inter.state || 'IN_TRANSIT';
-    const activeCardCls = interState === 'TESTING' ? 'testing-active' :
-                         (interState === 'APPROACHING' ? 'approaching-active' :
-                         (interState === 'REJECTED' ? 'rejected-active' :
-                         (interState === 'BREAKOUT' ? 'breakout-active' : '')));
-
-    const radarDotColor = interState === 'TESTING' ? 'var(--cyan)' :
-                         (interState === 'APPROACHING' ? 'var(--gold)' :
-                         (interState === 'REJECTED' ? 'var(--red)' :
-                         (interState === 'BREAKOUT' ? 'var(--green)' : '#94A3B8')));
-
-    const radarBadgeHtml = inter.badge_text ? `
-      <span class="dz-radar-pill ${inter.badge_class || 'badge-transit'}">
-        <span class="radar-ping-dot" style="background:${radarDotColor};width:5px;height:5px;"></span>
-        ${esc(inter.badge_text)}
-      </span>
-    ` : '';
-
-    const telemetryHtml = inter.status_text ? `
-      <div class="dz-telemetry-row ${inter.badge_class || 'badge-transit'}">
-        <span class="tele-icon" style="flex-shrink:0;">📡</span>
-        <span><b>Order Flow Telemetry:</b> ${esc(inter.status_text)}</span>
-      </div>
-    ` : '';
+    const midlineVal = z.midline || ((z.high + z.low) / 2);
+    const flipHtml = z.is_flip ? `<span class="dz-tag flip">${esc(z.flip_note || '🔁 S/R FLIP')}</span>` : '';
 
     return `
-      <div class="dz-card ${cls} ${activeCardCls}">
-        <div class="dz-header">
-          <div class="dz-title-wrap">
-            <span class="dz-tag ${tagCls}">${esc(z.title)}</span>
-            ${radarBadgeHtml}
+      <div class="dz-compact-card ${tagCls}">
+        <div class="dz-compact-header">
+          <div class="dz-compact-title">
+            <span class="dz-tag ${tagCls}">${esc(z.title || (isUpper ? 'UPPER ZONE 1' : 'LOWER ZONE 1'))}</span>
             ${flipHtml}
-            <span class="dz-subtitle">${esc(z.subtitle)}</span>
+            <span style="color:#94A3B8;font-size:10px;">${esc(z.subtitle || '')}</span>
           </div>
-          <span class="dz-dist-badge ${distCls}">${esc(z.distance_label)} (${fmt(z.distance_atr, 1)} ATR)</span>
+          <span class="dz-dist-badge ${distCls}">${esc(z.distance_label || '')} ${z.distance_atr != null ? `(${fmt(z.distance_atr, 1)} ATR)` : ''}</span>
         </div>
-        <div class="dz-body">
-          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
-            <span class="dz-range">${fp(z.low)} – ${fp(z.high)}</span>
-            ${z.midline ? `<span class="dz-midline-badge" style="font-size:11px;color:#C084FC;font-family:'JetBrains Mono',monospace;font-weight:600;" title="50% Consequent Encroachment Midline">· 50% CE: ${fp(z.midline)}</span>` : ''}
+        <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+          <span class="dz-compact-range">${fp(z.low)} – ${fp(z.high)}</span>
+          ${midlineVal ? `<span class="dz-compact-midline">50% CE: ${fp(midlineVal)}</span>` : ''}
+        </div>
+        ${confHtml ? `<div class="dz-confluences">${confHtml}</div>` : ''}
+        ${(z.playbook_reject || z.playbook_break) ? `
+          <div class="dz-compact-playbook">
+            ${z.playbook_reject ? `<div class="reject"><b>🔄 Rejection:</b> ${esc(z.playbook_reject)}</div>` : ''}
+            ${z.playbook_break ? `<div class="break"><b>⚡ Breakout:</b> ${esc(z.playbook_break)}</div>` : ''}
           </div>
-          <div class="dz-confluences">${confHtml}</div>
-        </div>
-        ${telemetryHtml}
-        <div class="dz-playbook">
-          <div class="dz-play-item reject"><b>🔄 Rejection:</b> ${esc(z.playbook_reject)}</div>
-          <div class="dz-play-item break"><b>⚡ Breakout:</b> ${esc(z.playbook_break)}</div>
-        </div>
+        ` : ''}
       </div>
     `;
   }
 
-  const u2Html = cardHtml(tfData.upper_dz_2, true);
-  const u1Html = cardHtml(tfData.upper_dz_1, true);
-  const l1Html = cardHtml(tfData.lower_dz_1, false);
-  const l2Html = cardHtml(tfData.lower_dz_2, false);
+  const primaryUpper = tfData.upper_dz_1 || tfData.upper_dz_2;
+  const primaryLower = tfData.lower_dz_1 || tfData.lower_dz_2;
 
-  const liveBar = `
-    <div class="dz-live-divider">
-      <div class="dz-live-left">
-        <span class="dot"></span>
-        <span>CURRENT MARKET PRICE: ${fp(curPrice)}</span>
-      </div>
-      <div class="dz-live-right">
-        <span>${ACTIVE_DZ_TF.toUpperCase()} ATR: ${fmt(tfData.atr, D)} • Floating Dynamic Anchor</span>
-      </div>
+  const compactGridHtml = `
+    <div class="dz-compact-grid">
+      ${compactZoneCard(primaryUpper, true)}
+      ${compactZoneCard(primaryLower, false)}
     </div>
   `;
 
-  $('dz-content').innerHTML = `
-    ${radarBannerHtml}
-    <div class="dz-stack">
-      ${u2Html}
-      ${u1Html}
-      ${liveBar}
-      ${l1Html}
-      ${l2Html}
-    </div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#94A3B8;margin-top:10px;line-height:1.5;display:flex;align-items:flex-start;gap:6px;">
-      <span>💡</span>
-      <span><b>Day Trader Rule of Thumb:</b> Decision Zones are inflection areas, not blind entry signals. At each zone, price either <b>REJECTS</b> (fade toward mean) or <b>BREAKS</b> (wait for pullback retest as S/R flip). Avoid chasing unconfirmed momentum.</span>
-    </div>
-  `;
+  if($('dz-compact-container')){
+    $('dz-compact-container').innerHTML = compactGridHtml;
+  }
 }
 
 /* ================= 6. FUNDAMENTAL // NEWS FILTER ================= */
