@@ -423,6 +423,7 @@
   .legend-pill{ display:inline-flex; align-items:center; gap:5px; color:#94A3B8; font-weight:600; }
   .legend-box.bear{ width:9px; height:9px; border-radius:2px; background:rgba(255,90,121,0.25); border:1px solid var(--bear); }
   .legend-box.bull{ width:9px; height:9px; border-radius:2px; background:rgba(0,255,136,0.25); border:1px solid var(--bull); }
+  .legend-box.swap{ width:9px; height:9px; border-radius:2px; background:rgba(255,184,0,0.25); border:1px dashed var(--gold); }
   .legend-line.ce{ width:12px; height:2px; background:#C084FC; border-radius:1px; }
   .legend-dot.live{ width:6px; height:6px; border-radius:50%; background:var(--cyan); box-shadow:0 0 6px var(--cyan); animation:pulseDot 1.5s infinite; }
   .dz-chart-actions{ display:flex; align-items:center; gap:8px; }
@@ -1099,6 +1100,7 @@
           <div class="dz-chart-legend">
             <span class="legend-pill bear"><span class="legend-box bear"></span>Upper Supply Zone</span>
             <span class="legend-pill bull"><span class="legend-box bull"></span>Lower Demand Zone</span>
+            <span class="legend-pill swap"><span class="legend-box swap"></span>Swap Zone (S/R Flip)</span>
             <span class="legend-pill ce"><span class="legend-line ce"></span>50% CE Midline</span>
             <span class="legend-pill live"><span class="legend-dot live"></span>Live Bar</span>
           </div>
@@ -2017,6 +2019,70 @@ function initDzChartInstance(){
   return dzChart;
 }
 
+function extractTomokoZones(source, tf){
+  if(!source) return [];
+  const tfKey = (tf || 'm15').toLowerCase();
+  const dz = source.decision_zones ? (source.decision_zones[tfKey] || source.decision_zones[tf.toUpperCase()]) : source;
+  if(!dz) return [];
+  const zones = [];
+  if(dz.upper_dz_1) zones.push({ ...dz.upper_dz_1, type: 'RESISTANCE' });
+  if(dz.upper_dz_2) zones.push({ ...dz.upper_dz_2, type: 'RESISTANCE' });
+  if(dz.lower_dz_1) zones.push({ ...dz.lower_dz_1, type: 'SUPPORT' });
+  if(dz.lower_dz_2) zones.push({ ...dz.lower_dz_2, type: 'SUPPORT' });
+  if(dz.faded_zones && Array.isArray(dz.faded_zones)){
+    dz.faded_zones.slice(0, 3).forEach(fz => {
+      zones.push({
+        ...fz,
+        type: fz.role || 'RESISTANCE',
+        is_faded: true,
+        name: fz.label || 'EXHAUSTED'
+      });
+    });
+  }
+  return zones;
+}
+
+function syncDzOverlayAndLines(scan, tf){
+  if(!scan) return;
+  const zonesToDraw = extractTomokoZones(scan, tf);
+  if(!zonesToDraw.length) return;
+
+  dzCurrentZones = zonesToDraw;
+
+  // Clear and redraw dashed purple 50% CE price lines on right scale
+  if(dzCandleSeries){
+    dzPriceLines.forEach(pl => {
+      try { dzCandleSeries.removePriceLine(pl); } catch(e){}
+    });
+    dzPriceLines = [];
+
+    zonesToDraw.forEach(z => {
+      if(z.is_faded) return;
+      const mid = z.midline || ((z.high + z.low) / 2);
+      if(mid){
+        try{
+          const pl = dzCandleSeries.createPriceLine({
+            price: mid,
+            color: '#C084FC',
+            lineWidth: 1,
+            lineStyle: 1, // Dashed
+            axisLabelVisible: true,
+            title: '',
+          });
+          dzPriceLines.push(pl);
+        } catch(e){}
+      }
+    });
+  }
+
+  const statusEl = $('dz-chart-status');
+  if(statusEl && dzLastCandle){
+    statusEl.textContent = `${(tf || 'M15').toUpperCase()} · ${zonesToDraw.length} zones`;
+  }
+
+  updateDzSvgOverlay(scan.price, dp(scan.symbol));
+}
+
 async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
   if(dzCandlesLoading) return;
   const tfUpper = tf.toUpperCase();
@@ -2027,6 +2093,7 @@ async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
       if(curPrice < dzLastCandle.low) dzLastCandle.low = curPrice;
       dzCandleSeries.update(dzLastCandle);
     }
+    if(CURRENT_SCAN_DATA) syncDzOverlayAndLines(CURRENT_SCAN_DATA, tf);
     return;
   }
 
@@ -2067,31 +2134,12 @@ async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
     dzChartTf = tfUpper;
     dzChartSymbol = sym;
 
-    // Ingested markups from trader_profile.json or fallback to algorithmic decision zones
-    const ingested = data.ingested_zones || [];
+    // 1. Tomoko's Autonomous Decision Zones (100% algorithmic - strictly matches radar & cards)
     let zonesToDraw = [];
-    if(ingested.length > 0){
-      zonesToDraw = ingested.map(z => ({
-        ...z,
-        title: z.name,
-        type: z.type || 'RESISTANCE',
-      }));
-    } else if(CURRENT_SCAN_DATA && CURRENT_SCAN_DATA.decision_zones && CURRENT_SCAN_DATA.decision_zones[tf.toLowerCase()]){
-      const dz = CURRENT_SCAN_DATA.decision_zones[tf.toLowerCase()];
-      if(dz.upper_dz_1) zonesToDraw.push({ ...dz.upper_dz_1, type: 'RESISTANCE' });
-      if(dz.upper_dz_2) zonesToDraw.push({ ...dz.upper_dz_2, type: 'RESISTANCE' });
-      if(dz.lower_dz_1) zonesToDraw.push({ ...dz.lower_dz_1, type: 'SUPPORT' });
-      if(dz.lower_dz_2) zonesToDraw.push({ ...dz.lower_dz_2, type: 'SUPPORT' });
-      if(dz.faded_zones && Array.isArray(dz.faded_zones)){
-        dz.faded_zones.slice(0, 3).forEach(fz => {
-          zonesToDraw.push({
-            ...fz,
-            type: fz.role || 'RESISTANCE',
-            is_faded: true,
-            name: fz.label || 'EXHAUSTED'
-          });
-        });
-      }
+    if(data.decision_zones && Object.keys(data.decision_zones).length > 0){
+      zonesToDraw = extractTomokoZones(data.decision_zones, tf);
+    } else if(CURRENT_SCAN_DATA && CURRENT_SCAN_DATA.decision_zones){
+      zonesToDraw = extractTomokoZones(CURRENT_SCAN_DATA, tf);
     }
 
     dzCurrentZones = zonesToDraw;
@@ -2106,8 +2154,6 @@ async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
       if(z.is_faded) return; // Faded/exhausted zones do not clutter the scale
       const mid = z.midline || ((z.high + z.low) / 2);
       if(mid){
-        const isUpper = z.type === 'RESISTANCE' || (z.tag && z.tag.includes('UPPER')) || (z.title && z.title.includes('UPPER'));
-        const label = z.name || z.title || (isUpper ? 'Upper DZ' : 'Lower DZ');
         try{
           const pl = dzCandleSeries.createPriceLine({
             price: mid,
@@ -2216,6 +2262,7 @@ function renderDecisionZones(scan){
 
   // 2. Candlestick Chart Render & Live Tick Feed
   fetchAndRenderDzCandles(scan.symbol, ACTIVE_DZ_TF, curPrice);
+  syncDzOverlayAndLines(scan, ACTIVE_DZ_TF);
 
   // 3. Compact Zone Telemetry Strip (Preserves confluences, 50% CE, and playbook)
   function compactZoneCard(z, isUpper){

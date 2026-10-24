@@ -35,10 +35,11 @@ Whenever the user enters `/ingest` or `ingest`:
        - Type: `RESISTANCE` (above current price) or `SUPPORT` (below current price)
        - Role: `Upper Zone 2`, `Upper Zone 1`, `Lower Zone 1`, `Lower Zone 2` (or intermediate pullback shelf)
 
-4. **Local Profile Sync & Archival**:
+4. **Benchmark Archival & Historical Dataset (Decoupled from Live Engine)**:
    - Update `data/trader_profile.json`:
      - Update `active_session` dictionary with the latest zones by timeframe.
      - Append the snapshot entry to `history`.
+   - **ZERO LIVE INTERFERENCE RULE**: All ingested data is strictly kept as historical ground-truth benchmark data for **weekend comparison and fine-tuning**. Ingested markups are **NEVER** injected into Tomoko's live trading execution, live order flow radar, or live chart visualization. Tomoko operates 100% autonomously on its own institutional algorithms.
    - Move the processed image files from `markups/` into `markups/archive/YYYY-MM-DD/`.
    - Run the 3-day rolling purge: automatically delete any archive date folder older than 3 days (72 hours).
    - Ensure `markups/` is left 100% clean and empty.
@@ -48,3 +49,4 @@ Whenever the user enters `/ingest` or `ingest`:
      - Timeframe & Live price
      - Zones with price ranges, 50% CE midlines, and order flow context
      - Key institutional confluences across timeframes
+   - Remind the user: *"Data logged to `data/trader_profile.json` for weekend comparison and fine-tuning. Live Tomoko engines continue running 100% autonomously."*

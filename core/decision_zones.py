@@ -393,6 +393,7 @@ def calculate_tf_decision_zones(
             "center": round(center, 5 if not (is_gold or is_jpy) else 3),
             "low": round(low, 5 if not (is_gold or is_jpy) else 3),
             "high": round(high, 5 if not (is_gold or is_jpy) else 3),
+            "midline": round((low + high) / 2.0, 5 if not (is_gold or is_jpy) else 3),
             "distance_pips": pips_val,
             "distance_label": dist_label,
             "distance_atr": round(abs(diff) / atr, 2),

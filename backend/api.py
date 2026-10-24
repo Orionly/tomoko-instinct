@@ -689,32 +689,43 @@ def get_pair_candles(symbol: str, tf: str = "H1", limit: int = 1000):
             
     candles.sort(key=lambda x: x["time"])
     
-    # Retrieve marked zones from trader_profile.json
-    ingested_zones = []
-    try:
-        from core.markup_ingestion_engine import load_trader_profile
-        prof = load_trader_profile()
-        active = prof.get("active_session", {})
-        tf_session = active.get(tf_upper, {})
-        if tf_session and tf_session.get("symbol") == symbol:
-            ingested_zones = tf_session.get("zones", [])
-        elif not tf_session:
-            for _tf_key, _sess in active.items():
-                if _sess.get("symbol") == symbol and _sess.get("zones"):
-                    ingested_zones = _sess.get("zones")
-                    break
-    except Exception as ex:
-        log.debug("Error loading ingested zones for candles: %s", ex)
-        
     cur_p = (pe.latest_prices.get(symbol) or {}).get("price", candles[-1]["close"] if candles else 0.0)
+
+    # Compute Tomoko algorithmic decision zones for this timeframe (100% autonomous)
+    decision_zones = {}
+    try:
+        scan_res = _scan(symbol)
+        dz_all = scan_res.get("decision_zones", {})
+        decision_zones = dz_all.get(tf_upper.lower(), {})
+    except Exception as ex:
+        log.debug("Error computing algorithmic decision zones for candles: %s", ex)
     
     return sanitize_for_json({
         "symbol": symbol,
         "timeframe": tf_upper,
         "candles": candles,
         "current_price": cur_p,
-        "ingested_zones": ingested_zones,
+        "decision_zones": decision_zones,
     })
+
+
+@app.get("/api/benchmarks/weekend_comparison")
+def get_weekend_comparison():
+    """
+    Returns trader ingested markups from data/trader_profile.json (isolated benchmark data)
+    for weekend comparison, model validation, and algorithm fine-tuning.
+    """
+    try:
+        from core.markup_ingestion_engine import load_trader_profile
+        prof = load_trader_profile()
+        return sanitize_for_json({
+            "trader_style": prof.get("trader_style", {}),
+            "active_session": prof.get("active_session", {}),
+            "history_count": len(prof.get("history", [])),
+            "history": prof.get("history", []),
+        })
+    except Exception as e:
+        return {"error": str(e), "history": []}
 
 
 @app.get("/api/pair/{symbol}/deep_dive")

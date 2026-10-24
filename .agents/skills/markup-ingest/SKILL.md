@@ -2,13 +2,14 @@
 name: markup-ingest
 description: >-
   Ingests the trader's morning/pre-session TradingView chart markups from markups/ folder,
-  extracts drawn zones and 50% CE midlines, updates data/trader_profile.json, and archives images.
+  extracts drawn zones and 50% CE midlines, archives images, and logs them into data/trader_profile.json
+  as benchmark ground-truth for weekend comparison and algorithm fine-tuning (isolated from live Tomoko engines).
   Triggered whenever the user enters "/ingest", "ingest", or asks to ingest chart markups.
 ---
 
 # Chart Markup Ingestion Pipeline (/ingest)
 
-Use this workflow to ingest trader-drawn TradingView chart markups into the Tomoko Instinct terminal.
+Use this workflow to ingest trader-drawn TradingView chart markups as benchmark data for weekend comparison and fine-tuning.
 
 ## Ingestion Procedure
 
@@ -25,8 +26,9 @@ Use this workflow to ingest trader-drawn TradingView chart markups into the Tomo
      - `≤ 15:00` -> M15 (or M5 if labeled)
    - Extract Upper Zone 2, Upper Zone 1, Lower Zone 1, Lower Zone 2, price bounds, and purple 50% CE midlines.
 
-3. **Record & Clean**:
+3. **Record & Clean (Benchmark Dataset)**:
    - Update `data/trader_profile.json` (active_session and history).
+   - **Zero Live Interference**: Ingested data is strictly kept for weekend comparison and fine-tuning; it is never injected into Tomoko's live trading execution or live chart.
    - Move processed files to `markups/archive/YYYY-MM-DD/`.
    - Auto-delete archives older than 3 days.
    - Present a concise institutional briefing table.
