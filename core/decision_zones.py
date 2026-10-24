@@ -6,6 +6,7 @@
 import math
 from typing import Dict, List, Any, Optional
 import pandas as pd
+from core.zone_engine import build_zones, select_slots, zone_tradeability, htf_swing_levels
 
 
 def _safe_float(val, default=0.0) -> float:
@@ -646,12 +647,21 @@ def calculate_key_levels_radar(
 def calculate_m15_decision_zones(
     df: Optional[pd.DataFrame],
     current_price: float,
-    symbol: str = "EURUSD"
+    symbol: str = "EURUSD",
+    anchors: Optional[List[Dict[str, Any]]] = None,
+    htf_levels: Optional[List[float]] = None,
+    htf_direction: str = "NEUTRAL"
 ) -> Dict[str, Any]:
     """
-    Dedicated M15 Intraday Decision Zones Engine.
-    Discovers multi-candle consolidation shelves, order blocks, and liquidity sweep extremes
-    purely from M15 intraday price action without inheriting H4 macro levels.
+    Dedicated M15 Intraday Decision Zones Engine V2 powered by core.zone_engine.
+    Features:
+      * Strength scoring (0-100: STRONG / MEDIUM / WEAK)
+      * Retest lifecycle tracking (FRESH, 1st/2nd retest OK, 3rd retest HTF-aligned only, 4th retest EXHAUSTED)
+      * Sweep vs Break detection (Wick beyond = SWEEP; Body close beyond = BREAK to SWAP zone)
+      * SWAP zone retention until tested
+      * Realistic spacing constraints (no overlapping / cramped zones)
+      * No synthetic/hallucinated zones (returns None when no qualified structure exists)
+      * Range detection when Upper 1 and Lower 1 are in tight consolidation
     """
     current_price = _safe_float(current_price)
     is_gold = "XAU" in symbol.upper()
@@ -667,261 +677,55 @@ def calculate_m15_decision_zones(
             return f"{v:.3f}"
         return f"{v:.5f}"
 
-    # Determine local M15 ATR
-    atr = 0.0
-    if df is not None and len(df) > 0:
-        if 'ATR' in df.columns:
-            atr = _safe_float(df['ATR'].iloc[-1])
-        if atr <= 0:
-            high_low = df['high'] - df['low']
-            high_close = (df['high'] - df['close'].shift()).abs()
-            low_close = (df['low'] - df['close'].shift()).abs()
-            tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            atr = _safe_float(tr.rolling(14).mean().iloc[-1])
-            
-    if atr <= 0:
-        atr = 2.50 if is_gold else (0.15 if is_jpy else 0.0010)
+    unit_str = "pts" if is_gold else "pips"
+    unit_abbr = "pts" if is_gold else "p"
 
-    # Box tolerance & separation constraints
-    if is_gold:
-        cluster_tol = max(1.2, atr * 0.35)
-        min_box_h = max(2.0, atr * 0.40)
-        max_box_h = max(5.5, atr * 0.95)
-        min_separation = max(3.5, atr * 0.80)
-        min_buffer = max(1.0, atr * 0.25)
-    elif is_jpy:
-        cluster_tol = max(0.04, atr * 0.35)
-        min_box_h = max(0.06, atr * 0.40)
-        max_box_h = max(0.25, atr * 0.95)
-        min_separation = max(0.12, atr * 0.80)
-        min_buffer = max(0.04, atr * 0.25)
-    else:
-        cluster_tol = max(0.0003, atr * 0.35)
-        min_box_h = max(0.0005, atr * 0.40)
-        max_box_h = max(0.0020, atr * 0.95)
-        min_separation = max(0.0008, atr * 0.80)
-        min_buffer = max(0.0003, atr * 0.25)
-
-    # 1. Detect candidate shelves from recent M15 action (last 80 bars ~ 20 hours)
-    lookback = min(80, len(df)) if df is not None else 0
-    subset = df.iloc[-lookback:].copy().reset_index(drop=True) if df is not None and lookback > 10 else None
-
-    raw_ceilings = []
-    raw_floors = []
-
-    if subset is not None:
-        n = len(subset)
-        window = 2
-        for i in range(window, n - window):
-            h_i = _safe_float(subset['high'].iloc[i])
-            l_i = _safe_float(subset['low'].iloc[i])
-            o_i = _safe_float(subset['open'].iloc[i])
-            c_i = _safe_float(subset['close'].iloc[i])
-            b_top = max(o_i, c_i)
-            b_bot = min(o_i, c_i)
-
-            # Measure displacement away (was there impulse leaving this area?)
-            post_low = _safe_float(subset['low'].iloc[i+1:min(n, i+5)].min()) if i < n - 1 else l_i
-            post_high = _safe_float(subset['high'].iloc[i+1:min(n, i+5)].max()) if i < n - 1 else h_i
-            dump_away = (h_i - post_low)
-            surge_away = (post_high - l_i)
-
-            # Swing High / Supply Cluster
-            is_sh = all(subset['high'].iloc[j] <= h_i for j in range(i - window, i + window + 1) if j != i)
-            if (is_sh or dump_away >= (1.2 * atr)) and h_i > 0:
-                wicks = [h_i]
-                bodies = [b_top]
-                for j in range(max(0, i - 6), min(n, i + 7)):
-                    if j != i:
-                        jh = _safe_float(subset['high'].iloc[j])
-                        jb = max(_safe_float(subset['open'].iloc[j]), _safe_float(subset['close'].iloc[j]))
-                        if abs(jh - h_i) <= cluster_tol:
-                            wicks.append(jh)
-                            bodies.append(jb)
-                
-                top = max(wicks)
-                bot = min(bodies) if len(bodies) > 1 else max(bodies) - min_box_h
-                # Clamp thickness
-                if (top - bot) < min_box_h:
-                    bot = top - min_box_h
-                elif (top - bot) > max_box_h:
-                    bot = top - max_box_h
-
-                raw_ceilings.append({
-                    "low": bot,
-                    "high": top,
-                    "center": (top + bot) / 2.0,
-                    "midline": (top + bot) / 2.0,
-                    "strength": len(wicks),
-                    "bars_ago": n - 1 - i,
-                    "type": "SUPPLY_SHELF"
-                })
-
-            # Swing Low / Demand Cluster
-            is_sl = all(subset['low'].iloc[j] >= l_i for j in range(i - window, i + window + 1) if j != i)
-            if (is_sl or surge_away >= (1.2 * atr)) and l_i > 0:
-                wicks = [l_i]
-                bodies = [b_bot]
-                for j in range(max(0, i - 6), min(n, i + 7)):
-                    if j != i:
-                        jl = _safe_float(subset['low'].iloc[j])
-                        jb = min(_safe_float(subset['open'].iloc[j]), _safe_float(subset['close'].iloc[j]))
-                        if abs(jl - l_i) <= cluster_tol:
-                            wicks.append(jl)
-                            bodies.append(jb)
-
-                bot = min(wicks)
-                top = max(bodies) if len(bodies) > 1 else min(bodies) + min_box_h
-                # Clamp thickness
-                if (top - bot) < min_box_h:
-                    top = bot + min_box_h
-                elif (top - bot) > max_box_h:
-                    top = bot + max_box_h
-
-                raw_floors.append({
-                    "low": bot,
-                    "high": top,
-                    "center": (top + bot) / 2.0,
-                    "midline": (top + bot) / 2.0,
-                    "strength": len(wicks),
-                    "bars_ago": n - 1 - i,
-                    "type": "DEMAND_SHELF"
-                })
-
-    # Cluster overlapping shelves
-    def merge_shelves(shelves: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if not shelves:
-            return []
-        shelves = sorted(shelves, key=lambda x: x["center"])
-        merged = []
-        cur = shelves[0]
-        for s in shelves[1:]:
-            if abs(s["center"] - cur["center"]) <= (cluster_tol * 1.2):
-                cur = {
-                    "low": min(cur["low"], s["low"]),
-                    "high": max(cur["high"], s["high"]),
-                    "center": (min(cur["low"], s["low"]) + max(cur["high"], s["high"])) / 2.0,
-                    "midline": (min(cur["low"], s["low"]) + max(cur["high"], s["high"])) / 2.0,
-                    "strength": cur["strength"] + s["strength"],
-                    "bars_ago": min(cur["bars_ago"], s["bars_ago"]),
-                    "type": cur["type"]
-                }
-            else:
-                merged.append(cur)
-                cur = s
-        merged.append(cur)
-        return merged
-
-    ceilings = merge_shelves(raw_ceilings)
-    floors = merge_shelves(raw_floors)
-
-    # Session extreme peaks/troughs
-    if subset is not None and len(subset) > 0:
-        session_max_h = _safe_float(subset['high'].max())
-        session_min_l = _safe_float(subset['low'].min())
-    else:
-        session_max_h = current_price + atr * 2.0
-        session_min_l = current_price - atr * 2.0
-
-    # Upper Zones (Supply / Resistance) MUST sit strictly ABOVE current price
-    valid_ceilings = [c for c in ceilings if c["high"] >= (current_price + min_buffer)]
-    valid_ceilings.sort(key=lambda x: x["center"])
-
-    # Upper Zone 1 (Immediate Resistance Shelf)
-    if valid_ceilings:
-        c1 = valid_ceilings[0]
-        bot = max(c1["low"], current_price + min_buffer)
-        top = max(c1["high"], bot + min_box_h)
-        if (top - bot) > max_box_h:
-            top = bot + max_box_h
-        u1_shelf = {
-            "low": bot, "high": top, "center": (top + bot) / 2.0,
-            "midline": (top + bot) / 2.0, "strength": c1.get("strength", 1),
-            "bars_ago": c1.get("bars_ago", 0), "type": "SUPPLY_SHELF"
+    # Degraded / empty df check
+    if df is None or len(df) < 15:
+        empty_radar = {
+            "state": "IN_TRANSIT",
+            "badge_text": "⚪ AWAITING DATA",
+            "headline": "Awaiting M15 intraday candle feed",
+            "detail": "Insufficient M15 bars to extract structural zones.",
+            "badge_class": "badge-transit",
+            "action_hint": "Wait for market data feed connection.",
+            "active_zone_id": None,
+            "pips_dist": 0.0
         }
-    else:
-        bot = current_price + min_buffer + (atr * 0.40)
-        top = bot + min_box_h
-        u1_shelf = {
-            "low": bot, "high": top, "center": (top + bot) / 2.0,
-            "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "SUPPLY_SHELF"
+        return {
+            "timeframe": "M15",
+            "current_price": current_price,
+            "atr": 2.50 if is_gold else (0.15 if is_jpy else 0.0010),
+            "radar": empty_radar,
+            "upper_dz_2": None,
+            "upper_dz_1": None,
+            "lower_dz_1": None,
+            "lower_dz_2": None,
+            "faded_zones": [],
         }
 
-    # Upper Zone 2 (Secondary Resistance / Liquidity Sweep High) - strictly above u1_shelf
-    min_u2_low = u1_shelf["high"] + min_separation
-    u2_candidates = [c for c in valid_ceilings if c["high"] >= (min_u2_low + min_box_h * 0.5)]
-    if u2_candidates:
-        c2 = min(u2_candidates, key=lambda x: abs(x["center"] - (u1_shelf["high"] + atr * 1.5)))
-        bot = max(c2["low"], min_u2_low)
-        top = max(c2["high"], bot + min_box_h)
-        if (top - bot) > max_box_h:
-            top = bot + max_box_h
-        u2_shelf = {
-            "low": bot, "high": top, "center": (top + bot) / 2.0,
-            "midline": (top + bot) / 2.0, "strength": c2.get("strength", 2),
-            "bars_ago": c2.get("bars_ago", 1), "type": "SWEEP_HIGH"
-        }
-    else:
-        bot = max(min_u2_low, session_max_h if session_max_h >= min_u2_low else u1_shelf["high"] + atr * 1.2)
-        top = bot + min_box_h
-        u2_shelf = {
-            "low": bot, "high": top, "center": (top + bot) / 2.0,
-            "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "SUPPLY_EXPANSION"
-        }
+    # Run zone_engine
+    built = build_zones(df, timeframe="M15", symbol=symbol, anchors=anchors, htf_levels=htf_levels)
+    unit = built["unit"]
+    if unit <= 0:
+        unit = 2.50 if is_gold else (0.15 if is_jpy else 0.0010)
 
-    # Lower Zones (Demand / Support) MUST sit strictly BELOW current price
-    valid_floors = [f for f in floors if f["low"] <= (current_price - min_buffer)]
-    valid_floors.sort(key=lambda x: x["center"], reverse=True)
+    p = built["params"]
+    slots = select_slots(built["zones"], current_price, unit, p)
 
-    # Lower Zone 1 (Immediate Support Shelf)
-    if valid_floors:
-        f1 = valid_floors[0]
-        top = min(f1["high"], current_price - min_buffer)
-        bot = min(f1["low"], top - min_box_h)
-        if (top - bot) > max_box_h:
-            bot = top - max_box_h
-        l1_shelf = {
-            "low": bot, "high": top, "center": (top + bot) / 2.0,
-            "midline": (top + bot) / 2.0, "strength": f1.get("strength", 1),
-            "bars_ago": f1.get("bars_ago", 0), "type": "DEMAND_SHELF"
-        }
-    else:
-        top = current_price - min_buffer - (atr * 0.40)
-        bot = top - min_box_h
-        l1_shelf = {
-            "low": bot, "high": top, "center": (top + bot) / 2.0,
-            "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "DEMAND_SHELF"
-        }
+    proximity_dist = max(1.5, min(5.0, unit * 0.30)) if is_gold else max(5.0, min(15.0, (unit * 0.30) / pip_size))
+    rejection_thresh = max(0.6, unit * 0.12) if is_gold else max(2.0, (unit * 0.08) / pip_size)
 
-    # Lower Zone 2 (Secondary Support / Session Launchpad / Sweep Low) - strictly below l1_shelf
-    max_l2_high = l1_shelf["low"] - min_separation
-    l2_candidates = [f for f in valid_floors if f["low"] <= (max_l2_high - min_box_h * 0.5)]
-    if l2_candidates:
-        f2 = min(l2_candidates, key=lambda x: abs(x["center"] - (l1_shelf["low"] - atr * 1.5)))
-        top = min(f2["high"], max_l2_high)
-        bot = min(f2["low"], top - min_box_h)
-        if (top - bot) > max_box_h:
-            bot = top - max_box_h
-        l2_shelf = {
-            "low": bot, "high": top, "center": (top + bot) / 2.0,
-            "midline": (top + bot) / 2.0, "strength": f2.get("strength", 2),
-            "bars_ago": f2.get("bars_ago", 1), "type": "SWEEP_LOW"
-        }
-    else:
-        top = min(max_l2_high, session_min_l if session_min_l <= max_l2_high else l1_shelf["low"] - atr * 1.2)
-        bot = top - min_box_h
-        l2_shelf = {
-            "low": bot, "high": top, "center": (top + bot) / 2.0,
-            "midline": (top + bot) / 2.0, "strength": 1, "bars_ago": 0, "type": "DEMAND_EXPANSION"
-        }
+    recent_high = current_price
+    recent_low = current_price
+    if len(df) >= 2:
+        last_bars = df.tail(2)
+        recent_high = max([_safe_float(h) for h in last_bars["high"]] + [current_price])
+        recent_low = min([_safe_float(l) for l in last_bars["low"]] + [current_price])
 
-    # Helper to evaluate order flow interaction
-    def evaluate_zone_interaction(z_low: float, z_high: float, is_upper: bool, z_title: str) -> Dict[str, Any]:
-        proximity_dist = max(1.5, min(5.0, atr * 0.30)) if is_gold else max(5.0, min(15.0, (atr * 0.30) / pip_size))
-        rejection_thresh = max(0.6, atr * 0.12) if is_gold else max(2.0, (atr * 0.08) / pip_size)
-
-        # 1. State: TESTING (Price currently trading inside [zone_low, zone_high])
-        if z_low <= current_price <= z_high:
+    def evaluate_m15_interaction(z_low: float, z_high: float, is_upper: bool, z_title: str, is_inside: bool) -> Dict[str, Any]:
+        # 1. State: TESTING
+        if is_inside or (z_low <= current_price <= z_high):
             return {
                 "state": "TESTING",
                 "badge_text": "⚡ TESTING ZONE",
@@ -931,24 +735,14 @@ def calculate_m15_decision_zones(
                 "action_hint": "Wait for candle close confirmation — do not anticipate the breakout."
             }
 
-        recent_high = current_price
-        recent_low = current_price
-        if df is not None and len(df) >= 2:
-            last_bars = df.tail(2)
-            recent_high = max([_safe_float(h) for h in last_bars["high"]] + [current_price])
-            recent_low = min([_safe_float(l) for l in last_bars["low"]] + [current_price])
-
-        unit_str = "pts" if is_gold else "pips"
-        unit_abbr = "pts" if is_gold else "p"
-
         if is_upper:
             if current_price < z_low:
                 diff = z_low - current_price
                 dist_val = diff if is_gold else (diff / pip_size)
-                in_reach = (recent_high >= (z_low - 0.05 * atr)) and (recent_high <= (z_high + (z_high - z_low)))
+                in_reach = (recent_high >= (z_low - 0.05 * unit)) and (recent_high <= (z_high + (z_high - z_low)))
                 drop_val = (recent_high - current_price) if is_gold else ((recent_high - current_price) / pip_size)
 
-                if in_reach and drop_val >= rejection_thresh and current_price >= (z_low - atr * 0.65):
+                if in_reach and drop_val >= rejection_thresh and current_price >= (z_low - unit * 0.65):
                     tested_p = min(recent_high, z_high)
                     return {
                         "state": "REJECTED",
@@ -989,10 +783,10 @@ def calculate_m15_decision_zones(
             if current_price > z_high:
                 diff = current_price - z_high
                 dist_val = diff if is_gold else (diff / pip_size)
-                in_reach = (recent_low <= (z_high + 0.05 * atr)) and (recent_low >= (z_low - (z_high - z_low)))
+                in_reach = (recent_low <= (z_high + 0.05 * unit)) and (recent_low >= (z_low - (z_high - z_low)))
                 bounce_val = (current_price - recent_low) if is_gold else ((current_price - recent_low) / pip_size)
 
-                if in_reach and bounce_val >= rejection_thresh and current_price <= (z_high + atr * 0.65):
+                if in_reach and bounce_val >= rejection_thresh and current_price <= (z_high + unit * 0.65):
                     tested_p = max(recent_low, z_low)
                     return {
                         "state": "REJECTED",
@@ -1030,14 +824,13 @@ def calculate_m15_decision_zones(
                     "action_hint": "Floor broken. Watch for weak retest from below."
                 }
 
-    # Builder for final Zone JSON
-    def package_zone(s: Dict[str, Any], zone_id: str, is_upper: bool) -> Dict[str, Any]:
-        low = s["low"]
-        high = s["high"]
-        center = s["center"]
-        midline = s["midline"]
+    def package_zone(z, zone_id: str, is_upper: bool) -> Dict[str, Any]:
+        low = z.bottom
+        high = z.top
+        center = z.mid
+        midline = z.mid
         diff = center - current_price
-        
+
         if is_gold:
             pips_val = round(diff, 2)
             dist_label = f"{'+' if diff >= 0 else ''}{diff:.2f} pts"
@@ -1049,10 +842,14 @@ def calculate_m15_decision_zones(
             dist_label = f"{'+' if diff >= 0 else ''}{pips_val:.1f} pips"
 
         is_immediate = "1" in zone_id
-        tier_title = "IMMEDIATE" if is_immediate else "SECONDARY / EXPANSION"
+        tier_title = "IMMEDIATE" if is_immediate else "SECONDARY"
         direction_title = "UPPER" if is_upper else "LOWER"
 
-        if is_upper:
+        trade_info = zone_tradeability(z, htf_direction)
+
+        if z.is_swap:
+            sub = "🔁 SWAP ZONE · AWAITING PULLBACK"
+        elif is_upper:
             sub = "ACTIVE INTRADAY SUPPLY SHELF" if is_immediate else "LIQUIDITY SWEEP CEILING"
         else:
             sub = "ACTIVE INTRADAY DEMAND SHELF" if is_immediate else "INTRADAY BASE / SWEEP FLOOR"
@@ -1065,13 +862,17 @@ def calculate_m15_decision_zones(
             height_str = f"{(high - low) * 10000:.1f} pips"
 
         conf = [
-            f"M15 {'Supply' if is_upper else 'Demand'} Shelf ({s.get('strength', 1)}x Absorption)",
-            f"50% Midline: {_fmt_p(midline)}",
+            f"M15 {'Supply' if is_upper else 'Demand'} Shelf (Score: {z.score} · {z.grade})",
+            f"Retest: {trade_info['label']}",
+            f"50% CE: {_fmt_p(midline)}",
             f"Height: {height_str}"
         ]
+        if z.swept_count > 0:
+            conf.append(f"Swept {z.swept_count}x (liquidity defended)")
+        conf.extend(z.confluences)
 
         z_title = f"{direction_title} DECISION ZONE {1 if is_immediate else 2}"
-        interaction = evaluate_zone_interaction(low, high, is_upper, z_title)
+        interaction = evaluate_m15_interaction(low, high, is_upper, z_title, z.inside_now)
 
         return {
             "id": zone_id,
@@ -1083,42 +884,94 @@ def calculate_m15_decision_zones(
             "midline": round(midline, 3 if (is_gold or is_jpy) else 5),
             "distance_pips": pips_val,
             "distance_label": dist_label,
-            "distance_atr": round(abs(diff) / atr, 2),
+            "distance_atr": round(abs(diff) / unit, 2),
             "is_upper": is_upper,
-            "is_flip": False,
-            "flip_note": None,
+            "is_flip": z.is_swap,
+            "flip_note": "🔁 SWAP ZONE (awaiting pullback)" if z.is_swap else None,
             "confluences": conf,
             "playbook_reject": "Look for wick exhaustion & absorption inside zone to fade back toward mean." if is_upper else "Look for lower wick absorption & buying reaction to retest higher levels.",
             "playbook_break": "If candle body closes through zone, await pullback retest of broken level before continuation.",
-            "interaction": interaction
+            "interaction": interaction,
+            "strength_grade": z.grade,
+            "strength_score": z.score,
+            "retest_count": z.retest_count,
+            "next_test_label": trade_info["label"],
+            "status": z.status,
+            "role": z.role,
+            "is_swap": z.is_swap,
+            "swept_count": z.swept_count,
+            "tradeability": trade_info,
         }
 
-    upper_dz_1 = package_zone(u1_shelf, "upper_dz_1", is_upper=True)
-    upper_dz_2 = package_zone(u2_shelf, "upper_dz_2", is_upper=True)
-    lower_dz_1 = package_zone(l1_shelf, "lower_dz_1", is_upper=False)
-    lower_dz_2 = package_zone(l2_shelf, "lower_dz_2", is_upper=False)
+    upper_dz_1 = package_zone(slots["upper"][0], "upper_dz_1", True) if len(slots["upper"]) >= 1 else None
+    upper_dz_2 = package_zone(slots["upper"][1], "upper_dz_2", True) if len(slots["upper"]) >= 2 else None
+    lower_dz_1 = package_zone(slots["lower"][0], "lower_dz_1", False) if len(slots["lower"]) >= 1 else None
+    lower_dz_2 = package_zone(slots["lower"][1], "lower_dz_2", False) if len(slots["lower"]) >= 2 else None
 
-    zones_list = [upper_dz_1, lower_dz_1, upper_dz_2, lower_dz_2]
+    # Package faded / exhausted zones for optional faded charting
+    faded_zones = []
+    for fz in slots.get("faded", []):
+        t_info = zone_tradeability(fz, htf_direction)
+        faded_zones.append({
+            "low": round(fz.bottom, 3 if (is_gold or is_jpy) else 5),
+            "high": round(fz.top, 3 if (is_gold or is_jpy) else 5),
+            "midline": round(fz.mid, 3 if (is_gold or is_jpy) else 5),
+            "role": fz.role,
+            "status": fz.status,
+            "strength_grade": fz.grade,
+            "strength_score": fz.score,
+            "retest_count": fz.retest_count,
+            "label": t_info["label"],
+            "is_swap": fz.is_swap
+        })
+
+    # Proximity radar determination
+    zones_list = [z for z in [upper_dz_1, lower_dz_1, upper_dz_2, lower_dz_2] if z is not None]
     testing_zone = next((z for z in zones_list if z["interaction"]["state"] == "TESTING"), None)
     rejected_zone = next((z for z in zones_list if z["interaction"]["state"] == "REJECTED"), None)
     breakout_zone = next((z for z in zones_list if z["interaction"]["state"] == "BREAKOUT"), None)
     approaching_candidates = [z for z in zones_list if z["interaction"]["state"] == "APPROACHING"]
     approaching_zone = min(approaching_candidates, key=lambda z: abs(z["interaction"]["pips_dist"]), default=None)
 
-    dist_to_u1 = (upper_dz_1["low"] - current_price) / pip_size
-    dist_to_l1 = (current_price - lower_dz_1["high"]) / pip_size
+    dist_to_u1 = ((upper_dz_1["low"] - current_price) / pip_size) if upper_dz_1 else None
+    dist_to_l1 = ((current_price - lower_dz_1["high"]) / pip_size) if lower_dz_1 else None
+
+    # Check tight range condition (Upper 1 & Lower 1 in tight squeeze)
+    is_tight_range = False
+    if upper_dz_1 and lower_dz_1:
+        gap = upper_dz_1["low"] - lower_dz_1["high"]
+        if gap < (p.get("range_gap", 1.2) * unit):
+            is_tight_range = True
 
     if testing_zone:
-        other_note = f"Nearest Upper DZ 1 is +{dist_to_u1:.1f}p away." if not testing_zone["is_upper"] else f"Nearest Lower DZ 1 is -{dist_to_l1:.1f}p away."
+        other_note = ""
+        if not testing_zone["is_upper"] and dist_to_u1 is not None:
+            other_note = f" · Nearest Upper DZ 1 is +{dist_to_u1:.1f}p away."
+        elif testing_zone["is_upper"] and dist_to_l1 is not None:
+            other_note = f" · Nearest Lower DZ 1 is -{dist_to_l1:.1f}p away."
+
         radar = {
             "state": "TESTING",
             "badge_text": "🔵 TESTING ZONE",
             "headline": f"Price is currently TESTING {testing_zone['title']} ({_fmt_p(testing_zone['low'])} – {_fmt_p(testing_zone['high'])}) on M15",
-            "detail": f"{testing_zone['interaction']['status_text']} · {other_note}",
+            "detail": f"{testing_zone['interaction']['status_text']}{other_note}",
             "badge_class": "badge-testing",
             "action_hint": testing_zone["interaction"]["action_hint"],
             "active_zone_id": testing_zone["id"],
             "pips_dist": 0.0
+        }
+    elif is_tight_range:
+        gap_pips = (upper_dz_1["low"] - lower_dz_1["high"]) / pip_size
+        gap = upper_dz_1["low"] - lower_dz_1["high"]
+        radar = {
+            "state": "RANGE",
+            "badge_text": f"🔄 CONSOLIDATION RANGE ({gap_pips:.1f}p)",
+            "headline": f"Trading inside tight range: Lower DZ 1 ({_fmt_p(lower_dz_1['high'])}) to Upper DZ 1 ({_fmt_p(upper_dz_1['low'])}) on M15",
+            "detail": f"Range span is only {gap_pips:.1f} {unit_str} ({gap/unit:.1f}x unit). Await breakout expansion before entering.",
+            "badge_class": "badge-transit",
+            "action_hint": "Price is coiling in a narrow corridor. Do not anticipate — wait for confirmed boundary break.",
+            "active_zone_id": None,
+            "pips_dist": round(min(dist_to_u1, dist_to_l1), 1)
         }
     elif rejected_zone:
         radar = {
@@ -1155,26 +1008,32 @@ def calculate_m15_decision_zones(
             "pips_dist": round(p_dist, 1)
         }
     else:
+        # In transit or open range
+        u_info = f"Upper DZ 1 sits +{dist_to_u1:.1f}p away ({_fmt_p(upper_dz_1['low'])})" if upper_dz_1 else "No overhead resistance within reach"
+        l_info = f"Lower DZ 1 sits -{dist_to_l1:.1f}p away ({_fmt_p(lower_dz_1['high'])})" if lower_dz_1 else "No underlying demand within reach"
+
+        valid_dists = [d for d in [dist_to_u1, dist_to_l1] if d is not None]
         radar = {
             "state": "IN_TRANSIT",
             "badge_text": "⚪ IN TRANSIT",
-            "headline": f"Trading in open range between Lower DZ 1 ({_fmt_p(lower_dz_1['high'])}) and Upper DZ 1 ({_fmt_p(upper_dz_1['low'])})",
-            "detail": f"Cruising freely in open range · Nearest Upper DZ 1 is +{dist_to_u1:.1f}p away, Lower DZ 1 is -{dist_to_l1:.1f}p away.",
+            "headline": f"Open Range on M15 · {u_info} · {l_info}",
+            "detail": f"Cruising freely in open space. {u_info}. {l_info}.",
             "badge_class": "badge-transit",
-            "action_hint": "Price is cruising freely between zones. Prepare reaction plan as boundary approaches.",
+            "action_hint": "Price is cruising freely between structural zones. Prepare reaction plan as boundary approaches.",
             "active_zone_id": None,
-            "pips_dist": round(min(dist_to_u1, dist_to_l1), 1)
+            "pips_dist": round(min(valid_dists) if valid_dists else 0.0, 1)
         }
 
     return {
         "timeframe": "M15",
         "current_price": current_price,
-        "atr": round(atr, 3 if (is_gold or is_jpy) else 5),
+        "atr": round(unit, 3 if (is_gold or is_jpy) else 5),
         "radar": radar,
         "upper_dz_2": upper_dz_2,
         "upper_dz_1": upper_dz_1,
         "lower_dz_1": lower_dz_1,
         "lower_dz_2": lower_dz_2,
+        "faded_zones": faded_zones,
     }
 
 
@@ -1184,7 +1043,8 @@ def calculate_all_decision_zones(
     df_h4: Optional[pd.DataFrame],
     current_price: float,
     levels: Dict[str, Any],
-    symbol: str = "EURUSD"
+    symbol: str = "EURUSD",
+    htf_direction: str = "NEUTRAL"
 ) -> Dict[str, Any]:
     """Calculate multi-timeframe Decision Zones (M15, H1, H4) anchored dynamically to current market price."""
     current_price = _safe_float(current_price)
@@ -1205,8 +1065,13 @@ def calculate_all_decision_zones(
         if wo > 0: macro_anchors.append({"price": wo, "type": "WEEKLY_OPEN", "label": "Weekly Open (Macro Pivot)", "bars_ago": 5})
         if do > 0: macro_anchors.append({"price": do, "type": "DAILY_OPEN", "label": "Daily Open (Session Bias)", "bars_ago": 0})
 
-    # M15 uses dedicated intraday consolidation shelf & order block engine (no H4 inheritance)
-    m15_zones = calculate_m15_decision_zones(df_m15, current_price, symbol=symbol)
+    # M15 uses dedicated zone_engine with lifecycle, swap persistence, and tradeability rules
+    htf_levels = htf_swing_levels(df_h1)
+    m15_zones = calculate_m15_decision_zones(
+        df_m15, current_price, symbol=symbol,
+        anchors=macro_anchors, htf_levels=htf_levels, htf_direction=htf_direction
+    )
+
     # H1 and H4 retain structural macro anchors
     h1_zones = calculate_tf_decision_zones(df_h1, current_price, "h1", extra_anchors=macro_anchors, symbol=symbol)
     h4_zones = calculate_tf_decision_zones(df_h4, current_price, "h4", extra_anchors=macro_anchors, symbol=symbol)

@@ -338,7 +338,7 @@ def _scan(symbol: str, cal=None):
 
     frames = {}
     for key, tf, n in (("h4", TIMEFRAME_H4, 200), ("h1", TIMEFRAME_H1, 200),
-                       ("m15", TIMEFRAME_M15, 100), ("d1", TIMEFRAME_D1, 50),
+                       ("m15", TIMEFRAME_M15, 500), ("d1", TIMEFRAME_D1, 50),
                        ("w1", TIMEFRAME_W1, 20)):
         frames[key] = _safe_rates(symbol, tf, n)
     if frames.get("h4") is None or frames.get("h1") is None:
@@ -346,6 +346,7 @@ def _scan(symbol: str, cal=None):
         degraded["news"] = get_news_engine().get_news_for_symbol(symbol)
         return degraded
     if frames.get("m15") is None:
+        log.warning("[Scanner] M15 candles missing for %s; using H1 as fallback", symbol)
         frames["m15"] = frames["h1"]
     if frames.get("d1") is None:
         frames["d1"] = frames["h4"]
@@ -396,8 +397,10 @@ def _scan(symbol: str, cal=None):
 
     # --- Multi-timeframe Decision Zones (floating relative to current price) ---
     try:
+        h1_bias = regime.get("H1_bias", "Neutral")
+        htf_dir = "UP" if h1_bias == "Bullish" else ("DOWN" if h1_bias == "Bearish" else h4.get("direction", "UP"))
         decision_zones = calculate_all_decision_zones(
-            df_m15, df_h1, df_h4, price, levels, symbol=symbol
+            df_m15, df_h1, df_h4, price, levels, symbol=symbol, htf_direction=htf_dir
         )
     except Exception as e:
         print("decision zones calculation failed:", e)
@@ -645,7 +648,7 @@ def serve_lightweight_charts_js():
 
 
 @app.get("/api/pair/{symbol}/candles")
-def get_pair_candles(symbol: str, tf: str = "H1", limit: int = 500):
+def get_pair_candles(symbol: str, tf: str = "H1", limit: int = 1000):
     """
     Returns sanitized OHLC candlestick data formatted for TradingView Lightweight Charts,
     along with marked zones from trader_profile.json and active decision zones.

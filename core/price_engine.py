@@ -728,7 +728,7 @@ class PriceEngine:
                 return dict(self.latest_prices[symbol])
         return None
 
-    def get_rates(self, symbol: str, timeframe, count: int = 600) -> pd.DataFrame:
+    def get_rates(self, symbol: str, timeframe, count: int = 1200) -> pd.DataFrame:
         """
         Returns indicator-augmented DataFrame for symbol & timeframe.
         Accepts MT5 timeframe constants (16388=H4, 16385=H1, 15=M15, 16408=D1, 32769=W1) or strings.

@@ -470,6 +470,20 @@
   .dz-tag.upper{ background:rgba(255,90,121,0.15); color:var(--bear); border:1px solid rgba(255,90,121,0.3); }
   .dz-tag.lower{ background:rgba(0,255,136,0.15); color:var(--bull); border:1px solid rgba(0,255,136,0.3); }
   .dz-tag.flip{ background:rgba(255,184,0,0.18); color:var(--gold); border:1px solid rgba(255,184,0,0.4); }
+  .dz-grade-pill{
+    font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:800;
+    padding:2px 6px; border-radius:4px; text-transform:uppercase; letter-spacing:.03em;
+  }
+  .dz-grade-pill.grade-strong{ background:rgba(255,184,0,0.18); color:var(--gold); border:1px solid rgba(255,184,0,0.4); }
+  .dz-grade-pill.grade-med{ background:rgba(56,189,248,0.15); color:var(--cyan); border:1px solid rgba(56,189,248,0.3); }
+  .dz-grade-pill.grade-weak{ background:rgba(148,163,184,0.12); color:#94A3B8; border:1px solid rgba(148,163,184,0.25); }
+  .dz-retest-pill{
+    font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700;
+    padding:2px 6px; border-radius:4px; letter-spacing:.02em;
+  }
+  .dz-retest-pill.retest-ok{ background:rgba(0,255,136,0.12); color:var(--bull); border:1px solid rgba(0,255,136,0.25); }
+  .dz-retest-pill.retest-warn{ background:rgba(255,90,121,0.15); color:var(--bear); border:1px solid rgba(255,90,121,0.3); }
+  .dz-retest-pill.retest-fresh{ background:rgba(192,132,252,0.15); color:#C084FC; border:1px solid rgba(192,132,252,0.3); }
   .dz-compact-range{ font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:800; color:#FFFFFF; }
   .dz-compact-midline{
     font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; color:#C084FC;
@@ -1876,13 +1890,16 @@ function updateDzSvgOverlay(curPrice, D){
       const mid = z.midline || ((z.high + z.low) / 2);
       const yMid = mid != null ? dzCandleSeries.priceToCoordinate(mid) : null;
       const isUpper = z.type === 'RESISTANCE' || (z.tag && z.tag.includes('UPPER')) || (z.title && z.title.includes('UPPER'));
-      const fill = isUpper ? 'rgba(255, 90, 121, 0.08)' : 'rgba(0, 255, 136, 0.08)';
-      const stroke = isUpper ? 'rgba(255, 90, 121, 0.35)' : 'rgba(0, 255, 136, 0.35)';
-      const textFill = isUpper ? '#FF5A79' : '#00FF88';
+      const isFaded = z.is_faded === true;
+      const isSwap = z.is_flip === true || z.is_swap === true;
+      const fill = isFaded ? 'rgba(148, 163, 184, 0.03)' : (isSwap ? 'rgba(255, 184, 0, 0.07)' : (isUpper ? 'rgba(255, 90, 121, 0.08)' : 'rgba(0, 255, 136, 0.08)'));
+      const stroke = isFaded ? 'rgba(148, 163, 184, 0.20)' : (isSwap ? 'rgba(255, 184, 0, 0.40)' : (isUpper ? 'rgba(255, 90, 121, 0.35)' : 'rgba(0, 255, 136, 0.35)'));
+      const textFill = isFaded ? '#94A3B8' : (isSwap ? '#FFB800' : (isUpper ? '#FF5A79' : '#00FF88'));
+      const strokeDash = isFaded ? '2,4' : '3,3';
 
       // 1. Shaded Zone Box (Clean translucent institutional rectangle across canvas)
       elements += `
-        <rect x="0" y="${top}" width="${width}" height="${height}" fill="${fill}" stroke="${stroke}" stroke-dasharray="3,3" stroke-width="1" />
+        <rect x="0" y="${top}" width="${width}" height="${height}" fill="${fill}" stroke="${stroke}" stroke-dasharray="${strokeDash}" stroke-width="1" />
       `;
 
       // 2. 50% CE Dashed Midline inside the zone
@@ -2018,8 +2035,8 @@ async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
   if(loadingEl) { loadingEl.style.display = 'flex'; loadingEl.textContent = `Loading ${tfUpper} Candles for ${esc(sym)}…`; }
 
   try{
-    const tfLimits = { 'M15': 500, 'H1': 500, 'H4': 350, 'D1': 250 };
-    const fetchLimit = tfLimits[tfUpper] || 450;
+    const tfLimits = { 'M15': 1000, 'H1': 800, 'H4': 400, 'D1': 300 };
+    const fetchLimit = tfLimits[tfUpper] || 800;
     const r = await fetch(`/api/pair/${sym}/candles?tf=${tfUpper}&limit=${fetchLimit}`);
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
@@ -2065,6 +2082,16 @@ async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
       if(dz.upper_dz_2) zonesToDraw.push({ ...dz.upper_dz_2, type: 'RESISTANCE' });
       if(dz.lower_dz_1) zonesToDraw.push({ ...dz.lower_dz_1, type: 'SUPPORT' });
       if(dz.lower_dz_2) zonesToDraw.push({ ...dz.lower_dz_2, type: 'SUPPORT' });
+      if(dz.faded_zones && Array.isArray(dz.faded_zones)){
+        dz.faded_zones.slice(0, 3).forEach(fz => {
+          zonesToDraw.push({
+            ...fz,
+            type: fz.role || 'RESISTANCE',
+            is_faded: true,
+            name: fz.label || 'EXHAUSTED'
+          });
+        });
+      }
     }
 
     dzCurrentZones = zonesToDraw;
@@ -2076,6 +2103,7 @@ async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
     dzPriceLines = [];
 
     zonesToDraw.forEach(z => {
+      if(z.is_faded) return; // Faded/exhausted zones do not clutter the scale
       const mid = z.midline || ((z.high + z.low) / 2);
       if(mid){
         const isUpper = z.type === 'RESISTANCE' || (z.tag && z.tag.includes('UPPER')) || (z.title && z.title.includes('UPPER'));
@@ -2191,19 +2219,44 @@ function renderDecisionZones(scan){
 
   // 3. Compact Zone Telemetry Strip (Preserves confluences, 50% CE, and playbook)
   function compactZoneCard(z, isUpper){
-    if(!z) return '';
     const tagCls = isUpper ? 'upper' : 'lower';
+    const defaultTitle = isUpper ? 'UPPER ZONE 1' : 'LOWER ZONE 1';
+    if(!z){
+      return `
+        <div class="dz-compact-card ${tagCls} empty" style="border-style:dashed;opacity:0.65;display:flex;align-items:center;justify-content:center;min-height:85px;text-align:center;padding:12px;">
+          <div>
+            <span class="dz-tag ${tagCls}" style="opacity:0.75;">${defaultTitle}</span>
+            <div style="color:var(--muted);font-size:11px;margin-top:6px;font-family:'JetBrains Mono',monospace;">No qualified ${isUpper ? 'resistance' : 'demand'} zone within reach</div>
+          </div>
+        </div>
+      `;
+    }
     const distCls = (z.distance_pips || 0) >= 0 ? 'plus' : 'minus';
     const confHtml = (z.confluences || []).map(c => `<span class="dz-conf-pill">${esc(c)}</span>`).join('');
     const midlineVal = z.midline || ((z.high + z.low) / 2);
-    const flipHtml = z.is_flip ? `<span class="dz-tag flip">${esc(z.flip_note || '🔁 S/R FLIP')}</span>` : '';
+    const flipHtml = z.is_flip ? `<span class="dz-tag flip">${esc(z.flip_note || '🔁 SWAP ZONE')}</span>` : '';
+
+    let gradeBadge = '';
+    if(z.strength_grade){
+      const gCls = z.strength_grade === 'STRONG' ? 'grade-strong' : (z.strength_grade === 'MEDIUM' ? 'grade-med' : 'grade-weak');
+      gradeBadge = `<span class="dz-grade-pill ${gCls}">★ ${esc(z.strength_grade)} (${z.strength_score || 0})</span>`;
+    }
+    let retestBadge = '';
+    if(z.next_test_label){
+      const isWarn = z.next_test_label.includes('⚠') || z.next_test_label.includes('EXHAUSTED');
+      const isFresh = z.next_test_label.includes('FRESH');
+      const rCls = isWarn ? 'retest-warn' : (isFresh ? 'retest-fresh' : 'retest-ok');
+      retestBadge = `<span class="dz-retest-pill ${rCls}">🎯 ${esc(z.next_test_label)}</span>`;
+    }
 
     return `
-      <div class="dz-compact-card ${tagCls}">
+      <div class="dz-compact-card ${tagCls}${z.is_flip ? ' flip' : ''}">
         <div class="dz-compact-header">
           <div class="dz-compact-title">
-            <span class="dz-tag ${tagCls}">${esc(z.title || (isUpper ? 'UPPER ZONE 1' : 'LOWER ZONE 1'))}</span>
+            <span class="dz-tag ${tagCls}">${esc(z.title || defaultTitle)}</span>
             ${flipHtml}
+            ${gradeBadge}
+            ${retestBadge}
             <span style="color:#94A3B8;font-size:10px;">${esc(z.subtitle || '')}</span>
           </div>
           <span class="dz-dist-badge ${distCls}">${esc(z.distance_label || '')} ${z.distance_atr != null ? `(${fmt(z.distance_atr, 1)} ATR)` : ''}</span>
