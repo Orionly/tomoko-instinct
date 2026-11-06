@@ -1236,7 +1236,7 @@
           </div>
           <div class="dz-chart-actions">
             <span id="dz-chart-status" class="dz-chart-status">Live Telemetry</span>
-            <button class="dz-chart-btn" id="dz-toggle-labels-btn" onclick="toggleDzLabels()" title="Toggle Minimal Zone Labels">👁️ Labels: Off</button>
+            <button class="dz-chart-btn active" id="dz-toggle-labels-btn" onclick="toggleDzLabels()" title="Toggle Minimal Zone Labels">👁️ Labels: On</button>
             <button class="dz-chart-btn" onclick="fitDzChart()" title="Fit View / Reset Scale">⛶ Fit View</button>
           </div>
         </div>
@@ -2052,7 +2052,7 @@ let dzCurrentZones = [];
 let dzLastCandle = null;
 let dzCandlesLoading = false;
 let dzChartInitialized = false;
-let dzShowLabels = false;
+let dzShowLabels = true;
 
 function toggleDzLabels(){
   dzShowLabels = !dzShowLabels;
@@ -2120,15 +2120,33 @@ function updateDzSvgOverlay(curPrice, D){
         `;
       }
 
-      // 3. Optional Minimalist Corner Tag (Only when user explicitly enables Labels toggle)
+      // 3. Enriched Institutional Corner Tag (Risk Tier, Role & Score)
       if(dzShowLabels){
-        const shortTag = isUpper ? (z.id && z.id.includes('2') ? 'Upper DZ 2' : 'Upper DZ 1') : (z.id && z.id.includes('2') ? 'Lower DZ 2' : 'Lower DZ 1');
-        const tagText = z.name || shortTag;
-        const tagWidth = Math.min(90, Math.max(50, tagText.length * 6.5 + 8));
+        const isU2 = z.id && z.id.includes('2');
+        const shortTag = isUpper ? (isU2 ? 'Upper DZ 2' : 'Upper DZ 1') : (isU2 ? 'Lower DZ 2' : 'Lower DZ 1');
+        
+        let rkShort = '';
+        let rkColor = textFill;
+        if(z.risk_tier === 'HIGH_RISK'){
+          rkShort = ' · 🔴 HIGH RISK (Momentum)';
+          rkColor = '#FF5A79';
+        } else if(z.risk_tier === 'MED_RISK'){
+          rkShort = ' · 🟡 MED RISK (Structural)';
+          rkColor = '#FFB800';
+        } else if(z.risk_tier === 'LOW_RISK'){
+          rkShort = isUpper ? ' · 🟢 LOW RISK (Premium)' : ' · 🟢 LOW RISK (Discount)';
+          rkColor = '#00FF88';
+        }
+
+        const swapStr = isSwap ? '🔁 SWAP · ' : '';
+        const scoreStr = z.strength_score ? ` [${z.strength_score}pts]` : '';
+        const tagText = `${swapStr}${shortTag}${rkShort}${scoreStr}`;
+        const tagWidth = Math.max(70, tagText.length * 6.3 + 14);
+        
         elements += `
-          <g opacity="0.80">
-            <rect x="6" y="${top + 3}" width="${tagWidth}" height="14" rx="3" fill="rgba(7, 11, 18, 0.85)" stroke="${stroke}" stroke-width="0.75" />
-            <text x="10" y="${top + 13}" fill="${textFill}" font-family="'JetBrains Mono',monospace" font-size="8.5" font-weight="700" letter-spacing="0.4">${esc(tagText)}</text>
+          <g opacity="0.92">
+            <rect x="6" y="${top + 3}" width="${tagWidth}" height="16" rx="3" fill="rgba(7, 11, 18, 0.90)" stroke="${stroke}" stroke-width="0.85" />
+            <text x="10" y="${top + 14}" fill="${rkColor}" font-family="'JetBrains Mono',monospace" font-size="8.5" font-weight="700" letter-spacing="0.3">${esc(tagText)}</text>
           </g>
         `;
       }

@@ -12,6 +12,7 @@ import asyncio
 import logging
 import threading
 import urllib.request
+from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
 import pickle
@@ -295,6 +296,8 @@ class PriceEngine:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self.connected = False
+        self._xau_basis_offset: Optional[float] = None
+        self._xau_basis_offset_date: Optional[str] = None
 
         # Pre-seed initial prices and historical bars
         self._seed_initial_data()
@@ -501,6 +504,43 @@ class PriceEngine:
             except Exception as e:
                 log.debug("[PriceEngine] Candle refresh error: %s", e)
 
+    def _normalize_xau_bars(self, sub: pd.DataFrame) -> pd.DataFrame:
+        """Anchor YFinance XAUUSD bars to spot oracle price using a fixed session basis offset.
+        The offset is established once per session date and held constant so historical swing
+        levels and decision zones never drift or jitter across 90-second refreshes.
+        """
+        if sub.empty or "XAUUSD" not in self.latest_prices:
+            return sub
+        
+        now_dt = datetime.now(timezone(timedelta(hours=8)))
+        current_date = now_dt.strftime("%Y-%m-%d")
+        
+        spot_p = self.latest_prices["XAUUSD"].get("price", 0.0)
+        if spot_p <= 0:
+            return sub
+            
+        last_c = float(sub["close"].iloc[-1])
+        if last_c <= 0:
+            return sub
+
+        if self._xau_basis_offset is None or self._xau_basis_offset_date != current_date:
+            diff = spot_p - last_c
+            if abs(diff) > 0.1:
+                self._xau_basis_offset = round(diff, 2)
+            else:
+                self._xau_basis_offset = 0.0
+            self._xau_basis_offset_date = current_date
+            log.info("[PriceEngine] Anchored XAUUSD session basis offset to %+.2f for %s", self._xau_basis_offset, current_date)
+
+        offset = self._xau_basis_offset or 0.0
+        if abs(offset) > 0.01:
+            sub["open"] = (sub["open"] + offset).round(2)
+            sub["high"] = (sub["high"] + offset).round(2)
+            sub["low"] = (sub["low"] + offset).round(2)
+            sub["close"] = (sub["close"] + offset).round(2)
+
+        return sub
+
     def refresh_all_candles(self):
         """Batch downloads latest bars for H1, M15, D1."""
         tickers = list(YF_MAP.values())
@@ -523,16 +563,9 @@ class PriceEngine:
                         }).dropna()
 
                     if not sub.empty:
-                        # Normalize XAUUSD bars to live TradingView spot oracle price if offset exists
-                        if pair == "XAUUSD" and "XAUUSD" in self.latest_prices:
-                            spot_p = self.latest_prices["XAUUSD"]["price"]
-                            last_c = float(sub["close"].iloc[-1])
-                            diff = spot_p - last_c
-                            if abs(diff) > 0.1:
-                                sub["open"] = (sub["open"] + diff).round(2)
-                                sub["high"] = (sub["high"] + diff).round(2)
-                                sub["low"] = (sub["low"] + diff).round(2)
-                                sub["close"] = (sub["close"] + diff).round(2)
+                        # Normalize XAUUSD bars to live TradingView spot oracle price using stable session offset
+                        if pair == "XAUUSD":
+                            sub = self._normalize_xau_bars(sub)
 
                         sub.index = pd.to_datetime(sub.index)
                         if sub.index.tz is None:
@@ -608,16 +641,9 @@ class PriceEngine:
                             "volume": df_m15_raw["Volume"][yf_sym] if "Volume" in df_m15_raw else 0,
                         }).dropna()
                     if not sub.empty:
-                        # Normalize XAUUSD bars to live TradingView spot oracle price if offset exists
-                        if pair == "XAUUSD" and "XAUUSD" in self.latest_prices:
-                            spot_p = self.latest_prices["XAUUSD"]["price"]
-                            last_c = float(sub["close"].iloc[-1])
-                            diff = spot_p - last_c
-                            if abs(diff) > 0.1:
-                                sub["open"] = (sub["open"] + diff).round(2)
-                                sub["high"] = (sub["high"] + diff).round(2)
-                                sub["low"] = (sub["low"] + diff).round(2)
-                                sub["close"] = (sub["close"] + diff).round(2)
+                        # Normalize XAUUSD bars to live TradingView spot oracle price using stable session offset
+                        if pair == "XAUUSD":
+                            sub = self._normalize_xau_bars(sub)
 
                         sub.index = pd.to_datetime(sub.index)
                         if sub.index.tz is None:
@@ -651,15 +677,8 @@ class PriceEngine:
                             "volume": df_d1_raw["Volume"][yf_sym] if "Volume" in df_d1_raw else 0,
                         }).dropna()
                     if not sub.empty:
-                        if pair == "XAUUSD" and "XAUUSD" in self.latest_prices:
-                            spot_p = self.latest_prices["XAUUSD"]["price"]
-                            last_c = float(sub["close"].iloc[-1])
-                            diff = spot_p - last_c
-                            if abs(diff) > 0.1:
-                                sub["open"] = (sub["open"] + diff).round(2)
-                                sub["high"] = (sub["high"] + diff).round(2)
-                                sub["low"] = (sub["low"] + diff).round(2)
-                                sub["close"] = (sub["close"] + diff).round(2)
+                        if pair == "XAUUSD":
+                            sub = self._normalize_xau_bars(sub)
 
                         sub.index = pd.to_datetime(sub.index)
                         sub["time"] = sub.index

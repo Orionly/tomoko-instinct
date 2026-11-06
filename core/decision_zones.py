@@ -6,7 +6,7 @@
 import math
 from typing import Dict, List, Any, Optional
 import pandas as pd
-from core.zone_engine import build_zones, select_slots, zone_tradeability, htf_swing_levels
+from core.zone_engine import build_zones, select_slots, zone_tradeability, htf_swing_levels, classify_zone_risk, Zone
 
 
 def _safe_float(val, default=0.0) -> float:
@@ -143,39 +143,55 @@ def calculate_tf_decision_zones(
     # 1. Collect swing points
     raw_levels = _find_swing_levels(df, lookback=lookback, window=window)
 
-    # 2. Add EMA21 / EMA50 dynamic levels if available
-    if df is not None and len(df) > 0:
-        if 'EMA21' in df.columns:
-            ema21_val = _safe_float(df['EMA21'].iloc[-1])
-            if ema21_val > 0:
-                raw_levels.append({
-                    "price": ema21_val,
-                    "type": "DYNAMIC_EMA21",
-                    "label": f"{timeframe.upper()} EMA21 Dynamic Value",
-                    "bars_ago": 0
-                })
-        if 'EMA50' in df.columns:
-            ema50_val = _safe_float(df['EMA50'].iloc[-1])
-            if ema50_val > 0:
-                raw_levels.append({
-                    "price": ema50_val,
-                    "type": "DYNAMIC_EMA50",
-                    "label": f"{timeframe.upper()} EMA50 Baseline",
-                    "bars_ago": 0
-                })
-
-    # 3. Add extra structural anchors (Daily High, Daily Low, Weekly Open, Liq High, Liq Low)
+    # 2. Add extra structural anchors (Daily High, Daily Low, Weekly Open, Liq High, Liq Low)
+    # Strictly static candlestick and benchmark price levels - NEVER dynamic moving averages!
     if extra_anchors:
         for anc in extra_anchors:
             if anc.get("price", 0) > 0:
                 raw_levels.append(anc)
 
-    # Cluster nearby levels
+    # 3. Cluster nearby levels (strictly static pivots)
     clustered = _cluster_levels(raw_levels, cluster_threshold=zone_half * 0.8)
 
-    # 4. Filter Above (Ceilings) & Below (Floors)
-    above_levels = [x for x in clustered if x["price"] > (current_price + min_buffer)]
-    below_levels = [x for x in clustered if x["price"] < (current_price - min_buffer)]
+    # 4. Check dynamic EMA confluence WITHOUT altering static zone boundaries
+    ema21_val = _safe_float(df['EMA21'].iloc[-1]) if (df is not None and len(df) > 0 and 'EMA21' in df.columns) else 0.0
+    ema50_val = _safe_float(df['EMA50'].iloc[-1]) if (df is not None and len(df) > 0 and 'EMA50' in df.columns) else 0.0
+    if ema21_val > 0 or ema50_val > 0:
+        for cl in clustered:
+            c_low = cl["min_price"] - zone_half * 0.3
+            c_high = cl["max_price"] + zone_half * 0.3
+            if ema21_val > 0 and (c_low <= ema21_val <= c_high):
+                lbl = f"{timeframe.upper()} EMA21 Dynamic Confluence"
+                if lbl not in cl["labels"]:
+                    cl["labels"].append(lbl)
+                if "DYNAMIC_EMA21" not in cl["types"]:
+                    cl["types"].append("DYNAMIC_EMA21")
+            if ema50_val > 0 and (c_low <= ema50_val <= c_high):
+                lbl = f"{timeframe.upper()} EMA50 Baseline Confluence"
+                if lbl not in cl["labels"]:
+                    cl["labels"].append(lbl)
+                if "DYNAMIC_EMA50" not in cl["types"]:
+                    cl["types"].append("DYNAMIC_EMA50")
+
+    # 5. Filter Above (Ceilings) & Below (Floors) with testing continuity
+    above_levels = []
+    below_levels = []
+    for x in clustered:
+        c_mid = x["price"]
+        c_low = x["min_price"]
+        c_high = x["max_price"]
+        is_orig_res = any(t in ("SWING_HIGH", "RESISTANCE", "PDH", "LIQ_HIGH") for t in x.get("types", []))
+
+        # Check if price is actively testing inside this zone
+        if (c_low - zone_half * 0.25) <= current_price <= (c_high + zone_half * 0.25):
+            if is_orig_res:
+                above_levels.append(x)
+            else:
+                below_levels.append(x)
+        elif c_mid >= current_price:
+            above_levels.append(x)
+        else:
+            below_levels.append(x)
 
     # Sort ascending for upper (nearest first)
     above_levels.sort(key=lambda x: x["price"])
@@ -394,6 +410,22 @@ def calculate_tf_decision_zones(
             {"label": "Confluence Stack", "detail": f"{n_conf} factor(s) aligned", "pts": f"+{stack_pts}", "max": 35},
         ]
 
+        # Risk Tier Classification based on structural position & distance (H1/H4)
+        is_imm = "1" in zone_id
+        dummy_z = Zone(
+            kind="SUPPLY" if is_upper else "DEMAND",
+            top=high,
+            bottom=low,
+            origin_idx=0,
+            origin_time="",
+            departure=2.0,
+            bos=False,
+            volume_ratio=1.0,
+            role="RESISTANCE" if is_upper else "SUPPORT",
+            is_swap=bool(flip_note)
+        )
+        rk = classify_zone_risk(dummy_z, current_price, atr, is_immediate=is_imm, is_gold=is_gold, pip_size=pip_size)
+
         z_res = {
             "id": zone_id,
             "title": f"{direction_title} DECISION ZONE {1 if '1' in zone_id else 2}",
@@ -408,6 +440,11 @@ def calculate_tf_decision_zones(
             "is_upper": is_upper,
             "is_flip": bool(flip_note),
             "flip_note": flip_note,
+            "risk_tier": rk["risk_tier"],
+            "risk_badge": rk["risk_badge"],
+            "risk_desc": rk["risk_desc"],
+            "recommended_sl": rk["recommended_sl"],
+            "recommended_sl_note": rk["recommended_sl_note"],
             "confluences": confluences,
             "strength_grade": htf_grade,
             "strength_score": htf_score,
@@ -897,46 +934,12 @@ def calculate_m15_decision_zones(
 
         # Risk Tier Classification based on structural position & distance
         dist_atr_abs = round(abs(diff) / unit, 2)
-        if is_upper:
-            # Short zone
-            if is_immediate and dist_atr_abs <= 1.8:
-                risk_tier = "HIGH_RISK"
-                risk_badge = "🔴 HIGH RISK · MOMENTUM / CONTINUATION"
-                risk_desc = "Shallow breaker / near-price shelf. Tight execution, potential chop."
-                rec_sl = round(high + 0.8 * unit, 3 if (is_gold or is_jpy) else 5)
-                rec_sl_note = f"SL above shelf (+{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
-            elif dist_atr_abs <= 3.8:
-                risk_tier = "MED_RISK"
-                risk_badge = "🟡 MED RISK · STRUCTURAL RETEST"
-                risk_desc = "Intermediate breakdown origin. Balanced R:R, requires M5 confirmation trigger."
-                rec_sl = round(high + 0.6 * unit, 3 if (is_gold or is_jpy) else 5)
-                rec_sl_note = f"SL above local swing (+{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
-            else:
-                risk_tier = "LOW_RISK"
-                risk_badge = "🟢 LOW RISK · PREMIUM STALK"
-                risk_desc = "Deep premium / origin extreme. Maximum R:R, defended by higher timeframe ceiling."
-                rec_sl = round(high + 0.4 * unit, 3 if (is_gold or is_jpy) else 5)
-                rec_sl_note = f"SL above extreme (+{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
-        else:
-            # Long zone
-            if is_immediate and dist_atr_abs <= 1.8:
-                risk_tier = "HIGH_RISK"
-                risk_badge = "🔴 HIGH RISK · MOMENTUM / CONTINUATION"
-                risk_desc = "Shallow bounce shelf. Tight execution, potential chop."
-                rec_sl = round(low - 0.8 * unit, 3 if (is_gold or is_jpy) else 5)
-                rec_sl_note = f"SL below shelf (-{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
-            elif dist_atr_abs <= 3.8:
-                risk_tier = "MED_RISK"
-                risk_badge = "🟡 MED RISK · STRUCTURAL RETEST"
-                risk_desc = "Intermediate breakout origin. Balanced R:R, requires M5 confirmation trigger."
-                rec_sl = round(low - 0.6 * unit, 3 if (is_gold or is_jpy) else 5)
-                rec_sl_note = f"SL below local swing (-{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
-            else:
-                risk_tier = "LOW_RISK"
-                risk_badge = "🟢 LOW RISK · DISCOUNT STALK"
-                risk_desc = "Deep discount / demand extreme. Maximum R:R, defended by higher timeframe floor."
-                rec_sl = round(low - 0.4 * unit, 3 if (is_gold or is_jpy) else 5)
-                rec_sl_note = f"SL below extreme (-{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
+        rk = classify_zone_risk(z, current_price, unit, is_immediate=is_immediate, is_gold=is_gold, pip_size=pip_size)
+        risk_tier = rk["risk_tier"]
+        risk_badge = rk["risk_badge"]
+        risk_desc = rk["risk_desc"]
+        rec_sl = rk["recommended_sl"]
+        rec_sl_note = rk["recommended_sl_note"]
 
         return {
             "id": zone_id,

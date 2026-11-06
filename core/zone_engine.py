@@ -87,6 +87,10 @@ class Zone:
     confluences: List[str] = field(default_factory=list)
     score_breakdown: List[Dict[str, Any]] = field(default_factory=list)
     score_rubric: str = ""
+    # risk classification (3-tier execution hierarchy)
+    risk_tier: str = "MED_RISK"       # HIGH_RISK / MED_RISK / LOW_RISK
+    risk_badge: str = ""
+    risk_desc: str = ""
 
     @property
     def mid(self) -> float:
@@ -432,6 +436,8 @@ def select_slots(
         return z.status not in ("EXHAUSTED", "INVALID") and z.grade != "WEAK"
 
     upper_pool, lower_pool, faded = [], [], []
+    breakout_buffer = 0.35 * unit  # Immediate breakout tolerance buffer
+
     for z in zones:
         inside = z.bottom <= price <= z.top
         if inside:
@@ -443,17 +449,29 @@ def select_slots(
             z.inside_now = False
             if z.status == "TESTING":
                 z.status = "ACTIVE" if z.retest_count > 0 else "FRESH"
-            if z.bottom > price:
-                side = "upper"
-            else:
-                side = "lower"
+
+            # Institutional Order Flow & S/R Continuity:
+            # - While within breakout_buffer, price is actively interacting with / breaking the boundary.
+            # - When price clears beyond the buffer, the level cleanly flips to a SWAP zone on the opposite side.
+            # - Marked zones NEVER vanish into thin air; they remain active until exhausted or invalidated.
+            if z.role == "RESISTANCE":
+                if price <= z.top + breakout_buffer:
+                    side = "upper"
+                else:
+                    side = "lower"
+                    z.is_swap = True
+            else:  # SUPPORT
+                if price >= z.bottom - breakout_buffer:
+                    side = "lower"
+                else:
+                    side = "upper"
+                    z.is_swap = True
+
         dist = 0.0 if inside else (z.bottom - price if side == "upper" and z.bottom > price else
-                                   price - z.top if z.top < price else 0.0)
+                                   price - z.top if side == "lower" and price > z.top else 0.0)
         if dist > max_d:
             continue
-        # A zone's role must match its side unless price is inside it
-        if not inside and ((side == "upper" and z.role != "RESISTANCE") or (side == "lower" and z.role != "SUPPORT")):
-            continue
+
         if eligible(z):
             (upper_pool if side == "upper" else lower_pool).append(z)
         else:
@@ -469,10 +487,84 @@ def select_slots(
         return chosen
 
     ups, lows = pick(upper_pool), pick(lower_pool)
+
+    # Enrich slotted zones with 3-tier risk profile & invalidation guidance
+    for i, z in enumerate(ups):
+        classify_zone_risk(z, price, unit, is_immediate=(i == 0))
+    for i, z in enumerate(lows):
+        classify_zone_risk(z, price, unit, is_immediate=(i == 0))
+
     return {
         "upper": ups[:2],
         "lower": lows[:2],
         "faded": sorted(faded, key=lambda z: abs(z.mid - price))[:6],
+    }
+
+
+def classify_zone_risk(
+    z: Zone,
+    current_price: float,
+    unit: float,
+    is_immediate: bool = True,
+    is_gold: bool = False,
+    pip_size: float = 0.0001
+) -> Dict[str, Any]:
+    """Classify zone into 3-tier risk profile (High / Med / Low) with tailored SL guidance."""
+    diff = z.mid - current_price
+    dist_atr = abs(diff) / (unit if unit > 0 else 1.0)
+    is_upper = z.role == "RESISTANCE"
+    unit_abbr = "pts" if is_gold else "p"
+
+    if is_upper:
+        # Short zone
+        if is_immediate and dist_atr <= 1.8:
+            tier = "HIGH_RISK"
+            badge = "🔴 HIGH RISK · MOMENTUM / CONTINUATION"
+            desc = "Shallow breaker / near-price shelf. Tight execution, potential chop."
+            sl = round(z.top + 0.8 * unit, 3 if is_gold else 5)
+            sl_note = f"SL above shelf (+{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+        elif dist_atr <= 3.8:
+            tier = "MED_RISK"
+            badge = "🟡 MED RISK · STRUCTURAL RETEST"
+            desc = "Intermediate breakdown origin. Balanced R:R, requires M5 confirmation trigger."
+            sl = round(z.top + 0.6 * unit, 3 if is_gold else 5)
+            sl_note = f"SL above local swing (+{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+        else:
+            tier = "LOW_RISK"
+            badge = "🟢 LOW RISK · PREMIUM STALK"
+            desc = "Deep premium / origin extreme. Maximum R:R, defended by higher timeframe ceiling."
+            sl = round(z.top + 0.4 * unit, 3 if is_gold else 5)
+            sl_note = f"SL above extreme (+{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+    else:
+        # Long zone
+        if is_immediate and dist_atr <= 1.8:
+            tier = "HIGH_RISK"
+            badge = "🔴 HIGH RISK · MOMENTUM / CONTINUATION"
+            desc = "Shallow bounce shelf. Tight execution, potential chop."
+            sl = round(z.bottom - 0.8 * unit, 3 if is_gold else 5)
+            sl_note = f"SL below shelf (-{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+        elif dist_atr <= 3.8:
+            tier = "MED_RISK"
+            badge = "🟡 MED RISK · STRUCTURAL RETEST"
+            desc = "Intermediate breakout origin. Balanced R:R, requires M5 confirmation trigger."
+            sl = round(z.bottom - 0.6 * unit, 3 if is_gold else 5)
+            sl_note = f"SL below local swing (-{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+        else:
+            tier = "LOW_RISK"
+            badge = "🟢 LOW RISK · DISCOUNT STALK"
+            desc = "Deep discount / demand extreme. Maximum R:R, defended by higher timeframe floor."
+            sl = round(z.bottom - 0.4 * unit, 3 if is_gold else 5)
+            sl_note = f"SL below extreme (-{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+
+    z.risk_tier = tier
+    z.risk_badge = badge
+    z.risk_desc = desc
+    return {
+        "risk_tier": tier,
+        "risk_badge": badge,
+        "risk_desc": desc,
+        "recommended_sl": sl,
+        "recommended_sl_note": sl_note
     }
 
 
