@@ -424,7 +424,7 @@ def calculate_tf_decision_zones(
             role="RESISTANCE" if is_upper else "SUPPORT",
             is_swap=bool(flip_note)
         )
-        rk = classify_zone_risk(dummy_z, current_price, atr, is_immediate=is_imm, is_gold=is_gold, pip_size=pip_size)
+        rk = classify_zone_risk(dummy_z, current_price, atr, is_immediate=is_imm, is_gold=is_gold, is_jpy=is_jpy, pip_size=pip_size, symbol=symbol)
 
         z_res = {
             "id": zone_id,
@@ -769,7 +769,7 @@ def calculate_m15_decision_zones(
         unit = 2.50 if is_gold else (0.15 if is_jpy else 0.0010)
 
     p = built["params"]
-    slots = select_slots(built["zones"], current_price, unit, p)
+    slots = select_slots(built["zones"], current_price, unit, p, symbol=symbol)
 
     proximity_dist = max(1.5, min(5.0, unit * 0.30)) if is_gold else max(5.0, min(15.0, (unit * 0.30) / pip_size))
     rejection_thresh = max(0.6, unit * 0.12) if is_gold else max(2.0, (unit * 0.08) / pip_size)
@@ -934,7 +934,7 @@ def calculate_m15_decision_zones(
 
         # Risk Tier Classification based on structural position & distance
         dist_atr_abs = round(abs(diff) / unit, 2)
-        rk = classify_zone_risk(z, current_price, unit, is_immediate=is_immediate, is_gold=is_gold, pip_size=pip_size)
+        rk = classify_zone_risk(z, current_price, unit, is_immediate=is_immediate, is_gold=is_gold, is_jpy=is_jpy, pip_size=pip_size, symbol=symbol)
         risk_tier = rk["risk_tier"]
         risk_badge = rk["risk_badge"]
         risk_desc = rk["risk_desc"]

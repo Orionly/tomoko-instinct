@@ -427,6 +427,7 @@ def select_slots(
     price: float,
     unit: float,
     p: Dict[str, float],
+    symbol: str = "EURUSD"
 ) -> Dict[str, Any]:
     """Pick Upper/Lower 1 & 2 using strength, freshness and spacing. Slots may be None."""
     max_d = p["max_distance"] * unit
@@ -488,11 +489,11 @@ def select_slots(
 
     ups, lows = pick(upper_pool), pick(lower_pool)
 
-    # Enrich slotted zones with 3-tier risk profile & invalidation guidance
+    # Enrich slotted zones with 3-tier risk profile & invalidation guidance across all pairs
     for i, z in enumerate(ups):
-        classify_zone_risk(z, price, unit, is_immediate=(i == 0))
+        classify_zone_risk(z, price, unit, is_immediate=(i == 0), symbol=symbol)
     for i, z in enumerate(lows):
-        classify_zone_risk(z, price, unit, is_immediate=(i == 0))
+        classify_zone_risk(z, price, unit, is_immediate=(i == 0), symbol=symbol)
 
     return {
         "upper": ups[:2],
@@ -507,13 +508,34 @@ def classify_zone_risk(
     unit: float,
     is_immediate: bool = True,
     is_gold: bool = False,
-    pip_size: float = 0.0001
+    is_jpy: bool = False,
+    pip_size: float = 0.0001,
+    symbol: str = ""
 ) -> Dict[str, Any]:
-    """Classify zone into 3-tier risk profile (High / Med / Low) with tailored SL guidance."""
+    """Classify zone into 3-tier risk profile (High / Med / Low) with tailored SL guidance.
+    Accurately supports all asset classes: Gold (pts, 2 decimals), JPY (p, 3 decimals), Forex (p, 5 decimals).
+    """
+    if symbol:
+        s_up = symbol.upper()
+        is_gold = is_gold or ("XAU" in s_up)
+        is_jpy = is_jpy or ("JPY" in s_up)
+
+    if is_gold:
+        pip_size = 0.1
+        digits = 2
+        unit_abbr = "pts"
+    elif is_jpy:
+        pip_size = 0.01
+        digits = 3
+        unit_abbr = "p"
+    else:
+        pip_size = 0.0001
+        digits = 5
+        unit_abbr = "p"
+
     diff = z.mid - current_price
     dist_atr = abs(diff) / (unit if unit > 0 else 1.0)
     is_upper = z.role == "RESISTANCE"
-    unit_abbr = "pts" if is_gold else "p"
 
     if is_upper:
         # Short zone
@@ -521,40 +543,40 @@ def classify_zone_risk(
             tier = "HIGH_RISK"
             badge = "🔴 HIGH RISK · MOMENTUM / CONTINUATION"
             desc = "Shallow breaker / near-price shelf. Tight execution, potential chop."
-            sl = round(z.top + 0.8 * unit, 3 if is_gold else 5)
-            sl_note = f"SL above shelf (+{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+            sl = round(z.top + 0.8 * unit, digits)
+            sl_note = f"SL above shelf (+{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {sl:.{digits}f}"
         elif dist_atr <= 3.8:
             tier = "MED_RISK"
             badge = "🟡 MED RISK · STRUCTURAL RETEST"
-            desc = "Intermediate breakdown origin. Balanced R:R, requires M5 confirmation trigger."
-            sl = round(z.top + 0.6 * unit, 3 if is_gold else 5)
-            sl_note = f"SL above local swing (+{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+            desc = "Intermediate breakdown origin. Balanced R:R, requires confirmation trigger."
+            sl = round(z.top + 0.6 * unit, digits)
+            sl_note = f"SL above local swing (+{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {sl:.{digits}f}"
         else:
             tier = "LOW_RISK"
             badge = "🟢 LOW RISK · PREMIUM STALK"
             desc = "Deep premium / origin extreme. Maximum R:R, defended by higher timeframe ceiling."
-            sl = round(z.top + 0.4 * unit, 3 if is_gold else 5)
-            sl_note = f"SL above extreme (+{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+            sl = round(z.top + 0.4 * unit, digits)
+            sl_note = f"SL above extreme (+{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {sl:.{digits}f}"
     else:
         # Long zone
         if is_immediate and dist_atr <= 1.8:
             tier = "HIGH_RISK"
             badge = "🔴 HIGH RISK · MOMENTUM / CONTINUATION"
             desc = "Shallow bounce shelf. Tight execution, potential chop."
-            sl = round(z.bottom - 0.8 * unit, 3 if is_gold else 5)
-            sl_note = f"SL below shelf (-{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+            sl = round(z.bottom - 0.8 * unit, digits)
+            sl_note = f"SL below shelf (-{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {sl:.{digits}f}"
         elif dist_atr <= 3.8:
             tier = "MED_RISK"
             badge = "🟡 MED RISK · STRUCTURAL RETEST"
-            desc = "Intermediate breakout origin. Balanced R:R, requires M5 confirmation trigger."
-            sl = round(z.bottom - 0.6 * unit, 3 if is_gold else 5)
-            sl_note = f"SL below local swing (-{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+            desc = "Intermediate breakout origin. Balanced R:R, requires confirmation trigger."
+            sl = round(z.bottom - 0.6 * unit, digits)
+            sl_note = f"SL below local swing (-{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {sl:.{digits}f}"
         else:
             tier = "LOW_RISK"
             badge = "🟢 LOW RISK · DISCOUNT STALK"
             desc = "Deep discount / demand extreme. Maximum R:R, defended by higher timeframe floor."
-            sl = round(z.bottom - 0.4 * unit, 3 if is_gold else 5)
-            sl_note = f"SL below extreme (-{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {sl}"
+            sl = round(z.bottom - 0.4 * unit, digits)
+            sl_note = f"SL below extreme (-{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {sl:.{digits}f}"
 
     z.risk_tier = tier
     z.risk_badge = badge
