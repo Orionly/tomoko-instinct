@@ -149,6 +149,22 @@ def get_session_briefing_engine():
         )
     return _session_briefing_engine
 
+
+_us_catalyst_predictor = None
+
+
+def get_us_catalyst_predictor():
+    global _us_catalyst_predictor
+    if _us_catalyst_predictor is None:
+        from core.us_catalyst_predictor import USCatalystPredictor
+        _us_catalyst_predictor = USCatalystPredictor(
+            news_engine=get_news_engine(),
+            world_news_engine=get_world_news_engine(),
+            price_engine=get_price_engine(),
+            macro_engine=get_macro_engine(),
+        )
+    return _us_catalyst_predictor
+
 # Calendar module globals - ensure same module instances, not new instances
 
 
@@ -769,6 +785,14 @@ def get_pair_deep(symbol: str):
     briefing = get_session_briefing_engine().get_briefing(symbol)
     traps = get_trap_radar_engine().scan_pair_liquidity_traps(symbol)
     scenarios = get_macro_scenario_engine().get_pair_catalyst_briefing(symbol)
+    try:
+        catalyst_pred = get_us_catalyst_predictor().get_pair_catalyst_prediction(
+            symbol=symbol,
+            current_price=scan.get("current_price"),
+            decision_zones=scan.get("decision_zones")
+        )
+    except Exception as e:
+        catalyst_pred = {"status": "ERROR", "symbol": symbol, "error": str(e)}
     return sanitize_for_json({
         "symbol": symbol,
         "currencies": currencies,
@@ -781,6 +805,7 @@ def get_pair_deep(symbol: str):
         },
         "trap_radar": traps,
         "macro_scenarios": scenarios,
+        "catalyst_prediction": catalyst_pred,
         "heatmap": heatmap_row,
         "calendar": upcoming,
         "calendar_count": len(upcoming),
@@ -924,6 +949,22 @@ def get_pair_macro_scenarios(symbol: str):
         return sanitize_for_json(briefing)
     except Exception as e:
         return {"symbol": symbol, "error": str(e), "catalysts": []}
+
+
+@app.get("/api/pair/{symbol}/catalyst_prediction")
+def get_pair_catalyst_prediction_api(symbol: str):
+    """Pair-specific institutional T-30m catalyst prediction, bank matrix, and crowd-trap warning."""
+    try:
+        symbol = symbol.upper()
+        scan = _scan(symbol)
+        pred = get_us_catalyst_predictor().get_pair_catalyst_prediction(
+            symbol=symbol,
+            current_price=scan.get("current_price"),
+            decision_zones=scan.get("decision_zones")
+        )
+        return sanitize_for_json(pred)
+    except Exception as e:
+        return {"error": str(e), "symbol": symbol, "status": "ERROR"}
 
 
 # --- Crowd Trap & Liquidity Sweep Radar Routes ------------------------------ #
