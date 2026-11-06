@@ -354,23 +354,14 @@ def calculate_tf_decision_zones(
             is_flip = ("SWING_HIGH" in item.get("types", []) and not is_upper) or \
                       ("SWING_LOW" in item.get("types", []) and is_upper)
             flip_note = "🔁 S/R FLIP RETEST ZONE (Broken Structure)" if is_flip else None
+            # STRICT HISTORICAL ANCHORING: Zone bounds stay locked to candlestick origins.
+            # Never push/clamp zone boundaries with live price!
+            low = raw_low
+            high = raw_high
+            center = (low + high) / 2.0
         else:
-            center = current_price + default_offset
-            raw_low = center - zone_half
-            raw_high = center + zone_half
-            confluences = [f"Structural {timeframe.upper()} ATR Extension (+{abs(default_offset/atr):.1f}x ATR)"]
-            flip_note = None
-
-        if is_upper:
-            # Upper Zone (Supply) sits strictly ABOVE current price
-            low = max(raw_low, current_price + min_buffer * 0.4)
-            high = max(raw_high, low + zone_half * 0.6)
-            center = (low + high) / 2
-        else:
-            # Lower Zone (Demand) sits strictly BELOW current price
-            high = min(raw_high, current_price - min_buffer * 0.4)
-            low = min(raw_low, high - zone_half * 0.6)
-            center = (low + high) / 2
+            # If no real candlestick cluster exists, do NOT manufacture a floating zone relative to live price!
+            return None
 
         diff = center - current_price
         if is_gold:
@@ -385,6 +376,23 @@ def calculate_tf_decision_zones(
 
         tier_title = "IMMEDIATE" if "1" in zone_id else "SECONDARY / EXPANSION"
         direction_title = "UPPER" if is_upper else "LOWER"
+
+        # Compute explainable strength score for HTF (H1/H4) zones
+        types_list = item.get("types", []) if item is not None else []
+        has_swing = any("SWING" in t or "OB" in t or "SUPPLY" in t or "DEMAND" in t for t in types_list)
+        has_bench = any(t in ("KEY_BENCHMARK", "PDH", "PDL", "WEEKLY_OPEN", "DAILY_OPEN", "LIQ_HIGH", "LIQ_LOW") for t in types_list)
+        has_round = any("ROUND" in t for t in types_list)
+        n_conf = len(confluences)
+        struct_pts = 40 if item is not None else 25
+        bench_pts = 25 if has_bench else (18 if has_swing else 10)
+        stack_pts = min(35, n_conf * 12 + (8 if has_round else 0))
+        htf_score = int(min(100, struct_pts + bench_pts + stack_pts))
+        htf_grade = "STRONG" if htf_score >= 70 else ("MEDIUM" if htf_score >= 40 else "WEAK")
+        htf_bd = [
+            {"label": f"{timeframe.upper()} Structure", "detail": "Swing / Order Block" if item is not None else "ATR Extension", "pts": f"+{struct_pts}", "max": 40},
+            {"label": "Benchmark Anchor", "detail": "Key S/R Level" if has_bench else "Swing Level", "pts": f"+{bench_pts}", "max": 25},
+            {"label": "Confluence Stack", "detail": f"{n_conf} factor(s) aligned", "pts": f"+{stack_pts}", "max": 35},
+        ]
 
         z_res = {
             "id": zone_id,
@@ -401,6 +409,10 @@ def calculate_tf_decision_zones(
             "is_flip": bool(flip_note),
             "flip_note": flip_note,
             "confluences": confluences,
+            "strength_grade": htf_grade,
+            "strength_score": htf_score,
+            "score_breakdown": htf_bd,
+            "score_rubric": "STRONG ≥70 · MEDIUM 40–69 | Max 100: HTF Structure (40) + Benchmark (25) + Confluence Stack (35)",
             "playbook_reject": "Look for wick exhaustion & absorption inside zone to fade back toward mean." if is_upper else "Look for lower wick absorption & buying reaction to retest higher levels.",
             "playbook_break": "If candle body closes through zone, await pullback retest of broken level before continuation."
         }
@@ -411,40 +423,38 @@ def calculate_tf_decision_zones(
     u1 = above_levels[0] if len(above_levels) >= 1 else None
     upper_dz_1 = build_zone(u1, "upper_dz_1", atr * 0.8, is_upper=True)
 
-    # Upper DZ 2 (Secondary / Expansion) - MUST sit strictly above Upper DZ 1
-    min_u2_center = upper_dz_1["high"] + max(zone_half * 2.0, atr * 0.8)
+    # Upper DZ 2 (Secondary / Expansion) - MUST sit strictly above Upper DZ 1 if u1 exists
     u2 = None
-    for cand in above_levels[1:]:
-        if cand["price"] >= min_u2_center:
-            u2 = cand
-            break
+    if upper_dz_1 is not None:
+        min_u2_center = upper_dz_1["high"] + max(zone_half * 1.5, atr * 0.5)
+        for cand in above_levels[1:]:
+            if cand["price"] >= min_u2_center:
+                u2 = cand
+                break
+    elif len(above_levels) >= 1:
+        u2 = above_levels[0]
 
-    if u2 is not None:
-        upper_dz_2 = build_zone(u2, "upper_dz_2", atr * 1.8, is_upper=True)
-    else:
-        synthetic_offset = max(atr * 1.8, (upper_dz_1["high"] + atr * 0.8) - current_price)
-        upper_dz_2 = build_zone(None, "upper_dz_2", synthetic_offset, is_upper=True)
+    upper_dz_2 = build_zone(u2, "upper_dz_2", atr * 1.8, is_upper=True) if u2 is not None else None
 
     # Lower DZ 1 (Immediate) & Lower DZ 2 (Secondary)
     l1 = below_levels[0] if len(below_levels) >= 1 else None
     lower_dz_1 = build_zone(l1, "lower_dz_1", -atr * 0.8, is_upper=False)
 
-    # Lower DZ 2 (Secondary / Expansion) - MUST sit strictly below Lower DZ 1
-    max_l2_center = lower_dz_1["low"] - max(zone_half * 2.0, atr * 0.8)
+    # Lower DZ 2 (Secondary / Expansion) - MUST sit strictly below Lower DZ 1 if l1 exists
     l2 = None
-    for cand in below_levels[1:]:
-        if cand["price"] <= max_l2_center:
-            l2 = cand
-            break
+    if lower_dz_1 is not None:
+        max_l2_center = lower_dz_1["low"] - max(zone_half * 1.5, atr * 0.5)
+        for cand in below_levels[1:]:
+            if cand["price"] <= max_l2_center:
+                l2 = cand
+                break
+    elif len(below_levels) >= 1:
+        l2 = below_levels[0]
 
-    if l2 is not None:
-        lower_dz_2 = build_zone(l2, "lower_dz_2", -atr * 1.8, is_upper=False)
-    else:
-        synthetic_offset = -max(atr * 1.8, current_price - (lower_dz_1["low"] - atr * 0.8))
-        lower_dz_2 = build_zone(None, "lower_dz_2", synthetic_offset, is_upper=False)
+    lower_dz_2 = build_zone(l2, "lower_dz_2", -atr * 1.8, is_upper=False) if l2 is not None else None
 
     # Determine active proximity radar for this timeframe
-    zones_list = [upper_dz_1, lower_dz_1, upper_dz_2, lower_dz_2]
+    zones_list = [z for z in [upper_dz_1, lower_dz_1, upper_dz_2, lower_dz_2] if z is not None]
     testing_zone = next((z for z in zones_list if z["interaction"]["state"] == "TESTING"), None)
     rejected_zone = next((z for z in zones_list if z["interaction"]["state"] == "REJECTED"), None)
     breakout_zone = next((z for z in zones_list if z["interaction"]["state"] == "BREAKOUT"), None)
@@ -452,16 +462,20 @@ def calculate_tf_decision_zones(
     approaching_zone = min(approaching_candidates, key=lambda z: abs(z["interaction"]["pips_dist"]), default=None)
 
     # Compute distances to opposite immediate zones for telemetry message
-    dist_to_u1 = (upper_dz_1["low"] - current_price) / pip_size
-    dist_to_l1 = (current_price - lower_dz_1["high"]) / pip_size
+    dist_to_u1 = ((upper_dz_1["low"] - current_price) / pip_size) if upper_dz_1 is not None else None
+    dist_to_l1 = ((current_price - lower_dz_1["high"]) / pip_size) if lower_dz_1 is not None else None
 
     if testing_zone:
-        other_note = f"Nearest Upper DZ 1 is +{dist_to_u1:.1f} pips away." if not testing_zone["is_upper"] else f"Nearest Lower DZ 1 is -{dist_to_l1:.1f} pips away."
+        other_note = ""
+        if not testing_zone["is_upper"] and dist_to_u1 is not None:
+            other_note = f" · Nearest Upper DZ 1 is +{dist_to_u1:.1f} pips away."
+        elif testing_zone["is_upper"] and dist_to_l1 is not None:
+            other_note = f" · Nearest Lower DZ 1 is -{dist_to_l1:.1f} pips away."
         radar = {
             "state": "TESTING",
             "badge_text": "🔵 TESTING ZONE",
             "headline": f"Price is currently TESTING {testing_zone['title']} ({_fmt_p(testing_zone['low'])} – {_fmt_p(testing_zone['high'])}) on {timeframe.upper()}",
-            "detail": f"{testing_zone['interaction']['status_text']} · {other_note}",
+            "detail": f"{testing_zone['interaction']['status_text']}{other_note}",
             "badge_class": "badge-testing",
             "action_hint": testing_zone["interaction"]["action_hint"],
             "active_zone_id": testing_zone["id"],
@@ -502,15 +516,21 @@ def calculate_tf_decision_zones(
             "pips_dist": round(p_dist, 1)
         }
     else:
+        u_str = f"Upper DZ 1 ({_fmt_p(upper_dz_1['low'])})" if upper_dz_1 is not None else "Open Ceiling"
+        l_str = f"Lower DZ 1 ({_fmt_p(lower_dz_1['high'])})" if lower_dz_1 is not None else "Open Floor"
+        u_dist_str = f"Nearest Upper DZ 1 is +{dist_to_u1:.1f}p away" if dist_to_u1 is not None else "No upper shelf in immediate reach"
+        l_dist_str = f"Lower DZ 1 is -{dist_to_l1:.1f}p away" if dist_to_l1 is not None else "No lower shelf in immediate reach"
+        valid_dists = [d for d in (dist_to_u1, dist_to_l1) if d is not None]
+        min_pips = round(min(valid_dists), 1) if valid_dists else 0.0
         radar = {
             "state": "IN_TRANSIT",
             "badge_text": "⚪ IN TRANSIT",
-            "headline": f"Trading in open range between Lower DZ 1 ({_fmt_p(lower_dz_1['high'])}) and Upper DZ 1 ({_fmt_p(upper_dz_1['low'])})",
-            "detail": f"Cruising freely in open range · Nearest Upper DZ 1 is +{dist_to_u1:.1f}p away, Lower DZ 1 is -{dist_to_l1:.1f}p away.",
+            "headline": f"Trading in open range between {l_str} and {u_str}",
+            "detail": f"Cruising freely in open range · {u_dist_str}, {l_dist_str}.",
             "badge_class": "badge-transit",
             "action_hint": "Price is cruising freely between zones. Prepare reaction plan as boundary approaches.",
             "active_zone_id": None,
-            "pips_dist": round(min(dist_to_u1, dist_to_l1), 1)
+            "pips_dist": min_pips
         }
 
     return {
@@ -875,6 +895,49 @@ def calculate_m15_decision_zones(
         z_title = f"{direction_title} DECISION ZONE {1 if is_immediate else 2}"
         interaction = evaluate_m15_interaction(low, high, is_upper, z_title, z.inside_now)
 
+        # Risk Tier Classification based on structural position & distance
+        dist_atr_abs = round(abs(diff) / unit, 2)
+        if is_upper:
+            # Short zone
+            if is_immediate and dist_atr_abs <= 1.8:
+                risk_tier = "HIGH_RISK"
+                risk_badge = "🔴 HIGH RISK · MOMENTUM / CONTINUATION"
+                risk_desc = "Shallow breaker / near-price shelf. Tight execution, potential chop."
+                rec_sl = round(high + 0.8 * unit, 3 if (is_gold or is_jpy) else 5)
+                rec_sl_note = f"SL above shelf (+{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
+            elif dist_atr_abs <= 3.8:
+                risk_tier = "MED_RISK"
+                risk_badge = "🟡 MED RISK · STRUCTURAL RETEST"
+                risk_desc = "Intermediate breakdown origin. Balanced R:R, requires M5 confirmation trigger."
+                rec_sl = round(high + 0.6 * unit, 3 if (is_gold or is_jpy) else 5)
+                rec_sl_note = f"SL above local swing (+{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
+            else:
+                risk_tier = "LOW_RISK"
+                risk_badge = "🟢 LOW RISK · PREMIUM STALK"
+                risk_desc = "Deep premium / origin extreme. Maximum R:R, defended by higher timeframe ceiling."
+                rec_sl = round(high + 0.4 * unit, 3 if (is_gold or is_jpy) else 5)
+                rec_sl_note = f"SL above extreme (+{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
+        else:
+            # Long zone
+            if is_immediate and dist_atr_abs <= 1.8:
+                risk_tier = "HIGH_RISK"
+                risk_badge = "🔴 HIGH RISK · MOMENTUM / CONTINUATION"
+                risk_desc = "Shallow bounce shelf. Tight execution, potential chop."
+                rec_sl = round(low - 0.8 * unit, 3 if (is_gold or is_jpy) else 5)
+                rec_sl_note = f"SL below shelf (-{round(0.8 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
+            elif dist_atr_abs <= 3.8:
+                risk_tier = "MED_RISK"
+                risk_badge = "🟡 MED RISK · STRUCTURAL RETEST"
+                risk_desc = "Intermediate breakout origin. Balanced R:R, requires M5 confirmation trigger."
+                rec_sl = round(low - 0.6 * unit, 3 if (is_gold or is_jpy) else 5)
+                rec_sl_note = f"SL below local swing (-{round(0.6 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
+            else:
+                risk_tier = "LOW_RISK"
+                risk_badge = "🟢 LOW RISK · DISCOUNT STALK"
+                risk_desc = "Deep discount / demand extreme. Maximum R:R, defended by higher timeframe floor."
+                rec_sl = round(low - 0.4 * unit, 3 if (is_gold or is_jpy) else 5)
+                rec_sl_note = f"SL below extreme (-{round(0.4 * unit / pip_size, 1)}{unit_abbr}): {_fmt_p(rec_sl)}"
+
         return {
             "id": zone_id,
             "title": z_title,
@@ -885,7 +948,12 @@ def calculate_m15_decision_zones(
             "midline": round(midline, 3 if (is_gold or is_jpy) else 5),
             "distance_pips": pips_val,
             "distance_label": dist_label,
-            "distance_atr": round(abs(diff) / unit, 2),
+            "distance_atr": dist_atr_abs,
+            "risk_tier": risk_tier,
+            "risk_badge": risk_badge,
+            "risk_desc": risk_desc,
+            "recommended_sl": rec_sl,
+            "recommended_sl_note": rec_sl_note,
             "is_upper": is_upper,
             "is_flip": z.is_swap,
             "flip_note": "🔁 SWAP ZONE (awaiting pullback)" if z.is_swap else None,
@@ -895,6 +963,8 @@ def calculate_m15_decision_zones(
             "interaction": interaction,
             "strength_grade": z.grade,
             "strength_score": z.score,
+            "score_breakdown": z.score_breakdown,
+            "score_rubric": z.score_rubric,
             "retest_count": z.retest_count,
             "next_test_label": trade_info["label"],
             "status": z.status,

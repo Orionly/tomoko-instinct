@@ -85,6 +85,8 @@ class Zone:
     score: int = 0
     grade: str = "WEAK"
     confluences: List[str] = field(default_factory=list)
+    score_breakdown: List[Dict[str, Any]] = field(default_factory=list)
+    score_rubric: str = ""
 
     @property
     def mid(self) -> float:
@@ -288,19 +290,24 @@ def _score(z: Zone, anchors: List[Dict[str, Any]], htf_levels: List[float], symb
 
     pad = 0.35 * unit_now
     c_pts = 0.0
+    c_labels: List[str] = []
     for a in anchors:
         price = _f(a.get("price"))
         if price > 0 and (z.bottom - pad) <= price <= (z.top + pad):
             c_pts += 12.0
-            conf.append(a.get("label", a.get("type", "Key level")))
+            lbl = a.get("label", a.get("type", "Key level"))
+            conf.append(lbl)
+            c_labels.append(lbl)
     step = _round_step(symbol)
     rn = round(z.mid / step) * step
     if (z.bottom - pad) <= rn <= (z.top + pad):
         c_pts += 8.0
         conf.append(f"Round number {rn:g}")
+        c_labels.append(f"Round #{rn:g}")
     if any((z.bottom - pad) <= lv <= (z.top + pad) for lv in htf_levels):
         c_pts += 10.0
         conf.append("HTF swing confluence")
+        c_labels.append("HTF Swing")
     c_pts = min(25.0, c_pts)
 
     if z.volume_ratio is not None:
@@ -308,12 +315,46 @@ def _score(z: Zone, anchors: List[Dict[str, Any]], htf_levels: List[float], symb
         if z.volume_ratio >= 1.3:
             conf.append(f"Volume {z.volume_ratio:.1f}x avg")
         total = dep_pts + bos_pts + c_pts + v_pts
+        scale = 1.0
     else:
-        total = (dep_pts + bos_pts + c_pts) * (100.0 / 85.0)
+        v_pts = 0.0
+        scale = 100.0 / 85.0
+        total = (dep_pts + bos_pts + c_pts) * scale
 
     z.score = int(round(max(0.0, min(100.0, total))))
     z.grade = "STRONG" if z.score >= GRADE_STRONG else ("MEDIUM" if z.score >= GRADE_MEDIUM else "WEAK")
     z.confluences = conf
+
+    # Build human-explainable point breakdown for UI card
+    bd: List[Dict[str, Any]] = [
+        {
+            "label": "Departure Impulse",
+            "detail": f"{z.departure:.1f}x ATR move",
+            "pts": f"+{round(dep_pts * scale):.0f}",
+            "max": int(round(35 * scale)),
+        },
+        {
+            "label": "Break of Structure",
+            "detail": "Confirmed BOS" if z.bos else "No BOS",
+            "pts": f"+{round(bos_pts * scale):.0f}",
+            "max": int(round(25 * scale)),
+        },
+        {
+            "label": "Key Confluences",
+            "detail": ", ".join(c_labels[:2]) if c_labels else "Standalone shelf",
+            "pts": f"+{round(c_pts * scale):.0f}",
+            "max": int(round(25 * scale)),
+        },
+    ]
+    if z.volume_ratio is not None:
+        bd.append({
+            "label": "Origin Volume",
+            "detail": f"{z.volume_ratio:.1f}x avg vol",
+            "pts": f"+{round(v_pts):.0f}",
+            "max": 15,
+        })
+    z.score_breakdown = bd
+    z.score_rubric = "STRONG ≥70 · MEDIUM 40–69 · WEAK <40 (Filtered) | Max 100: Departure (35) + BOS (25) + Confluence (25) + Vol (15)"
 
 
 def htf_swing_levels(df: Optional[pd.DataFrame], window: int = 3, lookback: int = 200) -> List[float]:

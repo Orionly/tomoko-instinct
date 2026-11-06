@@ -103,7 +103,7 @@
   .score-badge-tier{ font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; }
 
   /* Main Layout */
-  main{ flex:1; padding:16px 18px; display:flex; flex-direction:column; gap:16px; max-width:1160px; width:100%; margin:0 auto; }
+  main{ flex:1; padding:16px 18px; display:flex; flex-direction:column; gap:16px; max-width:1380px; width:100%; margin:0 auto; box-sizing:border-box; }
   
   .panel{ background:var(--glass); border:1px solid var(--border); border-radius:14px; padding:16px 18px;
     backdrop-filter:blur(8px); position:relative; overflow:hidden; }
@@ -149,6 +149,18 @@
   }
   .bp-header-meta{
     display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+  .bp-refresh-btn{
+    display:inline-flex; align-items:center; gap:4px; padding:3px 9px;
+    background:rgba(0,229,255,0.06); border:1px solid rgba(0,229,255,0.25);
+    border-radius:6px; font-family:'JetBrains Mono',monospace; font-size:10.5px;
+    font-weight:700; color:var(--cyan); cursor:pointer; transition:all 0.2s ease;
+  }
+  .bp-refresh-btn:hover{
+    background:rgba(0,229,255,0.18); border-color:var(--cyan);
+  }
+  .bp-refresh-btn:disabled{
+    opacity:0.5; cursor:not-allowed;
   }
   .bp-session-pill{
     display:inline-flex; align-items:center; gap:6px; padding:3px 9px;
@@ -343,22 +355,72 @@
   }
 
   /* ================= 3. EXPLAINABLE SCORECARD ================= */
+  .score-summary-strip{
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;
+    padding:9px 12px; margin-bottom:8px; border-radius:8px;
+    background:rgba(10,15,26,0.75); border:1px solid rgba(0,229,255,0.18);
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#CBD5E1;
+  }
+  .score-formula-eq{
+    font-weight:700; color:#F8FAFC; background:rgba(255,255,255,0.04);
+    padding:4px 8px; border-radius:5px; border:1px solid rgba(255,255,255,0.08);
+  }
+  .score-tier-legend{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:9.5px; }
+  .tier-pill{
+    padding:2px 7px; border-radius:4px; font-weight:700; border:1px solid transparent;
+  }
+  .tier-pill.high{ background:rgba(0,255,136,0.1); color:#00FF88; border-color:rgba(0,255,136,0.3); }
+  .tier-pill.mod{ background:rgba(255,184,0,0.1); color:#FFB800; border-color:rgba(255,184,0,0.3); }
+  .tier-pill.low{ background:rgba(255,77,77,0.1); color:#FF4D4D; border-color:rgba(255,77,77,0.3); }
+
   .score-pillars{ display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-top:6px; }
-  @media(max-width:850px){ .score-pillars{ grid-template-columns:repeat(2, 1fr); } }
+  @media(max-width:1100px){ .score-pillars{ grid-template-columns:repeat(3, 1fr); } }
+  @media(max-width:750px){ .score-pillars{ grid-template-columns:repeat(2, 1fr); } }
   @media(max-width:500px){ .score-pillars{ grid-template-columns:1fr; } }
   
   .pillar-card{
-    background:rgba(12,17,27,0.7); border:1px solid var(--border); border-radius:8px;
+    background:rgba(12,17,27,0.78); border:1px solid var(--border); border-radius:8px;
     padding:10px 12px; display:flex; flex-direction:column; justify-content:space-between;
-    transition:all .15s ease-out; cursor:help; position:relative;
+    transition:all .15s ease-out; position:relative; gap:6px;
   }
-  .pillar-card:hover{ border-color:rgba(0,229,255,0.3); background:rgba(18,25,40,0.85); transform:translateY(-1px); }
-  .pillar-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
-  .pillar-title{ font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .pillar-card:hover{ border-color:rgba(0,229,255,0.35); background:rgba(18,25,40,0.92); transform:translateY(-1px); }
+  .pillar-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:4px; margin-bottom:4px; }
+  .pillar-title-wrap{ display:flex; flex-direction:column; gap:2px; }
+  .pillar-title{ font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800; color:#E2E8F0; text-transform:uppercase; letter-spacing:.03em; }
+  .pillar-weight-tag{ font-family:'JetBrains Mono',monospace; font-size:9px; color:#00E5FF; font-weight:700; }
+  .pillar-score-wrap{ text-align:right; display:flex; flex-direction:column; align-items:flex-end; line-height:1.15; }
   .pillar-score{ font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:800; color:#FFFFFF; }
-  .pillar-bar{ width:100%; height:4px; background:rgba(255,255,255,0.06); border-radius:2px; overflow:hidden; margin-bottom:6px; }
+  .pillar-contrib{ font-family:'JetBrains Mono',monospace; font-size:9px; color:#94A3B8; font-weight:700; }
+  .pillar-bar{ width:100%; height:4px; background:rgba(255,255,255,0.06); border-radius:2px; overflow:hidden; margin-bottom:4px; }
   .pillar-fill{ height:100%; border-radius:2px; transition:width .6s ease; }
-  .pillar-desc{ font-size:10px; color:#94A3B8; line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pillar-items{ display:flex; flex-direction:column; gap:4px; margin:2px 0; padding:5px 0; border-top:1px dashed rgba(255,255,255,0.07); border-bottom:1px dashed rgba(255,255,255,0.07); }
+  .pillar-item-row{ display:flex; justify-content:space-between; align-items:baseline; gap:6px; font-family:'JetBrains Mono',monospace; font-size:9.5px; line-height:1.3; }
+  .pillar-item-lbl{ color:#94A3B8; }
+  .pillar-item-val{ color:#E2E8F0; font-weight:600; }
+  .pillar-item-pts{ color:#00FF88; font-weight:800; white-space:nowrap; background:rgba(0,255,136,0.08); padding:1px 4px; border-radius:3px; }
+  .pillar-desc{ font-size:9.5px; color:#94A3B8; line-height:1.35; }
+
+  /* Decision Zone Score Breakdown Box */
+  .dz-score-box{
+    margin-top:6px; padding:7px 9px; border-radius:6px;
+    background:rgba(10,15,26,0.65); border:1px solid rgba(255,255,255,0.07);
+    font-family:'JetBrains Mono',monospace; font-size:9.5px;
+    width:100%; box-sizing:border-box; overflow:hidden;
+  }
+  .dz-score-box-head{
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;
+    margin-bottom:5px; padding-bottom:4px; border-bottom:1px dashed rgba(255,255,255,0.08);
+    font-weight:700; color:#E2E8F0;
+  }
+  .dz-score-rubric{ font-size:8.5px; color:#94A3B8; font-weight:600; word-break:break-word; }
+  .dz-score-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:4px 8px; width:100%; box-sizing:border-box; }
+  @media(max-width:600px){ .dz-score-grid{ grid-template-columns:1fr; } }
+  .dz-score-item{
+    display:flex; justify-content:space-between; align-items:center; gap:4px;
+    background:rgba(255,255,255,0.025); padding:3px 6px; border-radius:4px; min-width:0;
+  }
+  .dz-score-item-name{ color:#CBD5E1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .dz-score-item-pts{ color:#00E5FF; font-weight:800; white-space:nowrap; flex-shrink:0; }
 
   /* ================= 4. VERTICAL PRICE LADDER ================= */
   .ladder-container{
@@ -445,24 +507,26 @@
 
   /* Compact Zone Telemetry Strip */
   .dz-compact-grid{
-    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(420px, 1fr)); gap:12px; margin-top:10px;
+    width:100%; box-sizing:border-box;
   }
-  @media(max-width:768px){ .dz-compact-grid{ grid-template-columns:1fr; } }
+  @media(max-width:900px){ .dz-compact-grid{ grid-template-columns:1fr; } }
   .dz-compact-card{
     background:rgba(12,17,27,0.7); border:1px solid var(--border); border-radius:8px;
-    padding:10px 14px; display:flex; flex-direction:column; gap:6px; position:relative;
-    transition:all .15s ease-out;
+    padding:12px 14px; display:flex; flex-direction:column; gap:8px; position:relative;
+    transition:all .15s ease-out; min-width:0; overflow:hidden; word-break:break-word;
   }
   .dz-compact-card.upper{ border-left:3px solid var(--bear); }
   .dz-compact-card.lower{ border-left:3px solid var(--bull); }
   .dz-compact-card.flip{ border-left:3px solid var(--gold); background:rgba(255,184,0,0.04); }
   .dz-compact-card:hover{ background:rgba(18,25,40,0.85); }
   .dz-compact-header{
-    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;
+    display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;
+    width:100%;
   }
   .dz-compact-title{
     font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800;
-    display:inline-flex; align-items:center; gap:6px;
+    display:flex; align-items:center; flex-wrap:wrap; gap:6px; flex:1; min-width:0;
   }
   .dz-tag{
     font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:800;
@@ -478,6 +542,51 @@
   .dz-grade-pill.grade-strong{ background:rgba(255,184,0,0.18); color:var(--gold); border:1px solid rgba(255,184,0,0.4); }
   .dz-grade-pill.grade-med{ background:rgba(56,189,248,0.15); color:var(--cyan); border:1px solid rgba(56,189,248,0.3); }
   .dz-grade-pill.grade-weak{ background:rgba(148,163,184,0.12); color:#94A3B8; border:1px solid rgba(148,163,184,0.25); }
+  .dz-risk-tier-pill{
+    font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:800;
+    padding:2px 7px; border-radius:4px; letter-spacing:.02em; border:1px solid transparent;
+  }
+  .dz-risk-tier-pill.low{ background:rgba(0,255,136,0.15); color:#00FF88; border-color:rgba(0,255,136,0.35); }
+  .dz-risk-tier-pill.med{ background:rgba(255,184,0,0.15); color:#FFB800; border-color:rgba(255,184,0,0.35); }
+  .dz-risk-tier-pill.high{ background:rgba(255,77,77,0.15); color:#FF4D4D; border-color:rgba(255,77,77,0.35); }
+
+  .dz-sl-guidance{
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;
+    padding:5px 9px; border-radius:5px; margin-top:2px;
+    background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.06);
+    font-family:'JetBrains Mono',monospace; font-size:9.5px;
+  }
+  .dz-sl-guidance-val{ color:#F8FAFC; font-weight:700; }
+  .dz-sl-guidance-note{ color:#94A3B8; font-size:8.5px; }
+
+  /* 3-Tier Risk Playbook in Battle Plan */
+  .bp-risk-profiles-wrap{
+    margin-top:10px; padding:10px 12px; border-radius:8px;
+    background:rgba(10,15,26,0.8); border:1px solid rgba(0,229,255,0.18);
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .bp-risk-profiles-header{
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800;
+    color:#E2E8F0; text-transform:uppercase; letter-spacing:.04em;
+    padding-bottom:5px; border-bottom:1px solid rgba(255,255,255,0.07);
+  }
+  .bp-risk-profiles-grid{
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:4px;
+  }
+  @media(max-width:850px){ .bp-risk-profiles-grid{ grid-template-columns:1fr; } }
+  .bp-risk-col{
+    background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.05); border-radius:6px;
+    padding:8px 10px; display:flex; flex-direction:column; gap:4px;
+    font-family:'JetBrains Mono',monospace; font-size:9.5px;
+  }
+  .bp-risk-col.high{ border-top:2px solid #FF4D4D; }
+  .bp-risk-col.med{ border-top:2px solid #FFB800; }
+  .bp-risk-col.low{ border-top:2px solid #00FF88; }
+  .bp-risk-col-title{ font-weight:800; font-size:9.5px; }
+  .bp-risk-col-zone{ font-size:12px; font-weight:800; color:#FFFFFF; margin:2px 0; }
+  .bp-risk-col-sl{ color:#CBD5E1; }
+  .bp-risk-col-note{ color:#94A3B8; font-size:8.5px; line-height:1.3; font-family:'Inter',sans-serif; }
   .dz-retest-pill{
     font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700;
     padding:2px 6px; border-radius:4px; letter-spacing:.02em;
@@ -870,6 +979,7 @@
           <span>🎯 Pre-Session Institutional Battle-Plan</span>
         </h3>
         <div class="bp-header-meta">
+          <button id="bp-refresh-btn" class="bp-refresh-btn" onclick="forceRefreshBattlePlan()" title="Force Regenerate Pre-Session Battle-Plan">🔄 Refresh</button>
           <span class="bp-session-pill">
             <span class="bp-live-dot"></span>
             <span id="bp-session-badge">SCHEDULED BRIEFING</span>
@@ -918,6 +1028,17 @@
           <div class="bp-exec-lbl"><span>⚖️</span> <span>Trade Management</span></div>
           <div class="bp-exec-val gold" id="bp-trade-mgmt" style="font-size:11.5px;font-family:'Inter',sans-serif;font-weight:600;">BE at TP1</div>
           <div class="bp-exec-sub">Risk & Position Governance</div>
+        </div>
+      </div>
+
+      <!-- 3-Tier Risk Hierarchy Corridor -->
+      <div class="bp-risk-profiles-wrap" id="bp-risk-profiles-wrap" style="display:none;">
+        <div class="bp-risk-profiles-header">
+          <span>⚖️ 3-Tier Execution Risk Profiles (Momentum vs Value vs Premium)</span>
+          <span style="font-size:9px;color:var(--cyan);font-weight:700;">CHOOSE YOUR RISK PROFILE</span>
+        </div>
+        <div class="bp-risk-profiles-grid" id="bp-risk-profiles-grid">
+          <!-- Rendered dynamically by JS -->
         </div>
       </div>
 
@@ -1058,7 +1179,16 @@
         <h3 class="panel-title">
           <span>📊 Explainable 5-Pillar Scorecard</span>
         </h3>
-        <span class="panel-subtitle">Calculated Directional Edge (0-100)</span>
+        <span class="panel-subtitle" id="score-subtitle">Setup & Environment Quality (0–100 · Not Win-Rate)</span>
+      </div>
+      <div class="score-summary-strip" id="score-summary-strip">
+        <div class="score-tier-legend">
+          <span style="color:#94A3B8;font-weight:700;">TIERS:</span>
+          <span class="tier-pill high">70–100 HIGH EDGE (Tradeable)</span>
+          <span class="tier-pill mod">40–69 MODERATE (Wait Pullback)</span>
+          <span class="tier-pill low">0–39 CHOP / LOW (Stand Aside)</span>
+        </div>
+        <div class="score-formula-eq" id="score-formula-eq">Calculating weighted pillar contributions...</div>
       </div>
       <div class="score-pillars" id="pillars-container">
         <!-- Rendered by JS -->
@@ -1480,6 +1610,7 @@ function renderScenarioMatrixComponent(catalysts, catFallback){
 }
 
 function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
+  CURRENT_BATTLE_PLAN = plan;
   const h4 = scan.h4 || {}, h1 = scan.h1 || {};
   const banner = $('bp-action-banner');
   const actionText = $('bp-action-text');
@@ -1572,6 +1703,40 @@ function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
     }
 
     $('bp-trade-mgmt').textContent = primary.trade_management || 'Move stop loss to BE at TP1';
+
+    // Render 3-Tier Risk Playbook
+    const rp = primary.risk_playbook || {};
+    const rpWrap = $('bp-risk-profiles-wrap');
+    const rpGrid = $('bp-risk-profiles-grid');
+    if(rpWrap && rpGrid && (rp.aggressive_continuation || rp.structural_retest || rp.premium_extreme)){
+      rpWrap.style.display = 'flex';
+      const cols = [
+        { key: 'aggressive_continuation', label: 'Aggressive Continuation', cls: 'high' },
+        { key: 'structural_retest', label: 'Structural Value Retest', cls: 'med' },
+        { key: 'premium_extreme', label: 'Deep Premium / Extreme', cls: 'low' }
+      ];
+      rpGrid.innerHTML = cols.map(c => {
+        const raw = rp[c.key];
+        if(!raw) return '';
+        const badgeColor = c.cls === 'low' ? '#00FF88' : (c.cls === 'med' ? '#FFB800' : '#FF4D4D');
+        const isObj = typeof raw === 'object' && raw !== null;
+        const title = isObj ? (raw.badge || c.label) : c.label;
+        const zoneStr = isObj ? (raw.zone || '—') : 'Scenario Playbook';
+        const slStr = isObj ? `🛑 <b>SL:</b> ${esc(raw.stop_loss || '—')} · <span style="color:#00E5FF">${esc(raw.position_sizing || '')}</span>` : '';
+        const noteStr = isObj ? (raw.note || '') : String(raw);
+
+        return `
+          <div class="bp-risk-col ${c.cls}">
+            <div class="bp-risk-col-title" style="color:${badgeColor}">${esc(title)}</div>
+            ${isObj ? `<div class="bp-risk-col-zone">${esc(zoneStr)}</div>` : ''}
+            ${slStr ? `<div class="bp-risk-col-sl">${slStr}</div>` : ''}
+            <div class="bp-risk-col-note">${esc(noteStr)}</div>
+          </div>
+        `;
+      }).join('');
+    } else if(rpWrap){
+      rpWrap.style.display = 'none';
+    }
   } else {
     $('bp-entry-zone').textContent = 'Dynamic Pullback';
     $('bp-stop-loss').textContent = 'EMA21 ± 1.5 ATR';
@@ -1682,34 +1847,77 @@ function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
 function renderScoreBreakdown(scan){
   const bd = scan.score_breakdown || {};
   const tips = scan.score_tooltips || {};
+  const det = scan.score_details || {};
+  const pMap = det.pillars || {};
 
   const pillars = [
-    { key: 'structural', name: 'Market Structure', weight: '25%', max: 100, desc: 'H4 trend direction & value gate alignment' },
-    { key: 'volatility', name: 'Volatility / ATR', weight: '20%', max: 100, desc: 'Healthy ATR ratio & distance to EMA21' },
-    { key: 'levels', name: 'Key Levels Confluence', weight: '20%', max: 100, desc: 'Discount vs Premium daily range location' },
-    { key: 'intermarket', name: 'Intermarket Flows', weight: '20%', max: 100, desc: 'Yield differentials & macroeconomic driver' },
-    { key: 'news', name: 'News & Event Risk', weight: '15%', max: 100, desc: 'Tier-1 event horizon & calendar safety' },
+    { key: 'structural', name: 'Market Structure', weightPct: 30, desc: 'H4 Gate (45) + ADX Strength (25) + MTF Sync (30)' },
+    { key: 'volatility', name: 'Volatility / ATR', weightPct: 20, desc: 'Healthy H4 ATR 0.8–1.2x (80) ± EMA21 Pullback (±10)' },
+    { key: 'levels', name: 'Key Levels Location', weightPct: 20, desc: 'Daily Range Edge ≤25%/≥75% (80) vs Mid Chop (40)' },
+    { key: 'intermarket', name: 'Intermarket Flows', weightPct: 15, desc: 'Policy rate carry & USD / 10Y Real Yield flow' },
+    { key: 'news', name: 'News & Event Risk', weightPct: 15, desc: '100 pts when clear · 0 pts if Tier-1 event <60m' },
   ];
 
+  // Update live weighted formula banner
+  const eqEl = $('score-formula-eq');
+  if(eqEl){
+    if(det.formula_summary){
+      eqEl.textContent = '∑ ' + det.formula_summary;
+    } else {
+      const sW = ((Number(bd.structural)||0)*0.30).toFixed(1);
+      const vW = ((Number(bd.volatility)||0)*0.20).toFixed(1);
+      const lW = ((Number(bd.levels)||0)*0.20).toFixed(1);
+      const iW = ((Number(bd.intermarket)||0)*0.15).toFixed(1);
+      const nW = ((Number(bd.news)||0)*0.15).toFixed(1);
+      eqEl.textContent = `∑ Structure ${sW} + Volatility ${vW} + Levels ${lW} + Macro ${iW} + News ${nW} = ${scan.score ?? '--'}/100`;
+    }
+  }
+
   const html = pillars.map(p => {
-    const val = bd[p.key] != null ? Number(bd[p.key]) : 50;
+    const pDet = pMap[p.key] || {};
+    const val = bd[p.key] != null ? Number(bd[p.key]) : (pDet.score != null ? Number(pDet.score) : 50);
+    const wPct = pDet.weight_pct != null ? pDet.weight_pct : p.weightPct;
+    const wPts = pDet.weighted_pts != null ? Number(pDet.weighted_pts).toFixed(1) : (val * wPct / 100).toFixed(1);
+    const maxWPts = wPct;
     const tooltip = tips[p.key] || p.desc;
+    const ruleText = pDet.rule || p.desc;
+    const statusTag = pDet.status || '';
+
     let color = '#00FF88';
     if(val < 50) color = '#FF4D4D';
     else if(val < 75) color = '#FFB800';
+
+    const items = Array.isArray(pDet.items) ? pDet.items : [];
+    const itemsHtml = items.length ? `
+      <div class="pillar-items">
+        ${items.map(it => `
+          <div class="pillar-item-row">
+            <span class="pillar-item-lbl">${esc(it.label)}: <span class="pillar-item-val">${esc(it.val)}</span></span>
+            <span class="pillar-item-pts" style="color:${color}">${esc(it.pts)}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : `<div class="pillar-items"><div class="pillar-item-row"><span class="pillar-item-val">${esc(tooltip)}</span></div></div>`;
 
     return `
       <div class="pillar-card" title="${esc(tooltip)}">
         <div>
           <div class="pillar-head">
-            <span class="pillar-title">${p.name}</span>
-            <span class="pillar-score" style="color:${color}">${val}</span>
+            <div class="pillar-title-wrap">
+              <span class="pillar-title">${p.name}</span>
+              <span class="pillar-weight-tag">Weight: ${wPct}%${statusTag ? ' · ' + esc(statusTag) : ''}</span>
+            </div>
+            <div class="pillar-score-wrap">
+              <span class="pillar-score" style="color:${color}">${val}<span style="font-size:10px;color:#64748B;font-weight:600;">/100</span></span>
+              <span class="pillar-contrib">+${wPts} / ${maxWPts} pts</span>
+            </div>
           </div>
           <div class="pillar-bar">
             <div class="pillar-fill" style="width:${Math.min(100, Math.max(0, val))}%;background:${color}"></div>
           </div>
+          ${itemsHtml}
         </div>
-        <div class="pillar-desc" title="${esc(tooltip)}">${esc(tooltip)}</div>
+        <div class="pillar-desc"><b>How scored:</b> ${esc(ruleText)}</div>
       </div>
     `;
   }).join('');
@@ -1832,6 +2040,7 @@ function renderPriceLadder(scan){
 /* ================= 5. DYNAMIC DECISION ZONES & VISUAL CANDLESTICK CHART ================= */
 let ACTIVE_DZ_TF = 'm15';
 let CURRENT_SCAN_DATA = null;
+let CURRENT_BATTLE_PLAN = null;
 
 // Chart State
 let dzChart = null;
@@ -1925,6 +2134,33 @@ function updateDzSvgOverlay(curPrice, D){
       }
     } catch(e){}
   });
+
+  // 4. Shaded Corridor for Institutional Battle-Plan Entry Zone
+  if(CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup && CURRENT_BATTLE_PLAN.primary_setup.entry_zone){
+    try {
+      const ezMatch = CURRENT_BATTLE_PLAN.primary_setup.entry_zone.match(/([0-9]+\.?[0-9]*)\s*-\s*([0-9]+\.?[0-9]*)/);
+      if(ezMatch){
+        const elow = parseFloat(ezMatch[1]), ehigh = parseFloat(ezMatch[2]);
+        const yE1 = dzCandleSeries.priceToCoordinate(ehigh);
+        const yE2 = dzCandleSeries.priceToCoordinate(elow);
+        if(yE1 != null && yE2 != null){
+          const topE = Math.min(yE1, yE2);
+          const heightE = Math.max(Math.abs(yE2 - yE1), 4);
+          elements += `
+            <rect x="0" y="${topE}" width="${width}" height="${heightE}" fill="rgba(0, 229, 255, 0.08)" stroke="#00E5FF" stroke-dasharray="4,4" stroke-width="1.2" />
+          `;
+          if(dzShowLabels){
+            elements += `
+              <g opacity="0.90">
+                <rect x="${width - 110}" y="${topE + 2}" width="105" height="15" rx="3" fill="rgba(7, 11, 18, 0.90)" stroke="#00E5FF" stroke-width="0.8" />
+                <text x="${width - 105}" y="${topE + 13}" fill="#00E5FF" font-family="'JetBrains Mono',monospace" font-size="8.5" font-weight="700">🎯 PLAN ENTRY</text>
+              </g>
+            `;
+          }
+        }
+      }
+    } catch(e){}
+  }
 
   svg.innerHTML = elements;
 }
@@ -2073,6 +2309,62 @@ function syncDzOverlayAndLines(scan, tf){
         } catch(e){}
       }
     });
+
+    // Also project Battle-Plan Entry, SL, and TP1 onto chart price axis
+    if(CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup){
+      const ps = CURRENT_BATTLE_PLAN.primary_setup;
+      if(ps.entry_zone){
+        const m = ps.entry_zone.match(/([0-9]+\.?[0-9]*)\s*-\s*([0-9]+\.?[0-9]*)/);
+        if(m){
+          const emid = (parseFloat(m[1]) + parseFloat(m[2])) / 2;
+          if(!isNaN(emid) && emid > 0){
+            try{
+              const pl = dzCandleSeries.createPriceLine({
+                price: emid,
+                color: '#00E5FF',
+                lineWidth: 1.5,
+                lineStyle: 1, // Dashed
+                axisLabelVisible: true,
+                title: 'PLAN ENTRY',
+              });
+              dzPriceLines.push(pl);
+            }catch(e){}
+          }
+        }
+      }
+      if(ps.stop_loss){
+        const sl = parseFloat(ps.stop_loss);
+        if(!isNaN(sl) && sl > 0){
+          try{
+            const pl = dzCandleSeries.createPriceLine({
+              price: sl,
+              color: '#FF5A79',
+              lineWidth: 1.5,
+              lineStyle: 2, // Dotted
+              axisLabelVisible: true,
+              title: 'PLAN SL',
+            });
+            dzPriceLines.push(pl);
+          }catch(e){}
+        }
+      }
+      if(ps.targets && ps.targets.length > 0){
+        const tp1 = parseFloat(ps.targets[0]);
+        if(!isNaN(tp1) && tp1 > 0){
+          try{
+            const pl = dzCandleSeries.createPriceLine({
+              price: tp1,
+              color: '#00FF88',
+              lineWidth: 1.5,
+              lineStyle: 1, // Dashed
+              axisLabelVisible: true,
+              title: 'PLAN TP1',
+            });
+            dzPriceLines.push(pl);
+          }catch(e){}
+        }
+      }
+    }
   }
 
   const statusEl = $('dz-chart-status');
@@ -2286,7 +2578,12 @@ function renderDecisionZones(scan){
     let gradeBadge = '';
     if(z.strength_grade){
       const gCls = z.strength_grade === 'STRONG' ? 'grade-strong' : (z.strength_grade === 'MEDIUM' ? 'grade-med' : 'grade-weak');
-      gradeBadge = `<span class="dz-grade-pill ${gCls}">★ ${esc(z.strength_grade)} (${z.strength_score || 0})</span>`;
+      gradeBadge = `<span class="dz-grade-pill ${gCls}" title="Zone Strength: ${z.strength_score || 0}/100 (STRONG ≥70, MEDIUM 40–69)">★ ${esc(z.strength_grade)} (${z.strength_score || 0}/100)</span>`;
+    }
+    let riskTierBadge = '';
+    if(z.risk_badge){
+      const rkCls = z.risk_tier === 'LOW_RISK' ? 'low' : (z.risk_tier === 'MED_RISK' ? 'med' : 'high');
+      riskTierBadge = `<span class="dz-risk-tier-pill ${rkCls}" title="${esc(z.risk_desc || '')}">${esc(z.risk_badge)}</span>`;
     }
     let retestBadge = '';
     if(z.next_test_label){
@@ -2296,6 +2593,38 @@ function renderDecisionZones(scan){
       retestBadge = `<span class="dz-retest-pill ${rCls}">🎯 ${esc(z.next_test_label)}</span>`;
     }
 
+    // Build direct Zone Score Breakdown box on the card
+    let scoreBoxHtml = '';
+    if(Array.isArray(z.score_breakdown) && z.score_breakdown.length){
+      const gColor = z.strength_grade === 'STRONG' ? '#00FF88' : (z.strength_grade === 'MEDIUM' ? '#FFB800' : '#94A3B8');
+      const retestNote = (z.retest_count && z.retest_count > 0)
+        ? ` · Prior Retests: ${z.retest_count} (-${z.retest_count * 8} priority pts; 4th test = Exhausted)`
+        : ' · Fresh Untested Zone (0 prior retests)';
+      scoreBoxHtml = `
+        <div class="dz-score-box">
+          <div class="dz-score-box-head">
+            <span>★ ZONE SCORE BREAKDOWN: <span style="color:${gColor}">${z.strength_score || 0} / 100 (${esc(z.strength_grade || 'RATED')})</span></span>
+            <span class="dz-score-rubric">STRONG ≥70 · MEDIUM 40–69${esc(retestNote)}</span>
+          </div>
+          <div class="dz-score-grid">
+            ${z.score_breakdown.map(sb => `
+              <div class="dz-score-item">
+                <span class="dz-score-item-name"><b>${esc(sb.label)}:</b> ${esc(sb.detail || '')}</span>
+                <span class="dz-score-item-pts">${esc(sb.pts)}${sb.max ? '/' + sb.max : ''} pts</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    const slGuidanceHtml = z.recommended_sl_note ? `
+      <div class="dz-sl-guidance">
+        <span class="dz-sl-guidance-val">🛑 <b>Recommended Invalidation:</b> ${esc(z.recommended_sl_note)}</span>
+        <span class="dz-sl-guidance-note">${esc(z.risk_desc || '')}</span>
+      </div>
+    ` : '';
+
     return `
       <div class="dz-compact-card ${tagCls}${z.is_flip ? ' flip' : ''}">
         <div class="dz-compact-header">
@@ -2303,6 +2632,7 @@ function renderDecisionZones(scan){
             <span class="dz-tag ${tagCls}">${esc(z.title || defaultTitle)}</span>
             ${flipHtml}
             ${gradeBadge}
+            ${riskTierBadge}
             ${retestBadge}
             <span style="color:#94A3B8;font-size:10px;">${esc(z.subtitle || '')}</span>
           </div>
@@ -2312,6 +2642,8 @@ function renderDecisionZones(scan){
           <span class="dz-compact-range">${fp(z.low)} – ${fp(z.high)}</span>
           ${midlineVal ? `<span class="dz-compact-midline">50% CE: ${fp(midlineVal)}</span>` : ''}
         </div>
+        ${slGuidanceHtml}
+        ${scoreBoxHtml}
         ${confHtml ? `<div class="dz-confluences">${confHtml}</div>` : ''}
         ${(z.playbook_reject || z.playbook_break) ? `
           <div class="dz-compact-playbook">
@@ -2563,6 +2895,10 @@ function renderAll(d){
   el.style.boxShadow = '0 0 14px ' + sc.bg;
   $('pd-score-tier').textContent = sc.tier;
   $('pd-score-tier').style.color = sc.bg;
+  if(el.parentElement){
+    const eq = (scan.score_details && scan.score_details.formula_summary) ? scan.score_details.formula_summary : '30% Structure + 20% Volatility + 20% Levels + 15% Macro + 15% News';
+    el.parentElement.title = `Setup Quality Score: ${score ?? '--'}/100 (${sc.tier}) — ${eq}. Measures environment quality (70+ High Edge, 40-69 Moderate, <40 Chop), not win-rate.`;
+  }
 
   // Header badges
   const h4 = scan.h4 || {}, h1 = scan.h1 || {};
@@ -2608,9 +2944,33 @@ function tick(){
   if(el) el.textContent = 'live: ' + new Date().toLocaleTimeString();
 }
 
+async function forceRefreshBattlePlan(){
+  const btn = $('bp-refresh-btn');
+  if(btn){
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Refreshing…';
+  }
+  try{
+    const r = await fetch('/api/briefing/generate', { method: 'POST' });
+    const j = await r.json();
+    if(j.success){
+      pollInFlight = false;
+      await poll();
+    }
+  }catch(e){
+    console.error('Refresh error:', e);
+  }finally{
+    if(btn){
+      btn.disabled = false;
+      btn.innerHTML = '🔄 Refresh';
+    }
+  }
+}
+
 poll();
 setInterval(tick, 1000);
 tick();
 </script>
 </body>
 </html>
+

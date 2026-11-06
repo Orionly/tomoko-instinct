@@ -42,10 +42,12 @@ class LevelsEngine:
                 daily_high = float(prev_row['high'])
                 daily_low = float(prev_row['low'])
                 prev_open = float(prev_row['open'])
+                prev_close = float(prev_row['close']) if 'close' in prev_row else daily_high
             else:
                 daily_high = today_high
                 daily_low = today_low
                 prev_open = float(df_daily['open'].iloc[-1])
+                prev_close = float(df_daily['close'].iloc[-1]) if 'close' in df_daily else daily_high
 
         if df_weekly is not None and len(df_weekly) > 0:
             weekly_open = float(df_weekly['open'].iloc[-1])
@@ -62,6 +64,12 @@ class LevelsEngine:
         liq_high = daily_high + 0.3 * atr
         liq_low = daily_low - 0.3 * atr
 
+        # Classical Floor Pivot Point: (High + Low + Close) / 3
+        if daily_high > 0 and daily_low > 0 and prev_close > 0:
+            pivot = round((daily_high + daily_low + prev_close) / 3.0, 5)
+        else:
+            pivot = round(close, 5)
+
         return {
             "daily_high": daily_high,
             "daily_low": daily_low,
@@ -72,4 +80,7 @@ class LevelsEngine:
             "close": close,
             "today_high": today_high,
             "today_low": today_low,
+            "pivot": pivot,
+            "prev_close": prev_close,
         }
+

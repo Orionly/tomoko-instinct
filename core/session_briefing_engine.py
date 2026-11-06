@@ -9,6 +9,7 @@
 # - New York: 12:30 UTC / 20:30 MYT
 
 import os
+import re
 import time
 import json
 import logging
@@ -211,6 +212,128 @@ class SessionBriefingEngine:
 
         return payload
 
+    def is_briefing_stale(self) -> bool:
+        """Determines if current cached briefing is stale (different session, missing pairs, or > 6 hours old)."""
+        with self._lock:
+            if not self.latest_briefing or not self.latest_briefing.get("pairs"):
+                return True
+            curr_info = self.get_current_session_info()
+            cached_session = self.latest_briefing.get("session", "")
+            if cached_session and cached_session != curr_info["session_title"]:
+                return True
+
+            gen_utc_str = self.latest_briefing.get("generated_at_utc", "")
+            if gen_utc_str:
+                try:
+                    cleaned = gen_utc_str.replace(" UTC", "").replace("Z", "").strip()
+                    dt = datetime.fromisoformat(cleaned) if "T" in cleaned else datetime.strptime(cleaned, "%Y-%m-%d %H:%M")
+                    dt = dt.replace(tzinfo=timezone.utc)
+                    age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0
+                    if age_hours > 6.0:
+                        return True
+                except Exception:
+                    pass
+        return False
+
+    @staticmethod
+    def _validate_and_sanitize_setup(setup: Dict, sym: str, spot: float, atr: float, digits: int, pdh: float, pdl: float, today_high: float, today_low: float) -> Dict:
+        """
+        Institutional Guardrail / Assertion Gate.
+        Enforces mathematical consistency across every setup:
+        - Entry corridor: entry_low < entry_high (width >= 0.15 * ATR).
+        - SHORT: Stop Loss MUST be strictly > entry_high. All TPs MUST be < entry_low and descending.
+        - LONG: Stop Loss MUST be strictly < entry_low. All TPs MUST be > entry_high and ascending.
+        Automatically repairs any inverted or collapsed levels from AI or fallback math.
+        """
+        if not setup or not isinstance(setup, dict):
+            return setup
+
+        bias = str(setup.get("bias", "LONG")).upper()
+        entry_zone_str = str(setup.get("entry_zone", ""))
+        min_buf = 1.50 if sym == "XAUUSD" else (0.15 if "JPY" in sym else 0.0015)
+        corridor_buf = max(0.25 * atr, min_buf)
+
+        # 1. Parse and validate entry corridor
+        match = re.search(r'([0-9]+\.?[0-9]*)\s*-\s*([0-9]+\.?[0-9]*)', entry_zone_str)
+        if match:
+            e_low = float(match.group(1))
+            e_high = float(match.group(2))
+            if e_low > e_high:
+                e_low, e_high = e_high, e_low
+            if (e_high - e_low) < (0.15 * atr):
+                e_low = round(e_low - corridor_buf * 0.5, digits)
+                e_high = round(e_high + corridor_buf * 0.5, digits)
+        else:
+            e_low = round(spot - corridor_buf * 0.5, digits)
+            e_high = round(spot + corridor_buf * 0.5, digits)
+
+        setup["entry_zone"] = f"{e_low} - {e_high}"
+
+        # 2. Parse and validate SL and Targets
+        try:
+            sl = float(setup.get("stop_loss", 0.0))
+        except (ValueError, TypeError):
+            sl = 0.0
+
+        raw_targets = setup.get("targets", [])
+        if not isinstance(raw_targets, list):
+            raw_targets = [raw_targets] if raw_targets else []
+
+        valid_targets = []
+        for t in raw_targets:
+            try:
+                t_match = re.search(r'([0-9]+\.?[0-9]*)', str(t))
+                if t_match:
+                    valid_targets.append(float(t_match.group(1)))
+            except Exception:
+                pass
+
+        is_short = "SHORT" in bias or "SELL" in bias
+        if is_short:
+            # STOP LOSS MUST BE > entry_high
+            overhead_roof = max(e_high, spot, today_high, pdh)
+            if sl <= e_high:
+                sl = round(overhead_roof + max(1.5 * atr, min_buf * 2), digits)
+                log.warning("[SessionBriefingSanitizer] Fixed inverted Short SL for %s -> %s", sym, sl)
+
+            setup["stop_loss"] = sl
+            risk = max(abs(sl - e_low), 1.0 * atr)
+
+            # TARGETS MUST BE < entry_low and strictly descending
+            sanitized_targets = [t for t in valid_targets if t < e_low]
+            if len(sanitized_targets) < 3:
+                tp1 = round(e_low - 1.0 * risk, digits)
+                tp2 = round(min(pdl if pdl < e_low else tp1, e_low - 2.0 * risk), digits)
+                tp3 = round(tp2 - 1.0 * atr, digits)
+                sanitized_targets = sorted(list(set(sanitized_targets + [tp1, tp2, tp3])), reverse=True)
+            else:
+                sanitized_targets = sorted(list(set(sanitized_targets)), reverse=True)
+
+            setup["targets"] = sanitized_targets[:4]
+        else:
+            # STOP LOSS MUST BE < entry_low
+            floor_support = min(e_low, spot, today_low if today_low > 0 else spot, pdl if pdl > 0 else spot)
+            if sl >= e_low or sl <= 0:
+                sl = round(floor_support - max(1.5 * atr, min_buf * 2), digits)
+                log.warning("[SessionBriefingSanitizer] Fixed inverted Long SL for %s -> %s", sym, sl)
+
+            setup["stop_loss"] = sl
+            risk = max(abs(e_high - sl), 1.0 * atr)
+
+            # TARGETS MUST BE > entry_high and strictly ascending
+            sanitized_targets = [t for t in valid_targets if t > e_high]
+            if len(sanitized_targets) < 3:
+                tp1 = round(e_high + 1.0 * risk, digits)
+                tp2 = round(max(pdh if pdh > e_high else tp1, e_high + 2.0 * risk), digits)
+                tp3 = round(tp2 + 1.0 * atr, digits)
+                sanitized_targets = sorted(list(set(sanitized_targets + [tp1, tp2, tp3])))
+            else:
+                sanitized_targets = sorted(list(set(sanitized_targets)))
+
+            setup["targets"] = sanitized_targets[:4]
+
+        return setup
+
     def _generate_rule_based_briefing(self, telemetry: Dict) -> Dict:
         """
         Deterministic, zero-API-cost institutional trade briefing generator.
@@ -233,38 +356,64 @@ class SessionBriefingEngine:
         pairs_plan = {}
         for sym in PAIRS:
             p_data = telemetry.get("pairs", {}).get(sym, {})
-            spot = p_data.get("spot_price") or 0.0
-            pdh = p_data.get("pdh") or spot * 1.004
-            pdl = p_data.get("pdl") or spot * 0.996
-            pivot = p_data.get("pivot") or spot
+            spot = float(p_data.get("spot_price") or 0.0)
+            digits = 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5)
+            pdh = float(p_data.get("pdh") or (spot * 1.004 if spot else 0.0))
+            pdl = float(p_data.get("pdl") or (spot * 0.996 if spot else 0.0))
+            today_high = float(p_data.get("today_high") or spot)
+            today_low = float(p_data.get("today_low") or spot)
+            pivot = float(p_data.get("pivot") or spot)
+            atr = float(p_data.get("h1_atr") or (spot * 0.003 if spot else 1.0))
+            if atr <= 0:
+                atr = spot * 0.003 if spot else 1.0
+
             scenarios = p_data.get("catalyst_scenarios", [])
 
             # Determine baseline bias
-            if sym == "XAUUSD":
-                is_bullish = dxy_trend == "DOWN" or spot > pivot
-            elif "USD" in sym and sym.endswith("USD"):
-                is_bullish = dxy_trend == "DOWN" or spot > pivot
+            if sym == "XAUUSD" or ("USD" in sym and sym.endswith("USD")):
+                is_bullish = (spot > pivot and (today_high >= pdh or dxy_trend == "DOWN")) or (spot > pdh)
             else:
                 is_bullish = spot >= pivot
 
             bias = "LONG" if is_bullish else "SHORT"
             prob = "65%" if spot != 0 else "50%"
 
-            # Formulate levels
+            # Calculate institutional execution corridor (avoid zero-width point)
+            min_buf = 1.50 if sym == "XAUUSD" else (0.15 if "JPY" in sym else 0.0015)
+            buffer = max(0.25 * atr, min_buf)
+
             if bias == "LONG":
-                entry_low = round(min(spot, pivot), 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                entry_high = round(max(spot, pivot), 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                sl = round(pdl * 0.998, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                tp1 = round(spot + abs(spot - sl) * 1.0, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                tp2 = round(pdh, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                tp3 = round(pdh * 1.003, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                # Pullback into discount / pivot support corridor
+                entry_low = round(pivot - buffer * 0.5, digits)
+                entry_high = round(pivot + buffer * 0.5, digits)
+                if spot > pivot:
+                    entry_low = round(pivot, digits)
+                    entry_high = round(min(spot, pivot + buffer), digits)
+                if entry_high <= entry_low:
+                    entry_high = round(entry_low + buffer, digits)
+
+                sl = round(min(entry_low - 1.5 * atr, today_low * 0.998, pdl * 0.998), digits)
+                risk = max(abs(entry_high - sl), 0.5 * atr)
+                tp1 = round(entry_high + 1.0 * risk, digits)
+                tp2 = round(max(pdh, entry_high + 2.0 * risk), digits)
+                tp3 = round(tp2 + 1.0 * atr, digits)
+                tgts = sorted(list(set([tp1, tp2, tp3])))
             else:
-                entry_low = round(min(spot, pivot), 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                entry_high = round(max(spot, pivot), 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                sl = round(pdh * 1.002, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                tp1 = round(spot - abs(sl - spot) * 1.0, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                tp2 = round(pdl, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
-                tp3 = round(pdl * 0.997, 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5))
+                # Retest of premium / pivot resistance corridor
+                entry_low = round(pivot - buffer * 0.5, digits)
+                entry_high = round(pivot + buffer * 0.5, digits)
+                if spot < pivot:
+                    entry_high = round(pivot, digits)
+                    entry_low = round(max(spot, pivot - buffer), digits)
+                if entry_low >= entry_high:
+                    entry_low = round(entry_high - buffer, digits)
+
+                sl = round(max(entry_high + 1.5 * atr, today_high * 1.002, pdh * 1.002), digits)
+                risk = max(abs(sl - entry_low), 0.5 * atr)
+                tp1 = round(entry_low - 1.0 * risk, digits)
+                tp2 = round(min(pdl, entry_low - 2.0 * risk), digits)
+                tp3 = round(tp2 - 1.0 * atr, digits)
+                tgts = sorted(list(set([tp1, tp2, tp3])), reverse=True)
 
             # Pull catalyst branches
             branches = []
@@ -295,38 +444,104 @@ class SessionBriefingEngine:
                 trap_warning = "Session opening spike / Judas swing often hunts pre-session stops before real expansion."
                 trap_check = "Monitor liquidity boundaries for false breakout wicks."
 
-            pairs_plan[sym] = {
-                    "executive_bottom_line": f"{bias} bias favored while price holds {'above' if bias == 'LONG' else 'below'} pivot {pivot}. Target {tp2}.",
-                    "primary_setup": {
-                        "bias": bias,
-                        "probability": prob,
-                        "entry_zone": f"{entry_low} - {entry_high}",
-                        "trigger_confirmation": f"M5 rejection wick >= 2x candle body at {pivot} + bullish engulfing close" if bias == "LONG" else f"M5 upper wick rejection at {pivot} + bearish engulfing close",
-                        "stop_loss": sl,
-                        "targets": [tp1, tp2, tp3],
-                        "trade_management": "Bank 50% risk off at TP1; trail stop to Breakeven. Avoid holding through unmanaged red folders."
-                    },
-                    "contingency_plan": {
-                        "scenario": "Sudden macro catalyst shock driving adverse breakout through stop loss.",
-                        "probability": "35%",
-                        "counter_zone": f"{pdl} - {pdh}",
-                        "invalidation": f"Hard H1 close {'below ' + str(pdl) if bias == 'LONG' else 'above ' + str(pdh)} voids the setup."
-                    },
-                    "macro_catalyst": {
-                        "primary_driver": primary_driver,
-                        "if_then_branches": branches
-                    },
-                    "traps_and_checklist": {
-                        "trap_warning": trap_warning,
-                        "checklist": [
-                            f"Set alert at entry zone boundary: {entry_low}",
-                            trap_check,
-                            "Check economic calendar 15 minutes before executing"
-                        ]
-                    },
-                    "catalyst_scenarios": scenarios,
-                    "trap_radar": trap_info
+            # Build 3-Tier Risk Hierarchy Playbook (Aggressive Continuation / Structural Retest / Premium Extreme)
+            if bias == "LONG":
+                # 1. Aggressive / Momentum Continuation (Shallow dip, high execution risk)
+                agg_low = round(spot - 0.4 * atr, digits)
+                agg_high = round(spot, digits)
+                agg_sl = round(agg_low - 0.6 * atr, digits)
+
+                # 2. Structural Retest (Intermediate swing origin / pivot, medium risk)
+                med_low = round(pivot - buffer * 0.5, digits)
+                med_high = round(pivot + buffer * 0.5, digits)
+                med_sl = round(med_low - 0.8 * atr, digits)
+
+                # 3. Deep Discount / Extreme Sweep (Highest R:R, low execution risk)
+                prem_low = round(min(today_low, pdl), digits)
+                prem_high = round(min(today_low, pdl) + 0.5 * atr, digits)
+                prem_sl = round(prem_low - 0.5 * atr, digits)
+            else:
+                # 1. Aggressive / Momentum Continuation (Shallow breaker, high execution risk)
+                agg_low = round(spot, digits)
+                agg_high = round(spot + 0.4 * atr, digits)
+                agg_sl = round(agg_high + 0.6 * atr, digits)
+
+                # 2. Structural Retest (Intermediate swing origin / pivot, medium risk)
+                med_low = round(pivot - buffer * 0.5, digits)
+                med_high = round(pivot + buffer * 0.5, digits)
+                med_sl = round(med_high + 0.8 * atr, digits)
+
+                # 3. Deep Premium / Extreme Sweep (Highest R:R, low execution risk)
+                prem_high = round(max(today_high, pdh), digits)
+                prem_low = round(max(today_high, pdh) - 0.5 * atr, digits)
+                prem_sl = round(prem_high + 0.5 * atr, digits)
+
+            risk_playbook = {
+                "aggressive_continuation": {
+                    "tier": "HIGH_RISK",
+                    "badge": "🔴 HIGH RISK · CONTINUATION / BREAKER",
+                    "zone": f"{agg_low} - {agg_high}",
+                    "stop_loss": agg_sl,
+                    "position_sizing": "0.5x Risk (Half Lot)",
+                    "note": "Immediate momentum entry. High risk of deeper adverse wick; cut fast if M5 closes through SL."
+                },
+                "structural_retest": {
+                    "tier": "MED_RISK",
+                    "badge": "🟡 MED RISK · STRUCTURAL RETEST",
+                    "zone": f"{med_low} - {med_high}",
+                    "stop_loss": med_sl,
+                    "position_sizing": "1.0x Risk (Standard Lot)",
+                    "note": "Value retest at session pivot / breaker shelf. Wait for M5 engulfing/rejection confirmation before committing."
+                },
+                "premium_extreme": {
+                    "tier": "LOW_RISK",
+                    "badge": "🟢 LOW RISK · DEEP PREMIUM / DISCOUNT",
+                    "zone": f"{prem_low} - {prem_high}",
+                    "stop_loss": prem_sl,
+                    "position_sizing": "1.0x - 1.25x Risk (Max Edge)",
+                    "note": "Origin of the session impulse. Defended by extreme highs/lows with maximum mathematical R:R."
                 }
+            }
+
+            setup_dict = {
+                "bias": bias,
+                "probability": prob,
+                "entry_zone": f"{entry_low} - {entry_high}",
+                "trigger_confirmation": f"M5 rejection wick >= 2x candle body at {pivot} + bullish engulfing close" if bias == "LONG" else f"M5 upper wick rejection at {pivot} + bearish engulfing close",
+                "stop_loss": sl,
+                "targets": tgts,
+                "trade_management": "Bank 50% risk off at TP1; trail stop to Breakeven. Avoid holding through unmanaged red folders.",
+                "risk_playbook": risk_playbook
+            }
+            # Enforce institutional validation gate
+            sanitized_setup = self._validate_and_sanitize_setup(
+                setup_dict, sym, spot, atr, digits, pdh, pdl, today_high, today_low
+            )
+
+            pairs_plan[sym] = {
+                "executive_bottom_line": f"{bias} bias favored while price holds {'above' if bias == 'LONG' else 'below'} pivot {pivot}. Target {sanitized_setup['targets'][1] if len(sanitized_setup['targets']) > 1 else sanitized_setup['targets'][0]}.",
+                "primary_setup": sanitized_setup,
+                "contingency_plan": {
+                    "scenario": "Sudden macro catalyst shock driving adverse breakout through stop loss.",
+                    "probability": "35%",
+                    "counter_zone": f"{pdl} - {pdh}",
+                    "invalidation": f"Hard H1 close {'below ' + str(pdl) if bias == 'LONG' else 'above ' + str(pdh)} voids the setup."
+                },
+                "macro_catalyst": {
+                    "primary_driver": primary_driver,
+                    "if_then_branches": branches
+                },
+                "traps_and_checklist": {
+                    "trap_warning": trap_warning,
+                    "checklist": [
+                        f"Set alert at entry zone boundary: {sanitized_setup['entry_zone'].split(' - ')[0]}",
+                        trap_check,
+                        "Check economic calendar 15 minutes before executing"
+                    ]
+                },
+                "catalyst_scenarios": scenarios,
+                "trap_radar": trap_info
+            }
 
         return {
             "session": session_title,
@@ -371,6 +586,7 @@ REQUIREMENTS:
      - stop_loss: exact price level (beneath structural invalidation)
      - targets: array of 3 to 5 realistic target prices (TP1, TP2, TP3, TP4)
      - trade_management: exact de-risking instructions (e.g. move to BE at TP1, reduce risk 15m before news)
+     - risk_playbook: object with 3 risk profiles: aggressive_continuation (HIGH RISK, shallow entry), structural_retest (MED RISK, value pivot), premium_extreme (LOW RISK, origin sweep)
    - contingency_plan:
      - scenario: what catalyst shock would break this trade
      - probability: e.g. "35%"
@@ -409,12 +625,31 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
         t0 = time.time()
         try:
             log.info("[SessionBriefing] Dispatching single batched call to Gemini (%s)...", self.model)
-            with urllib.request.urlopen(req, timeout=15.0) as resp:
+            with urllib.request.urlopen(req, timeout=60.0) as resp:
                 raw_resp = json.loads(resp.read().decode("utf-8"))
                 text_content = raw_resp["candidates"][0]["content"]["parts"][0]["text"]
                 parsed_data = json.loads(text_content)
+                if isinstance(parsed_data, list) and len(parsed_data) > 0:
+                    parsed_data = parsed_data[0]
                 elapsed = round(time.time() - t0, 2)
                 log.info("[SessionBriefing] Successfully generated institutional briefing in %ss!", elapsed)
+
+                # Institutional Assertion Gate: Sanitize every pair from Gemini
+                for sym, p_plan in parsed_data.get("pairs", {}).items():
+                    p_data = telemetry.get("pairs", {}).get(sym, {})
+                    spot = float(p_data.get("spot_price") or 0.0)
+                    digits = 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5)
+                    pdh = float(p_data.get("pdh") or (spot * 1.004 if spot else 0.0))
+                    pdl = float(p_data.get("pdl") or (spot * 0.996 if spot else 0.0))
+                    today_high = float(p_data.get("today_high") or spot)
+                    today_low = float(p_data.get("today_low") or spot)
+                    atr = float(p_data.get("h1_atr") or (spot * 0.003 if spot else 1.0))
+                    if atr <= 0:
+                        atr = spot * 0.003 if spot else 1.0
+                    if isinstance(p_plan, dict) and "primary_setup" in p_plan:
+                        p_plan["primary_setup"] = self._validate_and_sanitize_setup(
+                            p_plan["primary_setup"], sym, spot, atr, digits, pdh, pdl, today_high, today_low
+                        )
 
                 with self._lock:
                     self.latest_briefing = parsed_data
@@ -432,12 +667,14 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
     def _scheduler_loop(self):
         """
         Runs continuously in background.
-        Checks every 30s and fires 30 minutes before Tokyo (23:30 UTC), London (07:30 UTC), New York (12:30 UTC).
+        Checks every 30s and fires 30 minutes before Tokyo (23:30 UTC), London (07:30 UTC), New York (12:30 UTC),
+        or on startup / session rollover if cached briefing is stale.
         """
-        # If cache does not exist on startup, trigger one immediate run
-        if not self.latest_briefing and self.api_key:
+        # If cache does not exist or is stale on startup, trigger one immediate run
+        if self.is_briefing_stale():
             time.sleep(3)  # Brief delay to let price engine seed
             try:
+                log.info("[SessionBriefing] Startup check: cache is stale or missing. Generating fresh briefing...")
                 self.generate_briefing()
             except Exception as e:
                 log.debug("[SessionBriefing] Startup briefing generation warning: %s", e)
@@ -448,10 +685,7 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
             hour = now_utc.hour
             minute = now_utc.minute
 
-            # Check for trigger windows:
-            # 1. Tokyo: 23:30 - 23:35 UTC (07:30 MYT)
-            # 2. London: 07:30 - 07:35 UTC (15:30 MYT)
-            # 3. New York: 12:30 - 12:35 UTC (20:30 MYT)
+            # Check for trigger windows or session transitions:
             target_session = None
             if hour == 23 and 30 <= minute <= 35:
                 target_session = "TOKYO"
@@ -459,6 +693,8 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
                 target_session = "LONDON"
             elif hour == 12 and 30 <= minute <= 35:
                 target_session = "NEW_YORK"
+            elif self.is_briefing_stale() and (now_utc.weekday() < 5 or (now_utc.weekday() == 6 and hour >= 21)):
+                target_session = self.get_current_session_info()["session_name"]
 
             if target_session and target_session != self._last_triggered_session:
                 # Monday morning Asia through Friday evening NY
@@ -470,8 +706,18 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
                     except Exception as ex:
                         log.error("[SessionBriefing] Scheduled trigger error: %s", ex)
 
-    def get_briefing(self, symbol: Optional[str] = None) -> Dict:
-        """Returns the latest cached briefing for the pair or full portfolio."""
+    def get_briefing(self, symbol: Optional[str] = None, auto_refresh_stale: bool = True) -> Dict:
+        """Returns the latest cached briefing for the pair or full portfolio, auto-refreshing if stale."""
+        if auto_refresh_stale and self.is_briefing_stale():
+            if not getattr(self, "_is_generating", False):
+                self._is_generating = True
+                def _bg_run():
+                    try:
+                        self.generate_briefing()
+                    finally:
+                        self._is_generating = False
+                threading.Thread(target=_bg_run, daemon=True, name="session-briefing-autorefresh").start()
+
         with self._lock:
             if not self.latest_briefing:
                 return {}
@@ -484,3 +730,4 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
                     "plan": pair_plan
                 }
             return dict(self.latest_briefing)
+

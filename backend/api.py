@@ -29,7 +29,8 @@ from core.price_engine import PriceEngine, calculate_currency_strength, sanitize
 from core.regime_engine import RegimeEngine
 from core.levels_engine import LevelsEngine
 from core.brain_score import (calculate_brain_score, get_manual_action,
-                             score_volatility, score_levels)
+                             score_structure, score_volatility, score_levels,
+                             build_score_details)
 from core.fundamental_engine import FundamentalEngine
 from core.watchout_zones import calculate_watchout_zones
 from core.decision_zones import calculate_all_decision_zones
@@ -301,6 +302,7 @@ def _no_data_scan(symbol, reason="NO_DATA"):
         "score_breakdown": {"structural": 0, "volatility": 0, "levels": 0, "intermarket": 0, "news": 0},
         "score_tooltips": {"structural": "", "volatility": "", "levels": "",
                             "intermarket": "", "news": reason},
+        "score_details": None,
         "action": "WAIT",
         "real_action": "WAIT",
         "reason": reason,
@@ -407,9 +409,9 @@ def _scan(symbol: str, cal=None):
         decision_zones = None
 
     # --- Real brain score ---
-    # structural / intermarket / news come from the engines; volatility and
-    # levels are computed here from live H4/price data (no magic constants).
-    structural = fund["structural"]
+    # structural comes from H4/H1/M15 technical regime; intermarket / news come from
+    # macro/calendar engines; volatility and levels from live H4/price data.
+    structural, struct_why, struct_detail = score_structure(regime, fund)
     intermarket = fund["intermarket"]
     news_score = 0 if not is_clean else 100
 
@@ -417,20 +419,44 @@ def _scan(symbol: str, cal=None):
     dist_h4 = safe_float(h4.get("dist_ema21_atr", 0))
     volatility, vol_why = score_volatility(atr_ratio_h4, dist_h4)
 
+    z_label = _zone_label(watchout_zones)
     levels_score, levels_why = score_levels(
         price, levels["daily_low"], levels["daily_high"],
-        zone_label=_zone_label(watchout_zones),
+        zone_label=z_label,
     )
 
     score = calculate_brain_score(structural, volatility, levels_score, intermarket, news_score)
+    news_why_str = _news_why(news, news_score)
 
     score_tooltips = {
-        "structural": f"{fund['bias']} = structural {structural}",
+        "structural": struct_why,
         "volatility": vol_why,
         "levels": levels_why,
         "intermarket": f"{fund['bias']} = intermarket {intermarket}",
-        "news": _news_why(news, news_score),
+        "news": news_why_str,
     }
+
+    score_details = build_score_details(
+        structural_score=structural,
+        structural_detail=struct_detail,
+        volatility_score=volatility,
+        atr_ratio=atr_ratio_h4,
+        dist_atr=dist_h4,
+        levels_score=levels_score,
+        price=price,
+        daily_low=levels["daily_low"],
+        daily_high=levels["daily_high"],
+        zone_label=z_label,
+        intermarket_score=intermarket,
+        fund=fund,
+        dxy_change=dxy_change,
+        us10y_change=us10y_change,
+        symbol=symbol,
+        news_score=news_score,
+        news=news,
+        news_why_str=news_why_str,
+        total_score=score,
+    )
 
     # --- Manual action (news cleanliness gates everything) ---
     action, reason = get_manual_action(
@@ -469,6 +495,7 @@ def _scan(symbol: str, cal=None):
             "news": news_score,
         },
         "score_tooltips": score_tooltips,
+        "score_details": score_details,
         "action": action,
         "real_action": action,
         "reason": reason,
