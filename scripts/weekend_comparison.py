@@ -24,17 +24,13 @@ if ROOT not in sys.path:
 
 from core.zone_engine import build_zones, select_slots, htf_swing_levels, TF_PARAMS
 from core.decision_zones import calculate_all_decision_zones
-from core.markup_ingestion_engine import purge_weekly_archive
+from core.trader_dna_engine import purge_weekly_archive, load_trader_dna_profile
 
 
 def load_trader_history(symbol: str = "XAUUSD") -> List[Dict[str, Any]]:
-    profile_path = os.path.join(ROOT, "data", "trader_profile.json")
-    if not os.path.exists(profile_path):
-        print(f"[!] Trader profile not found at {profile_path}")
+    data = load_trader_dna_profile()
+    if not data or (not data.get("history") and not data.get("active_session")):
         return []
-
-    with open(profile_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
 
     snapshots = []
     # 1. Historical entries
@@ -207,6 +203,45 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
                 print(f"    -> [CALIBRATION TARGET]: No overlapping Tomoko zone detected above 35% threshold.")
 
     # -------------------------------------------------------------
+    # Executed Trade Replay & Entry Style Alignment
+    # -------------------------------------------------------------
+    profile_data = load_trader_dna_profile()
+    executed_trades = [t for t in profile_data.get("executed_trades", []) if t.get("symbol", "").upper() == symbol.upper()]
+    if executed_trades:
+        print("\n" + "=" * 76)
+        print(f"  EXECUTED TRADE REPLAY & ENTRY STYLE ALIGNMENT ({len(executed_trades)} trade(s))")
+        print("=" * 76)
+        res_m15 = build_zones(df_m15, timeframe="M15", symbol=symbol)
+        all_m15_zones = res_m15.get("zones", [])
+
+        for t_idx, trade in enumerate(executed_trades, 1):
+            t_dir = trade.get("direction", "LONG")
+            t_entry = float(trade.get("entry_price", 0.0))
+            t_sl = float(trade.get("stop_loss", 0.0))
+            t_tp = float(trade.get("take_profit", 0.0))
+            t_rr = trade.get("risk_reward", 0.0)
+            t_pat = trade.get("pattern_type", "N/A")
+            t_why = trade.get("why_entered") or trade.get("invalidation_logic", "")
+
+            best_entry_zone = None
+            min_entry_dist = float("inf")
+            for mz in all_m15_zones:
+                dist = abs(mz.mid - t_entry)
+                if dist < min_entry_dist:
+                    min_entry_dist = dist
+                    best_entry_zone = mz
+
+            match_status = "[CONFLUENT]" if min_entry_dist <= 4.0 else "[CALIBRATION TARGET]"
+            print(f"\n  {match_status} Trade #{t_idx}: {symbol} {t_dir} at {t_entry:.2f} (SL: {t_sl:.2f}, TP: {t_tp:.2f}, R:R {t_rr})")
+            print(f"      Setup Model: {t_pat}")
+            if t_why:
+                print(f"      Execution Rationale: {t_why}")
+            if best_entry_zone and min_entry_dist <= 4.0:
+                print(f"      -> Confluent Algorithmic Shelf: [{best_entry_zone.bottom:.2f} - {best_entry_zone.top:.2f}] (50% CE: {best_entry_zone.mid:.2f}, Delta: {min_entry_dist:.2f} {unit_str})")
+            else:
+                print(f"      -> Discrepancy: Closest Tomoko zone was {min_entry_dist:.2f} {unit_str} away. Check if displacement threshold was satisfied.")
+
+    # -------------------------------------------------------------
     # Weekend Scorecard Summary
     # -------------------------------------------------------------
     print("\n" + "=" * 76)
@@ -279,7 +314,7 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
         else:
             print(f"  [3] Zone Selection Tuning: High alignment ({recall_pct:.1f}%). Current `TF_PARAMS` are well-calibrated.")
 
-    print("\n  [i] Ingested numerical markups remain safely stored in `data/trader_profile.json`.")
+    print("\n  [i] Ingested numerical markups remain safely stored in `trader_dna/data/trader_dna_profile.json`.")
     print("      Live Tomoko trading engines continue operating 100% autonomously.")
 
     # -------------------------------------------------------------
@@ -304,5 +339,3 @@ if __name__ == "__main__":
     parser.add_argument("--purge-archive", action="store_true", help="Purge the weekly raw screenshot images after running fine-tuning comparison")
     args = parser.parse_args()
     run_weekend_comparison(args.symbol, args.verbose, tune=args.tune, purge_archive=args.purge_archive)
-    args = parser.parse_args()
-    run_weekend_comparison(args.symbol, args.verbose)

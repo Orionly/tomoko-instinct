@@ -755,12 +755,12 @@ def get_pair_candles(symbol: str, tf: str = "H1", limit: int = 1000):
 @app.get("/api/benchmarks/weekend_comparison")
 def get_weekend_comparison():
     """
-    Returns trader ingested markups from data/trader_profile.json (isolated benchmark data)
+    Returns trader ingested markups from trader_dna/data/trader_dna_profile.json (isolated benchmark data)
     for weekend comparison, model validation, and algorithm fine-tuning.
     """
     try:
-        from core.markup_ingestion_engine import load_trader_profile
-        prof = load_trader_profile()
+        from core.trader_dna_engine import load_trader_dna_profile
+        prof = load_trader_dna_profile()
         return sanitize_for_json({
             "trader_style": prof.get("trader_style", {}),
             "active_session": prof.get("active_session", {}),

@@ -13,6 +13,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from core.zone_engine import build_zones, select_slots, zone_tradeability, htf_swing_levels
+from core.trader_dna_engine import load_trader_dna_profile
 
 
 def load_candles():
@@ -29,12 +30,9 @@ def load_candles():
 
 
 def load_profile_m15_snapshots():
-    profile_path = os.path.join(ROOT, "data", "trader_profile.json")
-    if not os.path.exists(profile_path):
-        print(f"Profile not found at {profile_path}")
+    profile = load_trader_dna_profile()
+    if not profile:
         return []
-    with open(profile_path, "r", encoding="utf-8") as f:
-        profile = json.load(f)
 
     snapshots = []
     # Check history
