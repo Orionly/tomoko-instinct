@@ -16,13 +16,15 @@ import pickle
 import argparse
 from datetime import datetime
 from typing import Dict, Any, List
+from collections import Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from core.zone_engine import build_zones, select_slots, htf_swing_levels
+from core.zone_engine import build_zones, select_slots, htf_swing_levels, TF_PARAMS
 from core.decision_zones import calculate_all_decision_zones
+from core.markup_ingestion_engine import purge_weekly_archive
 
 
 def load_trader_history(symbol: str = "XAUUSD") -> List[Dict[str, Any]]:
@@ -81,7 +83,7 @@ def compute_overlap(z1_low: float, z1_high: float, z2_low: float, z2_high: float
     return inter_len / min_len
 
 
-def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False):
+def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: bool = False, purge_archive: bool = False):
     print("=" * 76)
     print(f"  TOMOKO INSTINCT // WEEKEND COMPARISON & FINE-TUNING SUITE [{symbol}]")
     print("=" * 76)
@@ -113,6 +115,12 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False):
     matched_zones = 0
     ce_midline_errors = []
     category_matches = 0
+
+    # Zone DNA Aggregators
+    anchor_counter = Counter()
+    role_counter = Counter()
+    box_heights_by_tf: Dict[str, List[float]] = {"M15": [], "H1": [], "H4": []}
+    why_marked_log: List[str] = []
 
     for idx, snap in enumerate(snapshots, 1):
         tf = snap.get("timeframe", "M15").upper()
@@ -156,6 +164,21 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False):
             t_type = tz.get("type", "RESISTANCE").upper()
             t_name = tz.get("name", "Zone")
 
+            # Collect Zone DNA
+            box_h = tz.get("box_height_pts", abs(t_high - t_low))
+            if tf in box_heights_by_tf:
+                box_heights_by_tf[tf].append(box_h)
+            
+            anchor = tz.get("anchor_type")
+            if anchor:
+                anchor_counter[anchor] += 1
+            role = tz.get("structural_role")
+            if role:
+                role_counter[role] += 1
+            why = tz.get("why_marked")
+            if why:
+                why_marked_log.append(f"[{tf}] {t_name} ({t_type}): {why}")
+
             # Find best matching Tomoko zone
             best_match = None
             best_overlap = 0.0
@@ -165,6 +188,7 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False):
                     best_overlap = ov
                     best_match = mz
 
+            why_disp = f" | Why: {why}" if why else ""
             if best_match and best_overlap >= 0.35:
                 matched_zones += 1
                 mid_diff = abs(best_match.mid - t_mid) * pip_scale
@@ -174,19 +198,19 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False):
                 if type_match:
                     category_matches += 1
 
-                print(f"  [MATCH] {t_name:<16} [{t_low:.2f} - {t_high:.2f}] (50% CE: {t_mid:.2f})")
+                print(f"  [MATCH] {t_name:<16} [{t_low:.2f} - {t_high:.2f}] (50% CE: {t_mid:.2f}){why_disp}")
                 print(f"    -> Tomoko Match:   [{best_match.bottom:.2f} - {best_match.top:.2f}] (50% CE: {best_match.mid:.2f})")
                 print(f"    -> Overlap: {best_overlap*100:.1f}% | 50% CE Discrepancy: {mid_diff:.2f} {unit_str} | Grade: {getattr(best_match, 'grade', 'N/A')}")
             else:
                 # Discrepancy: Trader marked a zone that Tomoko did not isolate
-                print(f"  [MISS ] {t_name:<16} [{t_low:.2f} - {t_high:.2f}] (50% CE: {t_mid:.2f})")
+                print(f"  [MISS ] {t_name:<16} [{t_low:.2f} - {t_high:.2f}] (50% CE: {t_mid:.2f}){why_disp}")
                 print(f"    -> [CALIBRATION TARGET]: No overlapping Tomoko zone detected above 35% threshold.")
 
     # -------------------------------------------------------------
     # Weekend Scorecard Summary
     # -------------------------------------------------------------
     print("\n" + "=" * 76)
-    print("  WEEKEND ACCURACY SCORECARD & FINE-TUNING RECOMMENDATIONS")
+    print("  WEEKEND ACCURACY SCORECARD & ZONE DNA ANALYSIS")
     print("=" * 76)
 
     recall_pct = (matched_zones / total_trader_zones * 100) if total_trader_zones > 0 else 0.0
@@ -198,21 +222,77 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False):
     print(f"  * Role Classification Accuracy:      {category_matches}/{matched_zones} ({cat_pct:.1f}%)")
     print(f"  * Average 50% CE Midline Offset:     {avg_ce_error:.2f} {unit_str}")
 
-    print("\n  [+] Calibration & Tuning Insights:")
-    if recall_pct >= 75.0:
-        print("      [HIGH ALIGNMENT (>75%)]: Autonomous engine faithfully replicates institutional shelves.")
-    elif recall_pct >= 50.0:
-        print("      [MODERATE ALIGNMENT (50-75%)]: Engine captures major swings; review cluster_atr tolerance.")
-    else:
-        print("      [LOW ALIGNMENT (<50%)]: Consider lowering min_displacement_atr or expanding shelf lookback.")
+    # Zone DNA Profile Output
+    print("\n  [+] Ingested Trader DNA Profile (Empirical Ground Truth):")
+    if anchor_counter:
+        print("      * Anchor Types:")
+        for anc, cnt in anchor_counter.most_common():
+            pct = (cnt / sum(anchor_counter.values())) * 100
+            print(f"        - {anc:<24}: {cnt} ({pct:.1f}%)")
+    if role_counter:
+        print("      * Structural Roles:")
+        for rle, cnt in role_counter.most_common():
+            pct = (cnt / sum(role_counter.values())) * 100
+            print(f"        - {rle:<24}: {cnt} ({pct:.1f}%)")
+    
+    print("      * Average Box Thickness:")
+    for tf_key in ["M15", "H1", "H4"]:
+        arr = box_heights_by_tf.get(tf_key, [])
+        if arr:
+            avg_h = sum(arr) / len(arr)
+            print(f"        - {tf_key}: {avg_h:.2f} {unit_str} (min {min(arr):.2f}, max {max(arr):.2f})")
+        else:
+            print(f"        - {tf_key}: N/A (no snapshots logged)")
 
-    if avg_ce_error <= 3.0:
-        print(f"      [ACCURATE 50% CE]: Consequent Encroachment midline accuracy is institutional grade (<= 3.0 {unit_str}).")
-    else:
-        print(f"      [CE OFFSET ({avg_ce_error:.2f} {unit_str})]: Wick-to-body cluster anchors should be tightened.")
+    # -------------------------------------------------------------
+    # Algorithmic Calibration Recommendations (--tune)
+    # -------------------------------------------------------------
+    if tune:
+        print("\n" + "=" * 76)
+        print("  RECOMMENDED ALGORITHMIC CALIBRATIONS (core/zone_engine.py)")
+        print("=" * 76)
+        
+        current_m15 = TF_PARAMS.get("M15", {})
+        m15_heights = box_heights_by_tf.get("M15", [])
+        
+        if m15_heights:
+            avg_m15_h = sum(m15_heights) / len(m15_heights)
+            print(f"  [1] Box Height Clamp Calibration:")
+            print(f"      Current M15 Range: [{current_m15.get('min_height', 0.9)} - {current_m15.get('max_height', 2.6)}] units")
+            print(f"      Trader Empirical Avg: {avg_m15_h:.2f} {unit_str}")
+        
+        if anchor_counter:
+            top_anchor, top_count = anchor_counter.most_common(1)[0]
+            print(f"  [2] Anchor Bias Alignment:")
+            print(f"      Dominant Trader Anchor: {top_anchor} ({top_count} occurrences)")
+            if top_anchor == "WICK_CLUSTER":
+                print("      -> Ensure `cluster_bars` >= 4 and `cluster_tol` is tuned to tighten wick clusters.")
+            elif top_anchor == "BODY_EXTREME":
+                print("      -> Favor candle body closes over extreme wick tips in anchor selection.")
+            elif top_anchor == "ORDER_BLOCK":
+                print("      -> Prioritize origin candle before high-displacement legs.")
 
-    print("\n  [i] Ingested markups remain safely stored in `data/trader_profile.json`.")
+        if recall_pct < 70.0:
+            print(f"  [3] Zone Selection Tuning:")
+            print(f"      Alignment is {recall_pct:.1f}%. Consider relaxing `min_departure` from {current_m15.get('min_departure', 2.0)} to 1.5")
+            print("      to capture secondary consolidation bases marked by the trader.")
+        else:
+            print(f"  [3] Zone Selection Tuning: High alignment ({recall_pct:.1f}%). Current `TF_PARAMS` are well-calibrated.")
+
+    print("\n  [i] Ingested numerical markups remain safely stored in `data/trader_profile.json`.")
     print("      Live Tomoko trading engines continue operating 100% autonomously.")
+
+    # -------------------------------------------------------------
+    # Post-Tune Weekly Archive Purge
+    # -------------------------------------------------------------
+    if purge_archive:
+        print("\n" + "=" * 76)
+        print("  WEEKLY ARCHIVE PURGE EXECUTED")
+        print("=" * 76)
+        purged = purge_weekly_archive()
+        print(f"  Successfully purged {purged} weekly screenshot files from archive.")
+        print("  `markups/` and `markups/archive/` are clean for the upcoming trading week.")
+
     print("=" * 76 + "\n")
 
 
@@ -220,5 +300,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tomoko Weekend Comparison & Fine-Tuning CLI")
     parser.add_argument("--symbol", default="XAUUSD", help="Symbol to compare (default: XAUUSD)")
     parser.add_argument("--verbose", action="store_true", help="Verbose telemetry")
+    parser.add_argument("--tune", action="store_true", help="Generate algorithmic parameter calibrations for core/zone_engine.py")
+    parser.add_argument("--purge-archive", action="store_true", help="Purge the weekly raw screenshot images after running fine-tuning comparison")
+    args = parser.parse_args()
+    run_weekend_comparison(args.symbol, args.verbose, tune=args.tune, purge_archive=args.purge_archive)
     args = parser.parse_args()
     run_weekend_comparison(args.symbol, args.verbose)

@@ -16,6 +16,7 @@ import config_local
 MYT = timezone(timedelta(hours=8))
 MARKUPS_DIR = os.path.join(ROOT, "markups")
 ARCHIVE_DIR = os.path.join(MARKUPS_DIR, "archive")
+CURRENT_WEEK_ARCHIVE = os.path.join(ARCHIVE_DIR, "current_week")
 DATA_DIR = os.path.join(ROOT, "data")
 PROFILE_FILE = os.path.join(DATA_DIR, "trader_profile.json")
 
@@ -25,6 +26,7 @@ def _get_api_key() -> str:
 def _ensure_dirs():
     os.makedirs(MARKUPS_DIR, exist_ok=True)
     os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    os.makedirs(CURRENT_WEEK_ARCHIVE, exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
 
 def load_trader_profile() -> Dict[str, Any]:
@@ -88,7 +90,7 @@ def parse_chart_image(img_path: str) -> Optional[Dict[str, Any]]:
     file_dt_str = file_dt.strftime("%Y-%m-%d %H:%M:%S MYT")
 
     prompt = f"""You are an expert institutional trading chart analyst.
-Analyze this TradingView chart screenshot and extract the trader's marked zones.
+Analyze this TradingView chart screenshot and extract the trader's marked zones along with the underlying characteristics of WHY each zone was drawn.
 File saved timestamp: {file_dt_str}
 
 Look carefully at:
@@ -104,6 +106,11 @@ Look carefully at:
    - Read the exact top price boundary (high) and bottom price boundary (low) using the right price axis numbers.
    - Note the dashed purple midline (50% Consequent Encroachment) if present.
    - Order the zones strictly from highest price to lowest price.
+   - Determine WHY the zone was marked (Zone Marking Characteristics):
+     * anchor_type: Choose best fit: "WICK_CLUSTER" (multiple rejection wicks), "BODY_EXTREME" (candle close edge), "ORDER_BLOCK" (last opposite candle before aggressive move), "IMBALANCE_FVG" (fair value gap/unmitigated imbalance), or "FRACTAL_SWING_TIP".
+     * structural_role: Choose best fit: "LIQUIDITY_SWEEP_ORIGIN", "BREAK_OF_STRUCTURE_ORIGIN", "SWAP_FLIP" (broken S/R flipped), "SESSION_HIGH_LOW", or "RANGE_BOUNDARY".
+     * prior_retest_count: Estimated retests before this snapshot (0 = fresh/untested, 1, 2, or 3+).
+     * why_marked: A concise, precise institutional rationale explaining why the trader placed this box here.
 
 Respond ONLY with valid JSON in this exact structure:
 {{
@@ -118,6 +125,11 @@ Respond ONLY with valid JSON in this exact structure:
       "high": 4198.0,
       "low": 4197.0,
       "midline": 4197.5,
+      "box_height_pts": 1.0,
+      "anchor_type": "WICK_CLUSTER",
+      "structural_role": "LIQUIDITY_SWEEP_ORIGIN",
+      "prior_retest_count": 0,
+      "why_marked": "Asian session high sweep origin prior to aggressive London drop",
       "notes": "Upper sweep resistance"
     }},
     {{
@@ -126,6 +138,11 @@ Respond ONLY with valid JSON in this exact structure:
       "high": 4187.0,
       "low": 4184.0,
       "midline": 4185.5,
+      "box_height_pts": 3.0,
+      "anchor_type": "ORDER_BLOCK",
+      "structural_role": "BREAK_OF_STRUCTURE_ORIGIN",
+      "prior_retest_count": 1,
+      "why_marked": "Bearish displacement origin that broke internal structure",
       "notes": "Immediate intraday resistance shelf"
     }},
     {{
@@ -134,6 +151,11 @@ Respond ONLY with valid JSON in this exact structure:
       "high": 4166.0,
       "low": 4163.5,
       "midline": 4164.75,
+      "box_height_pts": 2.5,
+      "anchor_type": "BODY_EXTREME",
+      "structural_role": "SWAP_FLIP",
+      "prior_retest_count": 1,
+      "why_marked": "Prior ceiling broken during Asia open now acting as support",
       "notes": "Immediate intraday demand shelf"
     }},
     {{
@@ -142,6 +164,11 @@ Respond ONLY with valid JSON in this exact structure:
       "high": 4158.0,
       "low": 4155.5,
       "midline": 4156.75,
+      "box_height_pts": 2.5,
+      "anchor_type": "ORDER_BLOCK",
+      "structural_role": "RANGE_BOUNDARY",
+      "prior_retest_count": 0,
+      "why_marked": "Clean demand base launchpad from previous session accumulation",
       "notes": "Session base launchpad"
     }}
   ]
@@ -177,46 +204,43 @@ Respond ONLY with valid JSON in this exact structure:
     print(f"[ERROR] All Gemini Vision candidate models failed to parse {img_path}.")
     return None
 
-def purge_old_archives(retention_days: int = 3) -> int:
+def purge_weekly_archive() -> int:
     """
-    Auto-deletes any archived markup folders/files older than retention_days.
-    With 3 sessions/day x 3 snapshots = 9 images/day, keeps a rolling maximum of 27 images (3 days) at any time.
+    Purges all archived screenshots in `markups/archive/current_week/` and legacy date folders.
+    Triggered after weekend fine-tuning is completed so disk space is reclaimed,
+    while `data/trader_profile.json` retains all cumulative numerical and characteristic data.
     """
     _ensure_dirs()
-    now = datetime.now(MYT)
-    cutoff = now - timedelta(days=retention_days)
     purged_count = 0
+    if os.path.exists(CURRENT_WEEK_ARCHIVE):
+        for f in os.listdir(CURRENT_WEEK_ARCHIVE):
+            fp = os.path.join(CURRENT_WEEK_ARCHIVE, f)
+            try:
+                if os.path.isfile(fp):
+                    os.remove(fp)
+                    purged_count += 1
+                elif os.path.isdir(fp):
+                    shutil.rmtree(fp)
+                    purged_count += 1
+            except Exception as e:
+                print(f"[!] Error deleting {fp}: {e}")
+        print(f"[PURGE] Weekly archive cleared: {purged_count} files removed from {CURRENT_WEEK_ARCHIVE}.")
 
-    if not os.path.exists(ARCHIVE_DIR):
-        return 0
-
+    # Clean legacy YYYY-MM-DD subfolders in ARCHIVE_DIR
     for item in os.listdir(ARCHIVE_DIR):
+        if item == "current_week":
+            continue
         item_path = os.path.join(ARCHIVE_DIR, item)
         if os.path.isdir(item_path):
             try:
-                folder_date = datetime.strptime(item, "%Y-%m-%d").replace(tzinfo=MYT)
-                if (now.date() - folder_date.date()).days >= retention_days:
-                    shutil.rmtree(item_path)
-                    purged_count += 1
-                    print(f"[PURGE] Auto-deleted expired archive folder: {item} (older than {retention_days} days)")
-            except ValueError:
-                mtime = os.path.getmtime(item_path)
-                folder_dt = datetime.fromtimestamp(mtime, tz=MYT)
-                if folder_dt < cutoff:
-                    shutil.rmtree(item_path)
-                    purged_count += 1
-                    print(f"[PURGE] Auto-deleted expired archive folder: {item}")
-        elif os.path.isfile(item_path):
-            mtime = os.path.getmtime(item_path)
-            file_dt = datetime.fromtimestamp(mtime, tz=MYT)
-            if file_dt < cutoff:
-                os.remove(item_path)
+                shutil.rmtree(item_path)
                 purged_count += 1
-                print(f"[PURGE] Auto-deleted expired file: {item}")
+            except Exception:
+                pass
     return purged_count
 
-def get_pending_markups(max_files: int = 3) -> List[str]:
-    """Return up to max_files newest chart images in markups/ folder waiting to be ingested."""
+def get_pending_markups(max_files: int = 9) -> List[str]:
+    """Return chart images in markups/ folder waiting to be ingested (up to max_files, newest first)."""
     _ensure_dirs()
     image_exts = {".png", ".jpg", ".jpeg", ".webp"}
     candidates = []
@@ -234,9 +258,10 @@ def record_session_zones(
     archive_files: bool = True
 ) -> Dict[str, Any]:
     """
-    Direct local recording of trader zones (0 external API calls used).
+    Direct local recording of trader zones and characteristics (0 external API calls used).
     Updates active_session, appends to history in data/trader_profile.json,
-    moves processed files to markups/archive/YYYY-MM-DD/, and runs the 3-day rolling purge.
+    and moves processed files to markups/archive/current_week/.
+    Files remain preserved in current_week until purged on the weekend post-fine-tune.
     """
     _ensure_dirs()
     profile = load_trader_profile()
@@ -253,29 +278,26 @@ def record_session_zones(
 
     save_trader_profile(profile)
 
-    # Move processed files to archive
+    # Move processed files to current_week archive
     if archive_files and file_paths:
-        today_archive_dir = os.path.join(ARCHIVE_DIR, today_str)
-        os.makedirs(today_archive_dir, exist_ok=True)
         for img_path in file_paths:
             if os.path.exists(img_path):
                 fname = os.path.basename(img_path)
-                dest_path = os.path.join(today_archive_dir, fname)
+                dest_path = os.path.join(CURRENT_WEEK_ARCHIVE, fname)
                 if os.path.exists(dest_path):
                     base, ext = os.path.splitext(fname)
                     timestamp = int(datetime.now(MYT).timestamp())
-                    dest_path = os.path.join(today_archive_dir, f"{base}_{timestamp}{ext}")
+                    dest_path = os.path.join(CURRENT_WEEK_ARCHIVE, f"{base}_{timestamp}{ext}")
                 shutil.move(img_path, dest_path)
 
-    # 3-Day Rolling Purge
-    purge_old_archives(retention_days=3)
     return profile
 
 
-def ingest_pending_markups(max_files: int = 3) -> List[Dict[str, Any]]:
+def ingest_pending_markups(max_files: int = 9) -> List[Dict[str, Any]]:
     """
-    Scan markups/ folder, sort by creation time (newest first), take strictly the 3 latest snapshots,
-    parse them, log to trader profile, and move to archive. Then auto-purges archives older than 3 days.
+    Scan markups/ folder, sort by creation time (newest first), take pending snapshots,
+    parse them with characteristics, log to trader profile, and move to markups/archive/current_week/.
+    Does NOT purge archives during the week; all week's snapshots are preserved until weekend fine-tuning.
     """
     _ensure_dirs()
     image_exts = {".png", ".jpg", ".jpeg", ".webp"}
@@ -289,20 +311,15 @@ def ingest_pending_markups(max_files: int = 3) -> List[Dict[str, Any]]:
                 candidates.append(full_path)
 
     if not candidates:
-        # Run retention purge even if no new files
-        purge_old_archives(retention_days=3)
         return []
 
     # Sort descending by Windows creation / modification time (newest first)
     candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     if len(candidates) > max_files:
-        print(f"[*] Found {len(candidates)} snapshots in markups/. Taking strictly the {max_files} most recent...")
+        print(f"[*] Found {len(candidates)} snapshots in markups/. Taking {max_files} most recent...")
         candidates = candidates[:max_files]
 
     profile = load_trader_profile()
-    today_str = datetime.now(MYT).strftime("%Y-%m-%d")
-    today_archive_dir = os.path.join(ARCHIVE_DIR, today_str)
-    os.makedirs(today_archive_dir, exist_ok=True)
 
     results = []
     for img_path in candidates:
@@ -318,24 +335,18 @@ def ingest_pending_markups(max_files: int = 3) -> List[Dict[str, Any]]:
             profile["active_session"][tf] = parsed
             profile["history"].append(parsed)
 
-            # Move out of markups/ into archive immediately so dropzone is clean
-            dest_path = os.path.join(today_archive_dir, fname)
+            # Move out of markups/ into current_week archive immediately so dropzone is clean
+            dest_path = os.path.join(CURRENT_WEEK_ARCHIVE, fname)
             if os.path.exists(dest_path):
                 base, ext = os.path.splitext(fname)
                 timestamp = int(datetime.now(MYT).timestamp())
-                dest_path = os.path.join(today_archive_dir, f"{base}_{timestamp}{ext}")
+                dest_path = os.path.join(CURRENT_WEEK_ARCHIVE, f"{base}_{timestamp}{ext}")
             shutil.move(img_path, dest_path)
             print(f"[+] Successfully archived {fname} -> {dest_path}")
         else:
             print(f"[-] Could not parse {fname}. Leaving in markups/ for inspection.")
 
     save_trader_profile(profile)
-
-    # 3-Day Rolling Purge: delete archives older than 3 days
-    purged = purge_old_archives(retention_days=3)
-    if purged > 0:
-        print(f"[*] Purged {purged} old archive batch(es) (strictly 3 days retained).")
-
     return results
 
 if __name__ == "__main__":

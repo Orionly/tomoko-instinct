@@ -1049,6 +1049,7 @@
         </button>
         <button class="bp-tab-btn" data-tab="macro" onclick="switchBpTab('macro')">
           <span>🌐</span> <span>Macro & Catalysts</span>
+          <span id="macro-tab-badge" class="fn-pill hi" style="display:none;font-size:9px;padding:1px 6px;margin-left:4px;vertical-align:middle;"></span>
         </button>
         <button class="bp-tab-btn" data-tab="contingency" onclick="switchBpTab('contingency')">
           <span>🛡️</span> <span>Contingency & Shock</span>
@@ -1093,6 +1094,17 @@
 
       <!-- TAB 2: MACRO & CATALYSTS -->
       <div class="bp-tab-pane" id="bp-tab-macro">
+        <!-- PRE-CATALYST T-30m PREDICTION & BANK DESK RADAR -->
+        <div class="bp-card-box" id="bp-catalyst-predictor-box" style="border:1px solid rgba(255,61,113,0.3); background:rgba(255,61,113,0.02);">
+          <div class="bp-card-box-header" style="color:var(--red);">
+            <span>🔴 US RED CATALYST PREDICTION & BANK DESK RADAR</span>
+            <span id="cp-status-pill" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(255,61,113,0.2);color:var(--red);font-weight:800;border:1px solid rgba(255,61,113,0.3);">EVALUATING...</span>
+          </div>
+          <div id="cp-content">
+            <div style="font-size:12px;color:#94A3B8;padding:6px 0;">Awaiting US catalyst telemetry...</div>
+          </div>
+        </div>
+
         <div class="bp-card-box">
           <div class="bp-card-box-header">
             <span>🌐 Global Session Macro Regime</span>
@@ -1607,6 +1619,180 @@ function renderScenarioMatrixComponent(catalysts, catFallback){
   }).join('');
 
   container.innerHTML = html;
+}
+
+function renderCatalystPrediction(pred){
+  const box = $('bp-catalyst-predictor-box');
+  const content = $('cp-content');
+  const statusPill = $('cp-status-pill');
+  const tabBadge = $('macro-tab-badge');
+  if(!box || !content) return;
+
+  if(!pred || pred.status === 'NO_UPCOMING_US_RED_CATALYST' || pred.status === 'ERROR'){
+    if(tabBadge) tabBadge.style.display = 'none';
+    if(statusPill){
+      statusPill.textContent = 'MONITORING';
+      statusPill.style.background = 'rgba(255,255,255,0.06)';
+      statusPill.style.color = 'var(--muted)';
+      statusPill.style.borderColor = 'rgba(255,255,255,0.1)';
+    }
+    content.innerHTML = `
+      <div style="font-size:12px;color:#94A3B8;padding:6px 0;line-height:1.5;">
+        ⚪ No high-impact US economic catalysts scheduled in the immediate horizon. System actively scanning calendar for Tier-1 US events.
+      </div>
+    `;
+    return;
+  }
+
+  const meta = pred.catalyst_meta || {};
+  const bank = pred.bank_intelligence || {};
+  const pair = pred.pair_prediction || {};
+  const overlay = pred.macro_political_overlay || {};
+  const isActive = pred.is_active_t30;
+
+  // Update Macro Tab Badge
+  if(tabBadge){
+    tabBadge.style.display = 'inline-block';
+    tabBadge.textContent = pred.time_until_human || 'T-30m';
+    tabBadge.className = isActive ? 'fn-pill hi' : 'fn-pill med';
+  }
+
+  // Status Pill
+  if(statusPill){
+    statusPill.textContent = isActive ? `🔴 ${pred.time_until_human}` : `⏳ ${pred.time_until_human}`;
+    statusPill.style.background = isActive ? 'rgba(255,61,113,0.2)' : 'rgba(255,184,0,0.15)';
+    statusPill.style.color = isActive ? 'var(--red)' : 'var(--gold)';
+    statusPill.style.borderColor = isActive ? 'var(--red)' : 'var(--gold)';
+  }
+
+  // Pair Bias Styling
+  const bias = pair.predicted_bias || 'NEUTRAL';
+  let biasColor = 'var(--gold)';
+  let biasBg = 'rgba(255,184,0,0.12)';
+  if(bias.includes('BULLISH')){
+    biasColor = 'var(--bull)';
+    biasBg = 'rgba(0,230,118,0.12)';
+  } else if(bias.includes('BEARISH')){
+    biasColor = 'var(--bear)';
+    biasBg = 'rgba(255,61,113,0.14)';
+  }
+
+  // Bank Rows HTML
+  const banksList = bank.banks || [];
+  const banksHtml = banksList.map(b => {
+    let bColor = 'var(--gold)';
+    let bStanceText = 'In-Line';
+    if(b.stance && (b.stance.includes('HAWKISH') || b.stance.includes('ABOVE'))){
+      bColor = 'var(--red)';
+      bStanceText = 'Above';
+    } else if(b.stance && (b.stance.includes('DOVISH') || b.stance.includes('BELOW'))){
+      bColor = 'var(--green)';
+      bStanceText = 'Below';
+    }
+    return `
+      <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:6px;padding:7px 10px;font-size:11.5px;display:flex;flex-direction:column;gap:3px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-weight:700;color:#F1F5F9;">
+            <span>${esc(b.bank)}</span>
+            <span style="font-size:10px;color:var(--muted);margin-left:4px;">(${esc(b.desk)})</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-weight:800;color:#FFFFFF;">${esc(b.forecast_raw)}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:1px 5px;border-radius:3px;background:rgba(255,255,255,0.05);color:${bColor};font-weight:700;">${bStanceText}</span>
+          </div>
+        </div>
+        <div style="font-size:10.5px;color:#94A3B8;line-height:1.4;">${esc(b.desk_rationale)}</div>
+      </div>
+    `;
+  }).join('');
+
+  content.innerHTML = `
+    <!-- Catalyst Title & Meta Strip -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:9px 12px;background:rgba(0,0,0,0.25);border-radius:6px;margin-bottom:10px;border-left:3px solid ${isActive ? 'var(--red)' : 'var(--gold)'};">
+      <div>
+        <div style="font-size:13px;font-weight:800;color:#FFFFFF;display:flex;align-items:center;gap:6px;">
+          <span>⚡ ${esc(meta.event_title)}</span>
+          <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:rgba(255,61,113,0.18);color:var(--red);font-weight:700;">US RED CATALYST</span>
+        </div>
+        <div style="font-size:11px;color:#94A3B8;margin-top:3px;">
+          Release Time: <b style="color:#FFF;">${esc(meta.release_time_utc)}</b> · Official Consensus: <b style="color:#FFF;">${esc(meta.official_forecast)}</b> · Previous: <b style="color:#FFF;">${esc(meta.previous_actual)}</b>
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <span style="display:inline-block;padding:5px 12px;border-radius:5px;background:${biasBg};border:1px solid ${biasColor};font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;color:${biasColor};">
+          ${esc(pair.pair || symbol)} PREDICTED: ${esc(bias.replace(/_/g, ' '))} (${pair.confidence_score || 70}%)
+        </span>
+      </div>
+    </div>
+
+    <!-- Pair-Specific Tactical Intelligence Cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:8px;margin-bottom:12px;">
+      <div style="background:rgba(12,17,28,0.8);border:1px solid rgba(0,229,255,0.2);border-radius:7px;padding:10px 12px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:var(--cyan);text-transform:uppercase;margin-bottom:5px;">
+          🎯 ${esc(pair.pair || symbol)} Transmission & Asymmetric Edge
+        </div>
+        <div style="font-size:11.5px;color:#E2E8F0;line-height:1.5;margin-bottom:5px;">
+          <b>Engine:</b> ${esc(pair.primary_valuation_driver || 'Macro Transmission')}
+        </div>
+        <div style="font-size:11.5px;color:#00E5FF;line-height:1.5;">
+          <b>Asymmetric Play:</b> ${esc(pair.asymmetric_edge || 'Wait for reaction.')}
+        </div>
+      </div>
+
+      <div style="background:rgba(12,17,28,0.8);border:1px solid rgba(255,184,0,0.25);border-radius:7px;padding:10px 12px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:var(--gold);text-transform:uppercase;margin-bottom:5px;">
+          ⚠️ ${esc(pair.pair || symbol)} Crowd Trap Warning & Reaction Targets
+        </div>
+        <div style="font-size:11.5px;color:#FDE68A;line-height:1.5;margin-bottom:5px;">
+          <b>Trap Risk:</b> ${esc(pair.crowd_trap_warning || 'Watch for sweeps.')}
+        </div>
+        <div style="font-size:11px;color:#CBD5E1;line-height:1.4;">
+          <b>Reaction Zones:</b> ${esc((pair.target_decision_zones && pair.target_decision_zones.primary_target) || 'Dynamic Decision Zones')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Bank Consensus & Dispersion Analytics Strip -->
+    <div style="background:rgba(12,17,28,0.6);border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:800;color:#F1F5F9;text-transform:uppercase;">
+          🏦 Wall Street Desk Skew (${bank.count || 0} Banks Ingested)
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);">
+          Median: <b style="color:#FFF;">${esc(bank.bank_median)}</b> · Range: <b style="color:#FFF;">${esc(bank.bank_range)}</b>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(0,229,255,0.1);color:var(--cyan);border:1px solid rgba(0,229,255,0.2);">
+          ${esc(bank.disagreement_index ? bank.disagreement_index.replace(/_/g, ' ') : 'NORMAL DISPERSION')}
+        </span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(255,184,0,0.1);color:var(--gold);border:1px solid rgba(255,184,0,0.2);">
+          ${esc(bank.institutional_tilt ? bank.institutional_tilt.replace(/_/g, ' ') : 'BALANCED')}
+        </span>
+      </div>
+
+      <div style="font-size:11px;color:#94A3B8;line-height:1.4;margin-bottom:10px;">
+        ${esc(bank.tilt_description || '')} · ${esc(bank.disagreement_description || '')}
+      </div>
+
+      <!-- Collapsible / Scrollable Bank Grid -->
+      <details style="cursor:pointer;" open>
+        <summary style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;color:var(--cyan);margin-bottom:8px;outline:none;">
+          ▶ View 10 Bank Forecast Breakdown & Desk Rationales
+        </summary>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:6px;margin-top:6px;">
+          ${banksHtml}
+        </div>
+      </details>
+    </div>
+
+    <!-- Geopolitical & Macro Backdrop Overlay -->
+    <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:6px;padding:8px 12px;font-size:11px;color:#94A3B8;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:14px;">🌐</span>
+      <span><b>Macro & Political Context:</b> ${esc(overlay.macro_summary || 'Standard macroeconomic regime with baseline central bank guidance.')}</span>
+    </div>
+  `;
 }
 
 function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
@@ -2923,6 +3109,7 @@ function renderAll(d){
   $('pd-badges').innerHTML = biasBadge('H4', h4.direction) + biasBadge('H1', scan.h1_bias || h1.bias) + biasBadge('M15', scan.m15_bias);
 
   renderBattlePlan(scan, d.ai_battle_plan, d.ai_session_info, d.trap_radar, d.macro_scenarios);
+  renderCatalystPrediction(d.catalyst_prediction);
   renderScoreBreakdown(scan);
   renderPriceLadder(scan);
   renderDecisionZones(scan);

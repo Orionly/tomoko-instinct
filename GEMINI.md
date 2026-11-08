@@ -24,7 +24,7 @@ Whenever the user enters `/ingest` or `ingest`:
      - Timer is `≤ 15:00` (e.g., `02:06` or `01:09`) $\rightarrow$ **M15** (or **M5** if top bar displays `5m`)
      - If no timer is visible, infer timeframe from candle density and axis markings.
 
-3. **Zone & Midline Extraction**:
+3. **Zone, Midline & DNA Characteristics Extraction**:
    - Extract:
      - Symbol (e.g., `XAUUSD`)
      - Live Market Price from the blue pill badge
@@ -32,17 +32,23 @@ Whenever the user enters `/ingest` or `ingest`:
        - Top boundary (`high`)
        - Bottom boundary (`low`)
        - Dashed purple centerline (`50% Consequent Encroachment midline = (high + low) / 2`)
+       - Box height in points (`high - low`)
        - Type: `RESISTANCE` (above current price) or `SUPPORT` (below current price)
        - Role: `Upper Zone 2`, `Upper Zone 1`, `Lower Zone 1`, `Lower Zone 2` (or intermediate pullback shelf)
+       - **Zone Marking Characteristics ("WHY Marked")**:
+         - `anchor_type`: `WICK_CLUSTER`, `BODY_EXTREME`, `ORDER_BLOCK`, `IMBALANCE_FVG`, or `FRACTAL_SWING_TIP`
+         - `structural_role`: `LIQUIDITY_SWEEP_ORIGIN`, `BREAK_OF_STRUCTURE_ORIGIN`, `SWAP_FLIP`, `SESSION_HIGH_LOW`, or `RANGE_BOUNDARY`
+         - `prior_retest_count`: Estimated touches before snapshot (0 = fresh, 1, 2, 3+)
+         - `why_marked`: Clear, precise institutional rationale explaining why the trader marked this zone
 
-4. **Benchmark Archival & Historical Dataset (Decoupled from Live Engine)**:
+4. **Benchmark Archival & Weekly Lifecycle (Decoupled from Live Engine)**:
    - Update `data/trader_profile.json`:
      - Update `active_session` dictionary with the latest zones by timeframe.
-     - Append the snapshot entry to `history`.
-   - **ZERO LIVE INTERFERENCE RULE**: All ingested data is strictly kept as historical ground-truth benchmark data for **weekend comparison and fine-tuning**. Ingested markups are **NEVER** injected into Tomoko's live trading execution, live order flow radar, or live chart visualization. Tomoko operates 100% autonomously on its own institutional algorithms.
-   - Move the processed image files from `markups/` into `markups/archive/YYYY-MM-DD/`.
-   - Run the 3-day rolling purge: automatically delete any archive date folder older than 3 days (72 hours).
-   - Ensure `markups/` is left 100% clean and empty.
+     - Append the snapshot entry with its extracted characteristics to cumulative `history`.
+   - **ZERO LIVE INTERFERENCE RULE**: Ingested data is strictly kept as historical ground-truth benchmark data for **weekend comparison and fine-tuning**. Ingested markups are **NEVER** injected into Tomoko's live trading execution, live order flow radar, or live chart visualization. Tomoko operates 100% autonomously on its own institutional algorithms.
+   - **Weekly Screenshot Retention**: Move processed image files into `markups/archive/current_week/`. Raw images remain preserved throughout the week across all 3 daily sessions (pre-Tokyo, pre-London, pre-US).
+   - **Weekend Post-Tuning Purge**: Raw screenshots are automatically purged on the weekend after running the fine-tuning suite (`python scripts/weekend_comparison.py --tune --purge-archive`), leaving disk space clean while `data/trader_profile.json` permanently retains the numerical and characteristic learning data.
+   - Ensure `markups/` dropzone is left 100% clean and empty.
 
 5. **Session Output**:
    - Present a clear, formatted summary table showing:

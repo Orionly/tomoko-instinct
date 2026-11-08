@@ -29,7 +29,10 @@ def main():
             print(f"\n--- {sym} [{tf}] (Chart Price: {price}) ---")
             for z in r.get("zones", []):
                 mid = f" (50% CE: {z.get('midline')})" if z.get("midline") else ""
-                print(f"  [{z.get('type')}] {z.get('name')}: {z.get('low')} – {z.get('high')}{mid} | {z.get('notes')}")
+                anchor = f" | Anchor: {z.get('anchor_type')}" if z.get('anchor_type') else ""
+                role = f" | Role: {z.get('structural_role')}" if z.get('structural_role') else ""
+                why = f"\n    -> Why: {z.get('why_marked')}" if z.get('why_marked') else ""
+                print(f"  [{z.get('type')}] {z.get('name')}: {z.get('low')} – {z.get('high')}{mid}{anchor}{role}{why}")
 
     profile = load_trader_profile()
     active = profile.get("active_session", {})
