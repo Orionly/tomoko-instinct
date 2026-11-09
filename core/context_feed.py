@@ -78,7 +78,7 @@ class ContextFeed:
             "VIX": "^VIX",
             "SPX": "^GSPC",
             "OIL": "CL=F",
-            "GOLD": "PAXG-USD",
+            "GOLD": "GC=F",
         }
 
     def get_yfinance_price(self, ticker):

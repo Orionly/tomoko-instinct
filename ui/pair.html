@@ -1248,6 +1248,7 @@
           </div>
           <div class="dz-chart-actions">
             <span id="dz-chart-status" class="dz-chart-status">Live Telemetry</span>
+            <button class="dz-chart-btn" id="dz-tz-btn" onclick="toggleDzTimezone()" title="Toggle Timezone: NY (UTC-5) / MYT (UTC+8) / UTC">🌐 NY (UTC-5)</button>
             <button class="dz-chart-btn active" id="dz-toggle-labels-btn" onclick="toggleDzLabels()" title="Toggle Minimal Zone Labels">👁️ Labels: On</button>
             <button class="dz-chart-btn" onclick="fitDzChart()" title="Fit View / Reset Scale">⛶ Fit View</button>
           </div>
@@ -2250,6 +2251,30 @@ function toggleDzLabels(){
   updateDzSvgOverlay(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.price : 0, dp(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.symbol : ''));
 }
 
+let dzTzMode = localStorage.getItem('dz_timezone') || 'NY'; // 'NY' (UTC-5), 'MYT' (UTC+8), 'UTC' (0)
+const DZ_TZ_OFFSETS = {
+  'NY': -5 * 3600,
+  'MYT': 8 * 3600,
+  'UTC': 0,
+};
+const DZ_TZ_LABELS = {
+  'NY': '🌐 NY (UTC-5)',
+  'MYT': '🌐 MYT (UTC+8)',
+  'UTC': '🌐 UTC',
+};
+
+function toggleDzTimezone(){
+  const modes = ['NY', 'MYT', 'UTC'];
+  const nextIdx = (modes.indexOf(dzTzMode) + 1) % modes.length;
+  dzTzMode = modes[nextIdx];
+  localStorage.setItem('dz_timezone', dzTzMode);
+  const btn = $('dz-tz-btn');
+  if(btn) btn.textContent = DZ_TZ_LABELS[dzTzMode];
+  if(CURRENT_SCAN_DATA){
+    fetchAndRenderDzCandles(CURRENT_SCAN_DATA.symbol, ACTIVE_DZ_TF, CURRENT_SCAN_DATA.price, true);
+  }
+}
+
 function fitDzChart(){
   if(dzChart && dzChart.timeScale) {
     try { dzChart.timeScale().fitContent(); } catch(e){}
@@ -2582,7 +2607,13 @@ function syncDzOverlayAndLines(scan, tf){
 async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
   if(dzCandlesLoading) return;
   const tfUpper = tf.toUpperCase();
-  if(!forceReload && dzChartTf === tfUpper && dzChartSymbol === sym && dzCandleSeries){
+  const nowSec = Math.floor(Date.now() / 1000);
+  const tfSec = { 'M15': 900, 'H1': 3600, 'H4': 14400, 'D1': 86400 }[tfUpper] || 900;
+  const candleExpired = dzLastCandle && dzLastCandle.rawTime && (nowSec - dzLastCandle.rawTime >= tfSec);
+  const periodicRefreshDue = !window._dzLastFetchTime || (nowSec - window._dzLastFetchTime > 60);
+
+  // If bar is still active and not due for periodic refresh, perform high-frequency tick update
+  if(!forceReload && !candleExpired && !periodicRefreshDue && dzChartTf === tfUpper && dzChartSymbol === sym && dzCandleSeries){
     if(dzLastCandle && curPrice > 0){
       dzLastCandle.close = curPrice;
       if(curPrice > dzLastCandle.high) dzLastCandle.high = curPrice;
@@ -2595,7 +2626,10 @@ async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
 
   dzCandlesLoading = true;
   const loadingEl = $('dz-chart-loading');
-  if(loadingEl) { loadingEl.style.display = 'flex'; loadingEl.textContent = `Loading ${tfUpper} Candles for ${esc(sym)}…`; }
+  if(loadingEl && (!dzCandleSeries || forceReload)) {
+    loadingEl.style.display = 'flex';
+    loadingEl.textContent = `Loading ${tfUpper} Candles for ${esc(sym)}…`;
+  }
 
   try{
     const tfLimits = { 'M15': 1000, 'H1': 800, 'H4': 400, 'D1': 300 };
@@ -2620,12 +2654,26 @@ async function fetchAndRenderDzCandles(sym, tf, curPrice, forceReload = false){
       },
     });
 
-    const candles = data.candles || [];
+    const isFirstLoad = !dzChartInitialized || dzChartTf !== tfUpper || dzChartSymbol !== sym;
+    const tzOffset = DZ_TZ_OFFSETS[dzTzMode] || 0;
+    const rawCandles = data.candles || [];
+    const candles = rawCandles.map(c => ({
+      ...c,
+      rawTime: c.time,
+      time: c.time + tzOffset,
+    }));
+
     if(candles.length > 0){
       dzCandleSeries.setData(candles);
       dzLastCandle = { ...candles[candles.length - 1] };
-      dzChart.timeScale().fitContent();
+      if(isFirstLoad || forceReload){
+        dzChart.timeScale().fitContent();
+      }
     }
+    window._dzLastFetchTime = Math.floor(Date.now() / 1000);
+
+    const tzBtn = $('dz-tz-btn');
+    if(tzBtn) tzBtn.textContent = DZ_TZ_LABELS[dzTzMode] || '🌐 NY (UTC-5)';
 
     dzChartTf = tfUpper;
     dzChartSymbol = sym;

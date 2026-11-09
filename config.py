@@ -28,6 +28,13 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 API_HOST = "127.0.0.1"
 API_PORT = 8000
 
+# MetaTrader 5 Primary & Failover Broker Configurations
+ENABLE_MT5 = True
+MT5_PRIMARY_BROKER = "HFM"
+MT5_PRIMARY_PATH = r"C:\Program Files\HFM Metatrader 5\terminal64.exe"
+MT5_SECONDARY_BROKER = "VT_MARKETS"
+MT5_SECONDARY_PATH = r"C:\Program Files\VT Markets (Pty) MT5 Terminal\terminal64.exe"
+
 # RiskManager micro-hardened
 RISK_CONFIG = {
     "XAU": {"sl_atr_mult": 1.8, "tp_atr_mult": 3.6, "sl_min_usd": 3.0, "lot": 0.01},
@@ -48,7 +55,7 @@ CONTEXT_SYMBOLS = {
     "VIX": "^VIX",
     "SPX": "^GSPC",
     "OIL": "CL=F",
-    "GOLD": "PAXG-USD",
+    "GOLD": "GC=F",
     "NIKKEI": "^N225"
 }
 

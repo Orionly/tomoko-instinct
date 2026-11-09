@@ -63,7 +63,7 @@ class IntermarketEngine:
             "VIX": "^VIX",
             "SPX": "^GSPC",
             "OIL": "CL=F",
-            "GOLD": "PAXG-USD",
+            "GOLD": "GC=F",
         }
 
     def get_snapshot(self):

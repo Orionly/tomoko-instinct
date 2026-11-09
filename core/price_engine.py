@@ -21,6 +21,21 @@ import numpy as np
 import websockets
 import yfinance as yf
 
+try:
+    import MetaTrader5 as mt5
+except ImportError:
+    mt5 = None
+
+MT5_TF_MAP = {}
+if mt5 is not None:
+    MT5_TF_MAP = {
+        "M15": mt5.TIMEFRAME_M15,
+        "H1": mt5.TIMEFRAME_H1,
+        "H4": mt5.TIMEFRAME_H4,
+        "D1": mt5.TIMEFRAME_D1,
+        "W1": mt5.TIMEFRAME_W1,
+    }
+
 import config
 
 log = logging.getLogger(__name__)
@@ -37,7 +52,7 @@ SYMBOLS_MAP = {
     "GBPJPY": "OANDA:GBP_JPY",
     "EURJPY": "OANDA:EUR_JPY",
     "EURGBP": "OANDA:EUR_GBP",
-    "XAUUSD": "OANDA:XAU_USD",
+    # Note: XAUUSD is exclusively powered by TradingView Spot Oracle for live bid/ask matching TradingView
 }
 
 REVERSE_MAP = {v: k for k, v in SYMBOLS_MAP.items()}
@@ -49,7 +64,7 @@ YF_MAP = {
     "GBPJPY": "GBPJPY=X",
     "EURJPY": "EURJPY=X",
     "EURGBP": "EURGBP=X",
-    "XAUUSD": "PAXG-USD",  # Physical 1:1 Spot Gold bullion
+    "XAUUSD": "GC=F",  # COMEX Gold Futures (continuous contract, institutional XAUUSD proxy)
 }
 
 POINTS_MAP = {
@@ -187,9 +202,29 @@ def _fetch_tradingview_spot() -> Dict[str, Dict]:
 
 def _fetch_gold_spot() -> Optional[Dict]:
     """
-    Tier-2 Fallback: Fetches live Physical Spot Gold (PAXG/USD) from Kraken with Coinbase & Yahoo fallback.
+    Tier-2 Fallback: Fetches live COMEX Gold Futures (GC=F) from Yahoo Finance,
+    with secondary crypto bullion fallback if offline.
     """
     headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1m&range=1d"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            d = json.loads(resp.read().decode())
+            meta = d["chart"]["result"][0]["meta"]
+            price = float(meta["regularMarketPrice"])
+            if price > 0:
+                return {
+                    "price": price,
+                    "bid": round(price - 0.25, 2),
+                    "ask": round(price + 0.25, 2),
+                    "spread": 25,
+                    "point": 0.01,
+                    "source": "yf_gold_futures",
+                }
+    except Exception as e:
+        log.debug("[PriceEngine] Yahoo GC=F gold fetch note: %s", e)
+
     try:
         url = "https://api.kraken.com/0/public/Ticker?pair=PAXGUSD"
         req = urllib.request.Request(url, headers=headers)
@@ -293,13 +328,29 @@ class PriceEngine:
         self.latest_prices: Dict[str, Dict] = {}
         self.candles_cache: Dict[str, Dict[str, pd.DataFrame]] = {}
         self.last_candle_update: Dict[str, float] = {}
+        self._pair_basis_offsets: Dict[str, float] = {}
+        self._pair_basis_dates: Dict[str, str] = {}
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self.connected = False
         self._xau_basis_offset: Optional[float] = None
         self._xau_basis_offset_date: Optional[str] = None
 
-        # Pre-seed initial prices and historical bars
+        # Multi-broker MT5 state
+        self.active_broker: Optional[str] = None
+        self._mt5_symbol_map: Dict[str, str] = {}
+        self._broker_offset_sec: int = 0
+
+        # 1. Connect to Primary MT5 (HFM) or Secondary Failover (VT Markets)
+        self._init_mt5_bridge()
+
+        # 2. Pre-seed live spot prices from MT5 or TradingView oracle immediately
+        try:
+            self.poll_spot_oracle_all()
+        except Exception as e:
+            log.debug("[PriceEngine] Initial spot poll note: %s", e)
+
+        # 3. Pre-seed initial prices and historical bars
         self._seed_initial_data()
 
         # Start background threads:
@@ -312,35 +363,228 @@ class PriceEngine:
             self._ws_thread = threading.Thread(target=self._start_ws_loop, daemon=True, name="finnhub-ws")
             self._ws_thread.start()
 
-        # 3. Periodic candle refresher (every 90s)
+        # 3. Periodic candle refresher (every 60s)
         self._candle_thread = threading.Thread(target=self._candle_refresh_loop, daemon=True, name="candle-refresher")
         self._candle_thread.start()
 
+    def _init_mt5_bridge(self) -> bool:
+        """Connects to Primary MT5 (HFM) or Failover MT5 (VT Markets) with active ping check."""
+        if mt5 is None or not getattr(config, "ENABLE_MT5", True):
+            return False
+
+        # 1. Fast attach to currently running terminal (<500ms)
+        try:
+            if mt5.initialize(timeout=3000):
+                t_info = mt5.terminal_info()
+                acc = mt5.account_info()
+                ping = getattr(t_info, "ping_last", 0)
+                is_conn = getattr(t_info, "connected", False)
+                c_name = (getattr(t_info, "name", "") or getattr(acc, "company", "")).upper()
+                broker_name = getattr(config, "MT5_SECONDARY_BROKER", "VT_MARKETS") if "VT" in c_name else getattr(config, "MT5_PRIMARY_BROKER", "HFM")
+                
+                # Check connection health (ping must be < 1s / 1,000,000 us)
+                if is_conn and ping < 1000000:
+                    self.active_broker = broker_name
+                    log.info("[PriceEngine] Attached to healthy running MT5: %s (Account: %s, Ping: %d us)",
+                             self.active_broker, getattr(acc, 'login', '?'), ping)
+                    self._resolve_all_mt5_symbols()
+                    self._compute_broker_offset()
+                    self.connected = True
+                    return True
+                else:
+                    log.warning("[PriceEngine] Attached MT5 %s is degraded (connected=%s, ping=%d us). Attempting failover...",
+                                broker_name, is_conn, ping)
+        except Exception as e:
+            log.debug("[PriceEngine] Running MT5 attach note: %s", e)
+
+        # 2. Launch or switch to healthy broker (Primary first, then Secondary)
+        brokers = [
+            (getattr(config, "MT5_PRIMARY_BROKER", "HFM"), getattr(config, "MT5_PRIMARY_PATH", r"C:\Program Files\HFM Metatrader 5\terminal64.exe")),
+            (getattr(config, "MT5_SECONDARY_BROKER", "VT_MARKETS"), getattr(config, "MT5_SECONDARY_PATH", r"C:\Program Files\VT Markets (Pty) MT5 Terminal\terminal64.exe")),
+        ]
+
+        for name, path in brokers:
+            try:
+                if os.path.isfile(path):
+                    mt5.shutdown()
+                    ok = mt5.initialize(path=path, timeout=5000)
+                    if ok:
+                        t_info = mt5.terminal_info()
+                        acc = mt5.account_info()
+                        ping = getattr(t_info, "ping_last", 0)
+                        is_conn = getattr(t_info, "connected", False)
+                        if is_conn and ping < 1000000:
+                            self.active_broker = name
+                            log.info("[PriceEngine] Connected to MT5: %s (Account: %s, Ping: %d us)",
+                                     name, getattr(acc, 'login', '?'), ping)
+                            self._resolve_all_mt5_symbols()
+                            self._compute_broker_offset()
+                            self.connected = True
+                            return True
+                        else:
+                            log.warning("[PriceEngine] MT5 %s connection degraded (ping=%d us). Checking next candidate...", name, ping)
+            except Exception as e:
+                log.debug("[PriceEngine] MT5 launch error for %s: %s", name, e)
+
+        self.active_broker = None
+        return False
+
+    def _resolve_all_mt5_symbols(self):
+        """Resolves broker-specific symbol names for all 7 pairs."""
+        if mt5 is None or not self.active_broker:
+            return
+        all_syms = set(s.name for s in (mt5.symbols_get() or []))
+        self._mt5_symbol_map = {}
+        for p in config.PAIRS:
+            candidates = [p + "c", p + "-STD", p, p + ".raw", p + ".pro", p + ".m"]
+            chosen = None
+            valid_syms = [c for c in candidates if c in all_syms]
+            for c in valid_syms:
+                mt5.symbol_select(c, True)
+                t = mt5.symbol_info_tick(c)
+                if t and (t.bid > 0 or t.ask > 0):
+                    chosen = c
+                    break
+            if not chosen and valid_syms:
+                for c in valid_syms:
+                    r = mt5.copy_rates_from_pos(c, mt5.TIMEFRAME_M15, 0, 1)
+                    if r is not None and len(r) > 0:
+                        chosen = c
+                        break
+            if not chosen:
+                chosen = valid_syms[0] if valid_syms else None
+            if chosen:
+                self._mt5_symbol_map[p] = chosen
+                log.info("[PriceEngine] %s mapped to MT5 symbol: %s", p, chosen)
+
+    def _compute_broker_offset(self):
+        """Computes offset between MT5 broker server time and true UTC.
+        Standard retail MT5 brokers (HFM, VT Markets) operate on Eastern European Time (EET):
+          - Winter (Nov - Mar): UTC+2 (7,200 sec)
+          - Summer (Apr - Oct): UTC+3 (10,800 sec)
+        """
+        if mt5 is None or not self.active_broker:
+            return
+        # 1. Base standard EET broker offset
+        now_dt = datetime.now(timezone.utc)
+        is_summer = 4 <= now_dt.month <= 10
+        base_offset = 10800 if is_summer else 7200
+
+        # 2. Verify with live active tick if available and recent (< 600s)
+        ref = self._mt5_symbol_map.get("XAUUSD") or self._mt5_symbol_map.get("EURUSD")
+        if ref:
+            t = mt5.symbol_info_tick(ref)
+            if t and t.time > 0:
+                diff = t.time - now_dt.timestamp()
+                if abs(diff - base_offset) < 600:
+                    diff_h = round(diff / 3600.0)
+                    self._broker_offset_sec = int(diff_h * 3600)
+                    log.info("[PriceEngine] Broker server UTC offset verified from live tick: %+.1f hours (%d sec)",
+                             diff_h, self._broker_offset_sec)
+                    return
+
+        self._broker_offset_sec = base_offset
+        log.info("[PriceEngine] Broker server UTC offset set to EET standard: %+.1f hours (%d sec)",
+                 base_offset / 3600.0, self._broker_offset_sec)
+
+    def _check_mt5_health(self):
+        """Watchdog: verifies MT5 connection, fails over if primary drops, or reconnects if offline."""
+        if mt5 is None or not getattr(config, "ENABLE_MT5", True):
+            return
+        try:
+            t_info = mt5.terminal_info() if self.active_broker else None
+            is_connected = t_info is not None and getattr(t_info, "connected", False)
+            ping = getattr(t_info, "ping_last", 10000000)
+            if not is_connected or ping >= 1000000:
+                log.warning("[PriceEngine] MT5 connection degraded (connected=%s, ping=%d us). Re-initiating bridge / failover...",
+                            is_connected, ping)
+                self._init_mt5_bridge()
+        except Exception as e:
+            log.debug("[PriceEngine] MT5 health check note: %s", e)
+
+    def fetch_mt5_candles(self, symbol: str, timeframe: str, count: int = 1000) -> Optional[pd.DataFrame]:
+        """Fetches authentic OHLCV bars directly from active MT5 terminal with indicator augmentation."""
+        if mt5 is None or not self.active_broker:
+            return None
+        bsym = self._mt5_symbol_map.get(symbol)
+        if not bsym:
+            return None
+        tf_key = timeframe.upper()
+        mt5_tf = MT5_TF_MAP.get(tf_key)
+        if mt5_tf is None:
+            return None
+        try:
+            rates = mt5.copy_rates_from_pos(bsym, mt5_tf, 0, count)
+            if rates is None or len(rates) == 0:
+                return None
+            df = pd.DataFrame(rates)
+            # Normalize broker time to UTC timestamp
+            df["time"] = pd.to_datetime(df["time"] - self._broker_offset_sec, unit="s")
+            df.index = df["time"]
+            df["volume"] = df["tick_volume"].astype(float)
+            df = self._add_indicators(df)
+            return df
+        except Exception as e:
+            log.debug("[PriceEngine] MT5 copy_rates error for %s (%s): %s", symbol, tf_key, e)
+            return None
+
     def poll_spot_oracle_all(self):
-        """Queries all 7 symbols in <600ms prioritizing TradingView, with Yahoo/Kraken fallback."""
+        """Queries all 7 symbols prioritizing MT5 broker ticks, with TradingView/Yahoo fallback."""
         now_sec = time.time()
         updates = {}
 
-        # 1. Tier 1: Try TradingView public scanner
-        try:
-            tv_data = _fetch_tradingview_spot()
-            for pair, data in tv_data.items():
-                data["time"] = now_sec
-                data["symbol"] = pair
-                updates[pair] = data
-        except Exception as e:
-            log.debug("[PriceEngine] TV scan attempt note: %s", e)
+        # 1. Tier 1: Try Native MT5 directly if active
+        if mt5 is not None and self.active_broker:
+            try:
+                for pair in config.PAIRS:
+                    bsym = self._mt5_symbol_map.get(pair)
+                    if bsym:
+                        tick = mt5.symbol_info_tick(bsym)
+                        if tick and (tick.bid > 0 or tick.ask > 0):
+                            s_info = mt5.symbol_info(bsym)
+                            pt = s_info.point if s_info and s_info.point > 0 else 0.00001
+                            digits = s_info.digits if s_info else (2 if "XAU" in pair else (3 if "JPY" in pair else 5))
+                            bid = round(float(tick.bid), digits)
+                            ask = round(float(tick.ask), digits)
+                            mid = round((bid + ask) / 2.0, digits)
+                            spread = max(1, int(round((ask - bid) / pt))) if pt > 0 else 15
+                            updates[pair] = {
+                                "price": mid,
+                                "bid": bid,
+                                "ask": ask,
+                                "spread": spread,
+                                "point": pt,
+                                "time": now_sec,
+                                "symbol": pair,
+                                "broker_symbol": bsym,
+                                "source": f"mt5_{self.active_broker.lower()}",
+                            }
+            except Exception as e:
+                log.debug("[PriceEngine] MT5 tick poll error: %s", e)
 
-        # 2. Tier 2: Check for any missing pairs and fetch via fallbacks
-        missing = [p for p in YF_MAP.keys() if p not in updates]
+        # 2. Tier 2: Try TradingView public scanner for any missing pairs
+        missing = [p for p in config.PAIRS if p not in updates]
         if missing:
-            with ThreadPoolExecutor(max_workers=len(missing)) as executor:
+            try:
+                tv_data = _fetch_tradingview_spot()
+                for pair, data in tv_data.items():
+                    if pair in missing:
+                        data["time"] = now_sec
+                        data["symbol"] = pair
+                        updates[pair] = data
+            except Exception as e:
+                log.debug("[PriceEngine] TV scan attempt note: %s", e)
+
+        # 3. Tier 3: Secondary web fallbacks for any still missing
+        still_missing = [p for p in config.PAIRS if p not in updates]
+        if still_missing:
+            with ThreadPoolExecutor(max_workers=len(still_missing)) as executor:
                 futures = {}
-                for pair in missing:
+                for pair in still_missing:
                     if pair == "XAUUSD":
                         futures[executor.submit(_fetch_gold_spot)] = pair
                     else:
-                        futures[executor.submit(_fetch_forex_spot, pair, YF_MAP[pair])] = pair
+                        futures[executor.submit(_fetch_forex_spot, pair, YF_MAP.get(pair, pair + "=X"))] = pair
 
                 for fut in as_completed(futures):
                     pair = futures[fut]
@@ -370,8 +614,7 @@ class PriceEngine:
                 self.connected = True
 
     def _spot_oracle_loop(self):
-        """Refreshes spot prices every 5 seconds continuously."""
-        # Run immediately on thread start
+        """Refreshes spot prices every 5 seconds continuously with MT5 health watchdog."""
         try:
             self.poll_spot_oracle_all()
         except Exception as e:
@@ -380,6 +623,7 @@ class PriceEngine:
         while not self._stop_event.is_set():
             time.sleep(5)
             try:
+                self._check_mt5_health()
                 self.poll_spot_oracle_all()
             except Exception as e:
                 log.debug("[PriceEngine] Spot oracle poll error: %s", e)
@@ -392,6 +636,10 @@ class PriceEngine:
                     data = pickle.load(f)
                     self.candles_cache = data.get("candles", {})
                     self.latest_prices = data.get("prices", {})
+                    if "offsets" in data:
+                        self._pair_basis_offsets = data.get("offsets", {})
+                    if "offset_dates" in data:
+                        self._pair_basis_dates = data.get("offset_dates", {})
                     if self.candles_cache:
                         self.connected = True
                         log.info("[PriceEngine] Instantly loaded %d pairs from disk cache.", len(self.candles_cache))
@@ -409,6 +657,8 @@ class PriceEngine:
                     pickle.dump({
                         "candles": self.candles_cache,
                         "prices": self.latest_prices,
+                        "offsets": self._pair_basis_offsets,
+                        "offset_dates": self._pair_basis_dates,
                         "timestamp": time.time(),
                     }, f)
         except Exception as e:
@@ -461,6 +711,8 @@ class PriceEngine:
                         for t in trades:
                             fh_sym = t.get("s")
                             pair = REVERSE_MAP.get(fh_sym)
+                            if pair == "XAUUSD":
+                                continue
                             price = t.get("p")
                             if pair and price:
                                 point = POINTS_MAP.get(pair, 0.00001)
@@ -496,18 +748,18 @@ class PriceEngine:
     # -------------------------------------------------------------
 
     def _candle_refresh_loop(self):
-        """Refreshes H4, H1, M15 candles in the background every 90 seconds."""
+        """Refreshes H4, H1, M15 candles in the background every 30 seconds."""
         while not self._stop_event.is_set():
-            time.sleep(90)
+            time.sleep(30)
             try:
                 self.refresh_all_candles()
             except Exception as e:
                 log.debug("[PriceEngine] Candle refresh error: %s", e)
 
     def _normalize_bars(self, pair: str, sub: pd.DataFrame) -> pd.DataFrame:
-        """Anchor YFinance bars to live spot oracle price using a fixed session basis offset.
-        The offset is established once per session date and held constant so historical swing
-        levels and decision zones never drift or jitter across 90-second refreshes.
+        """Anchor YFinance bars to live spot oracle price using a stable session basis offset.
+        The offset is dynamically anchored when discrepancy exceeds threshold, preventing
+        arbitrary drift while keeping historical swings and decision zones perfectly aligned.
         Applies across ALL 7 pairs (XAUUSD, EURUSD, GBPUSD, USDJPY, GBPJPY, EURJPY, EURGBP).
         """
         if sub.empty or pair not in self.latest_prices:
@@ -528,12 +780,26 @@ class PriceEngine:
         is_jpy = "JPY" in pair
         digits = 2 if is_gold else (3 if is_jpy else 5)
         min_discrepancy = 0.20 if is_gold else (0.05 if is_jpy else 0.0005)
+        drift_reanchor_threshold = 1.50 if is_gold else (0.15 if is_jpy else 0.0015)
 
         if not hasattr(self, "_pair_basis_offsets"):
             self._pair_basis_offsets = {}
             self._pair_basis_dates = {}
 
-        if pair not in self._pair_basis_offsets or self._pair_basis_dates.get(pair) != current_date:
+        existing_offset = self._pair_basis_offsets.get(pair, 0.0)
+        existing_date = self._pair_basis_dates.get(pair)
+        current_discrepancy = abs(spot_p - (last_c + existing_offset))
+
+        # Re-anchor if not set, or new calendar day, or offset is 0 but discrepancy exists,
+        # or basis has drifted beyond tolerance
+        need_reanchor = (
+            pair not in self._pair_basis_offsets
+            or existing_date != current_date
+            or (existing_offset == 0.0 and abs(spot_p - last_c) > min_discrepancy)
+            or current_discrepancy > drift_reanchor_threshold
+        )
+
+        if need_reanchor:
             diff = spot_p - last_c
             if abs(diff) > min_discrepancy:
                 self._pair_basis_offsets[pair] = round(diff, digits)
@@ -541,7 +807,8 @@ class PriceEngine:
                 self._pair_basis_offsets[pair] = 0.0
             self._pair_basis_dates[pair] = current_date
             if abs(self._pair_basis_offsets[pair]) > 0:
-                log.info("[PriceEngine] Anchored %s session basis offset to %+.5f for %s", pair, self._pair_basis_offsets[pair], current_date)
+                log.info("[PriceEngine] Anchored %s basis offset to %+.5f (spot=%.2f, raw=%.2f)",
+                         pair, self._pair_basis_offsets[pair], spot_p, last_c)
 
         offset = self._pair_basis_offsets.get(pair, 0.0)
         if abs(offset) > 0:
@@ -556,7 +823,30 @@ class PriceEngine:
         return self._normalize_bars("XAUUSD", sub)
 
     def refresh_all_candles(self):
-        """Batch downloads latest bars for H1, M15, D1."""
+        """Refreshes latest bars for H1, H4, M15, D1, W1 across all 7 pairs."""
+        now_ts = time.time()
+
+        # 1. Tier 1: Pull 100% authentic broker candles directly from active MT5
+        if mt5 is not None and self.active_broker:
+            success_count = 0
+            for pair in config.PAIRS:
+                with self._lock:
+                    if pair not in self.candles_cache:
+                        self.candles_cache[pair] = {}
+                for tf_name in ("M15", "H1", "H4", "D1", "W1"):
+                    bar_count = {"M15": 1200, "H1": 1000, "H4": 500, "D1": 365, "W1": 150}.get(tf_name, 800)
+                    df_bars = self.fetch_mt5_candles(pair, tf_name, count=bar_count)
+                    if df_bars is not None and not df_bars.empty:
+                        with self._lock:
+                            self.candles_cache[pair][tf_name] = df_bars
+                            self.last_candle_update[pair] = now_ts
+                        success_count += 1
+            if success_count > 0:
+                self.connected = True
+                self._save_disk_cache()
+                return
+
+        # 2. Tier 2: Decoupled yfinance fallback if MT5 is offline
         tickers = list(YF_MAP.values())
 
         # 1. Download H1 (used for H1 and resampled to H4) - 60 days provides ~1,400 H1 bars and ~350 H4 bars
@@ -779,14 +1069,25 @@ class PriceEngine:
 
         with self._lock:
             cached = self.candles_cache.get(symbol, {}).get(tf_key)
+            # If MT5 is active, always prioritize fresh authentic broker candles
+            if mt5 is not None and self.active_broker:
+                last_up = self.last_candle_update.get(symbol, 0)
+                if cached is None or cached.empty or (time.time() - last_up) > 60:
+                    fresh = self.fetch_mt5_candles(symbol, tf_key, count=count)
+                    if fresh is not None and not fresh.empty:
+                        cached = fresh
+                        if symbol not in self.candles_cache:
+                            self.candles_cache[symbol] = {}
+                        self.candles_cache[symbol][tf_key] = cached
+                        self.last_candle_update[symbol] = time.time()
             if cached is None or cached.empty:
                 # Resilient fallback: use H1 if M15 missing, or D1 if W1 missing
-                if tf_key == "M15":
-                    cached = self.candles_cache.get(symbol, {}).get("H1")
-                elif tf_key == "W1":
-                    cached = self.candles_cache.get(symbol, {}).get("D1")
-                elif tf_key == "D1":
-                    cached = self.candles_cache.get(symbol, {}).get("H4")
+                    if tf_key == "M15":
+                        cached = self.candles_cache.get(symbol, {}).get("H1")
+                    elif tf_key == "W1":
+                        cached = self.candles_cache.get(symbol, {}).get("D1")
+                    elif tf_key == "D1":
+                        cached = self.candles_cache.get(symbol, {}).get("H4")
             if cached is not None and not cached.empty:
                 df = cached.copy()
                 # Update latest bar's close with real-time Finnhub tick if available
