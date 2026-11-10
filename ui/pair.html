@@ -12,6 +12,7 @@
     document.write('<script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"><\\/script>');
   }
 </script>
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 <style>
   :root{
     --bg:#05070A; --card:#0C111B; --glass:rgba(18,24,36,0.72); --border:#1A2234;
@@ -497,6 +498,30 @@
   }
   .dz-chart-btn:hover{ background:rgba(0,229,255,0.15); color:var(--cyan); border-color:var(--cyan); }
   .dz-chart-btn.active{ background:rgba(0,229,255,0.18); color:var(--cyan); border-color:var(--cyan); }
+  .chart-mode-pill{
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; color:#94A3B8;
+    background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:6px;
+    padding:4px 10px; cursor:pointer; transition:all 0.15s ease; display:inline-flex; align-items:center; gap:5px;
+  }
+  .chart-mode-pill:hover{ color:var(--text); border-color:rgba(255,255,255,0.25); background:rgba(255,255,255,0.08); }
+  .chart-mode-pill.active{
+    background:rgba(0,229,255,0.15); color:var(--cyan); border-color:var(--cyan);
+    box-shadow:0 0 10px rgba(0,229,255,0.2);
+  }
+  .tv-chart-viewport{
+    width:100%; height:550px; background:#070B12; position:relative; overflow:hidden;
+  }
+  .dz-quick-hud{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:'JetBrains Mono',monospace;
+    font-size:10px; padding:6px 14px; background:rgba(7,11,18,0.95); border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  .hud-badge{
+    display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:4px;
+    font-weight:700; font-size:10px;
+  }
+  .hud-badge.upper{ background:rgba(255,90,121,0.12); color:#FF5A79; border:1px solid rgba(255,90,121,0.3); }
+  .hud-badge.lower{ background:rgba(0,255,136,0.12); color:#00FF88; border:1px solid rgba(0,255,136,0.3); }
+  .hud-badge.plan{ background:rgba(0,229,255,0.12); color:#00E5FF; border:1px solid rgba(0,229,255,0.3); }
   .dz-chart-viewport{ position:relative; width:100%; height:380px; background:#070B12; overflow:hidden; }
   .dz-chart-overlay{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:2; }
   .dz-chart-loading{
@@ -1236,24 +1261,46 @@
       <!-- 1. Live Order Flow Radar Banner (Telemetry HUD) -->
       <div id="dz-radar-container"></div>
 
-      <!-- 2. Interactive Candlestick Chart with Marked Zones -->
+      <!-- 2. Interactive Candlestick Chart (TradingView Live Terminal + Raw MT5 Engine) -->
       <div id="dz-chart-box" class="dz-chart-box">
         <div class="dz-chart-topbar">
-          <div class="dz-chart-legend">
-            <span class="legend-pill bear"><span class="legend-box bear"></span>Upper Supply Zone</span>
-            <span class="legend-pill bull"><span class="legend-box bull"></span>Lower Demand Zone</span>
-            <span class="legend-pill swap"><span class="legend-box swap"></span>Swap Zone (S/R Flip)</span>
-            <span class="legend-pill ce"><span class="legend-line ce"></span>50% CE Midline</span>
-            <span class="legend-pill live"><span class="legend-dot live"></span>Live Bar</span>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="display:flex;gap:6px;">
+              <button class="chart-mode-pill active" id="btn-mode-tv" onclick="setChartMode('tradingview')" title="Official TradingView Real-Time Terminal with Drawing Tools & Indicators">📺 TradingView Terminal</button>
+              <button class="chart-mode-pill" id="btn-mode-lw" onclick="setChartMode('lightweight')" title="Tomoko Raw MT5 Canvas Engine">⚡ Raw MT5 Canvas</button>
+            </div>
+            <div class="dz-chart-legend" id="lw-legend" style="display:none;">
+              <span class="legend-pill bear"><span class="legend-box bear"></span>Upper Supply</span>
+              <span class="legend-pill bull"><span class="legend-box bull"></span>Lower Demand</span>
+              <span class="legend-pill swap"><span class="legend-box swap"></span>Swap Zone</span>
+              <span class="legend-pill ce"><span class="legend-line ce"></span>50% CE</span>
+            </div>
           </div>
           <div class="dz-chart-actions">
             <span id="dz-chart-status" class="dz-chart-status">Live Telemetry</span>
-            <button class="dz-chart-btn" id="dz-tz-btn" onclick="toggleDzTimezone()" title="Toggle Timezone: NY (UTC-5) / MYT (UTC+8) / UTC">🌐 NY (UTC-5)</button>
-            <button class="dz-chart-btn active" id="dz-toggle-labels-btn" onclick="toggleDzLabels()" title="Toggle Minimal Zone Labels">👁️ Labels: On</button>
-            <button class="dz-chart-btn" onclick="fitDzChart()" title="Fit View / Reset Scale">⛶ Fit View</button>
+            <div id="lw-chart-controls" style="display:none;align-items:center;gap:6px;">
+              <button class="dz-chart-btn" id="dz-tz-btn" onclick="toggleDzTimezone()" title="Toggle Timezone: NY (UTC-5) / MYT (UTC+8) / UTC">🌐 NY (UTC-5)</button>
+              <button class="dz-chart-btn active" id="dz-toggle-labels-btn" onclick="toggleDzLabels()" title="Toggle Minimal Zone Labels">👁️ Labels: On</button>
+              <button class="dz-chart-btn" onclick="fitDzChart()" title="Fit View / Reset Scale">⛶ Fit View</button>
+            </div>
           </div>
         </div>
-        <div id="dz-chart-viewport" class="dz-chart-viewport">
+
+        <!-- Quick Institutional Level HUD Banner (Always visible above chart) -->
+        <div id="dz-quick-hud" class="dz-quick-hud">
+          <span style="color:#64748B;font-weight:700;">LEVELS HUD:</span>
+          <span id="hud-upper-dz" class="hud-badge upper">Upper DZ 1: Calculating…</span>
+          <span id="hud-lower-dz" class="hud-badge lower">Lower DZ 1: Calculating…</span>
+          <span id="hud-plan" class="hud-badge plan">Battle-Plan: Standby</span>
+        </div>
+
+        <!-- TradingView Embedded Terminal Viewport -->
+        <div id="tv-chart-viewport" class="tv-chart-viewport">
+          <div id="tv_advanced_embed" style="width:100%;height:100%;"></div>
+        </div>
+
+        <!-- Raw MT5 Lightweight Charts Viewport (Toggled) -->
+        <div id="dz-chart-viewport" class="dz-chart-viewport" style="display:none;">
           <svg id="dz-chart-overlay" class="dz-chart-overlay"></svg>
           <div id="dz-chart-loading" class="dz-chart-loading">Initializing Candlestick Engine…</div>
         </div>
@@ -2229,6 +2276,155 @@ let ACTIVE_DZ_TF = 'm15';
 let CURRENT_SCAN_DATA = null;
 let CURRENT_BATTLE_PLAN = null;
 
+// Dual Chart Mode State (TradingView vs Raw MT5)
+let currentChartMode = localStorage.getItem('tomoko_chart_mode') || 'tradingview'; // 'tradingview' | 'lightweight'
+let tvWidgetInstance = null;
+let currentTvSymbol = null;
+let currentTvInterval = null;
+
+const TV_SYMBOLS = {
+  'XAUUSD': 'OANDA:XAUUSD',
+  'EURUSD': 'OANDA:EURUSD',
+  'GBPUSD': 'OANDA:GBPUSD',
+  'USDJPY': 'OANDA:USDJPY',
+  'GBPJPY': 'OANDA:GBPJPY',
+  'EURJPY': 'OANDA:EURJPY',
+  'EURGBP': 'OANDA:EURGBP',
+};
+
+const TV_INTERVALS = {
+  'm15': '15',
+  'h1': '60',
+  'h4': '240',
+  'd1': 'D',
+};
+
+function initTradingViewWidget(symbol, tf) {
+  const container = $('tv-chart-viewport');
+  if (!container) return;
+  const symKey = (symbol || 'XAUUSD').toUpperCase();
+  const tvSym = TV_SYMBOLS[symKey] || ('OANDA:' + symKey);
+  const tfKey = (tf || 'm15').toLowerCase();
+  const interval = TV_INTERVALS[tfKey] || '15';
+
+  if (currentTvSymbol === tvSym && currentTvInterval === interval && tvWidgetInstance) {
+    return;
+  }
+
+  currentTvSymbol = tvSym;
+  currentTvInterval = interval;
+
+  container.innerHTML = '<div id="tv_advanced_embed" style="width:100%;height:100%;"></div>';
+
+  if (typeof TradingView === 'undefined') {
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94A3B8;font-family:monospace;font-size:12px;">Connecting to TradingView Cloud Terminal…</div>';
+    return;
+  }
+
+  try {
+    tvWidgetInstance = new TradingView.widget({
+      autosize: true,
+      symbol: tvSym,
+      interval: interval,
+      timezone: 'America/New_York',
+      theme: 'dark',
+      style: '1',
+      locale: 'en',
+      toolbar_bg: '#070B12',
+      enable_publishing: false,
+      allow_symbol_change: true,
+      hide_side_toolbar: false,
+      withdateranges: true,
+      hide_volume: false,
+      studies: [
+        'STD;SMA'
+      ],
+      container_id: 'tv_advanced_embed'
+    });
+    const statusEl = $('dz-chart-status');
+    if (statusEl) statusEl.textContent = `${symKey} · TV Real-Time (${interval}m)`;
+  } catch (err) {
+    console.error('TradingView Widget initialization error:', err);
+  }
+}
+
+function setChartMode(mode) {
+  currentChartMode = mode;
+  localStorage.setItem('tomoko_chart_mode', mode);
+
+  const tvBtn = $('btn-mode-tv');
+  const lwBtn = $('btn-mode-lw');
+  const tvView = $('tv-chart-viewport');
+  const lwView = $('dz-chart-viewport');
+  const lwLegend = $('lw-legend');
+  const lwControls = $('lw-chart-controls');
+
+  if (mode === 'tradingview') {
+    if (tvBtn) tvBtn.classList.add('active');
+    if (lwBtn) lwBtn.classList.remove('active');
+    if (tvView) tvView.style.display = 'block';
+    if (lwView) lwView.style.display = 'none';
+    if (lwLegend) lwLegend.style.display = 'none';
+    if (lwControls) lwControls.style.display = 'none';
+    initTradingViewWidget(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.symbol : 'XAUUSD', ACTIVE_DZ_TF);
+  } else {
+    if (tvBtn) tvBtn.classList.remove('active');
+    if (lwBtn) lwBtn.classList.add('active');
+    if (tvView) tvView.style.display = 'none';
+    if (lwView) lwView.style.display = 'block';
+    if (lwLegend) lwLegend.style.display = 'flex';
+    if (lwControls) lwControls.style.display = 'inline-flex';
+    if (CURRENT_SCAN_DATA) {
+      fetchAndRenderDzCandles(CURRENT_SCAN_DATA.symbol, ACTIVE_DZ_TF, CURRENT_SCAN_DATA.price, true);
+    }
+  }
+}
+
+function updateQuickHud(scan, tf) {
+  if (!scan) return;
+  const tfKey = (tf || 'm15').toLowerCase();
+  const dzAll = scan.decision_zones || {};
+  const tfData = dzAll[tfKey] || {};
+  const D = dp(scan.symbol);
+  const fp = v => (v == null || isNaN(v)) ? '—' : fmt(v, D);
+
+  const uEl = $('hud-upper-dz');
+  const lEl = $('hud-lower-dz');
+  const pEl = $('hud-plan');
+
+  if (uEl) {
+    const u = tfData.upper_dz_1;
+    if (u && u.low != null && u.high != null) {
+      const mid = u.midline || ((u.high + u.low) / 2);
+      uEl.innerHTML = `🔴 Upper DZ 1: <b>${fp(u.low)} – ${fp(u.high)}</b> (50% CE: <b>${fp(mid)}</b>)`;
+    } else {
+      uEl.innerHTML = `🔴 Upper DZ 1: <i>No ceiling nearby</i>`;
+    }
+  }
+
+  if (lEl) {
+    const l = tfData.lower_dz_1;
+    if (l && l.low != null && l.high != null) {
+      const mid = l.midline || ((l.high + l.low) / 2);
+      lEl.innerHTML = `🟢 Lower DZ 1: <b>${fp(l.low)} – ${fp(l.high)}</b> (50% CE: <b>${fp(mid)}</b>)`;
+    } else {
+      lEl.innerHTML = `🟢 Lower DZ 1: <i>No floor nearby</i>`;
+    }
+  }
+
+  if (pEl) {
+    if (CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup) {
+      const ps = CURRENT_BATTLE_PLAN.primary_setup;
+      const ez = ps.entry_zone || '—';
+      const sl = ps.invalidation ? fp(ps.invalidation) : '—';
+      const tp = (ps.targets && ps.targets[0]) ? fp(ps.targets[0]) : '—';
+      pEl.innerHTML = `🎯 Battle-Plan: Entry <b>${ez}</b> · SL <b>${sl}</b> · TP1 <b>${tp}</b>`;
+    } else {
+      pEl.innerHTML = `🎯 Battle-Plan: <i>Evaluating…</i>`;
+    }
+  }
+}
+
 // Chart State
 let dzChart = null;
 let dzCandleSeries = null;
@@ -2286,9 +2482,16 @@ function setDecisionZoneTF(tf){
   document.querySelectorAll('.dz-tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tf === tf);
   });
+  if(currentChartMode === 'tradingview'){
+    currentTvInterval = null; // force reload TV widget with new timeframe
+    initTradingViewWidget(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.symbol : 'XAUUSD', ACTIVE_DZ_TF);
+  } else {
+    if(CURRENT_SCAN_DATA) {
+      fetchAndRenderDzCandles(CURRENT_SCAN_DATA.symbol, ACTIVE_DZ_TF, CURRENT_SCAN_DATA.price, true);
+    }
+  }
   if(CURRENT_SCAN_DATA) {
     renderDecisionZones(CURRENT_SCAN_DATA);
-    fetchAndRenderDzCandles(CURRENT_SCAN_DATA.symbol, ACTIVE_DZ_TF, CURRENT_SCAN_DATA.price, true);
   }
 }
 
@@ -2804,9 +3007,14 @@ function renderDecisionZones(scan){
     $('dz-radar-container').innerHTML = radarBannerHtml;
   }
 
-  // 2. Candlestick Chart Render & Live Tick Feed
-  fetchAndRenderDzCandles(scan.symbol, ACTIVE_DZ_TF, curPrice);
-  syncDzOverlayAndLines(scan, ACTIVE_DZ_TF);
+  // 2. Real-Time Chart & Quick HUD Updates
+  updateQuickHud(scan, ACTIVE_DZ_TF);
+  if(currentChartMode === 'tradingview'){
+    initTradingViewWidget(scan.symbol, ACTIVE_DZ_TF);
+  } else {
+    fetchAndRenderDzCandles(scan.symbol, ACTIVE_DZ_TF, curPrice);
+    syncDzOverlayAndLines(scan, ACTIVE_DZ_TF);
+  }
 
   // 3. Compact Zone Telemetry Strip (Preserves confluences, 50% CE, and playbook)
   function compactZoneCard(z, isUpper){
@@ -3220,6 +3428,7 @@ async function forceRefreshBattlePlan(){
   }
 }
 
+setChartMode(currentChartMode);
 poll();
 setInterval(tick, 1000);
 tick();
