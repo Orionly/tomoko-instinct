@@ -6,7 +6,38 @@
 import math
 from typing import Dict, List, Any, Optional
 import pandas as pd
-from core.zone_engine import build_zones, select_slots, zone_tradeability, htf_swing_levels, classify_zone_risk, Zone
+from core.zone_engine import (
+    build_zones, select_slots, zone_tradeability, htf_swing_levels,
+    classify_zone_risk, Zone, load_tuned_config
+)
+
+
+DEFAULT_HTF_PARAMS: Dict[str, Dict[str, float]] = {
+    "M15": {"lookback": 45, "window": 2, "zone_half_atr": 0.25, "min_buffer_atr": 0.25},
+    "H1": {"lookback": 60, "window": 2, "zone_half_atr": 0.30, "min_buffer_atr": 0.30},
+    "H4": {"lookback": 80, "window": 3, "zone_half_atr": 0.35, "min_buffer_atr": 0.35},
+}
+
+
+def get_htf_params(
+    timeframe: str,
+    override: Optional[Dict[str, float]] = None,
+    use_tuned: bool = True,
+) -> Dict[str, float]:
+    tf = timeframe.upper()
+    base = dict(DEFAULT_HTF_PARAMS.get(tf, DEFAULT_HTF_PARAMS["H4"]))
+    if use_tuned:
+        tuned = load_tuned_config()
+        htf_cfg = (tuned or {}).get("htf_params", {}).get(tf)
+        if isinstance(htf_cfg, dict):
+            for k, v in htf_cfg.items():
+                if k in base and v is not None:
+                    base[k] = float(v)
+    if override:
+        for k, v in override.items():
+            if k in base and v is not None:
+                base[k] = float(v)
+    return base
 
 
 def _safe_float(val, default=0.0) -> float:
@@ -108,7 +139,9 @@ def calculate_tf_decision_zones(
     timeframe: str,
     atr_override: float = 0.0,
     extra_anchors: Optional[List[Dict[str, Any]]] = None,
-    symbol: str = "EURUSD"
+    symbol: str = "EURUSD",
+    htf_params_override: Optional[Dict[str, float]] = None,
+    use_tuned: bool = True,
 ) -> Dict[str, Any]:
     """Calculate Upper DZ 2, Upper DZ 1, Lower DZ 1, Lower DZ 2 dynamically relative to current price."""
     current_price = _safe_float(current_price)
@@ -124,21 +157,18 @@ def calculate_tf_decision_zones(
 
     # Zone width factors and strict buffers by timeframe
     min_pip = 1.0 if is_gold else (0.02 if is_jpy else 0.0002)
+    hp = get_htf_params(timeframe, override=htf_params_override, use_tuned=use_tuned)
+    lookback = int(hp["lookback"])
+    window = int(hp["window"])
     if timeframe.lower() == "m15":
-        lookback = 45
-        window = 2
-        zone_half = max(atr * 0.25, min_pip * 0.8)
-        min_buffer = max(atr * 0.25, min_pip)
+        zone_half = max(atr * hp["zone_half_atr"], min_pip * 0.8)
+        min_buffer = max(atr * hp["min_buffer_atr"], min_pip)
     elif timeframe.lower() == "h1":
-        lookback = 60
-        window = 2
-        zone_half = max(atr * 0.30, min_pip * 1.0)
-        min_buffer = max(atr * 0.30, min_pip * 1.5)
+        zone_half = max(atr * hp["zone_half_atr"], min_pip * 1.0)
+        min_buffer = max(atr * hp["min_buffer_atr"], min_pip * 1.5)
     else:  # h4
-        lookback = 80
-        window = 3
-        zone_half = max(atr * 0.35, min_pip * 1.5)
-        min_buffer = max(atr * 0.35, min_pip * 2.0)
+        zone_half = max(atr * hp["zone_half_atr"], min_pip * 1.5)
+        min_buffer = max(atr * hp["min_buffer_atr"], min_pip * 2.0)
 
     # 1. Collect swing points
     raw_levels = _find_swing_levels(df, lookback=lookback, window=window)
@@ -708,7 +738,9 @@ def calculate_m15_decision_zones(
     symbol: str = "EURUSD",
     anchors: Optional[List[Dict[str, Any]]] = None,
     htf_levels: Optional[List[float]] = None,
-    htf_direction: str = "NEUTRAL"
+    htf_direction: str = "NEUTRAL",
+    params_override: Optional[Dict[str, float]] = None,
+    use_tuned: bool = True,
 ) -> Dict[str, Any]:
     """
     Dedicated M15 Intraday Decision Zones Engine V2 powered by core.zone_engine.
@@ -763,13 +795,16 @@ def calculate_m15_decision_zones(
         }
 
     # Run zone_engine
-    built = build_zones(df, timeframe="M15", symbol=symbol, anchors=anchors, htf_levels=htf_levels)
+    built = build_zones(
+        df, timeframe="M15", symbol=symbol, anchors=anchors, htf_levels=htf_levels,
+        params_override=params_override, use_tuned=use_tuned,
+    )
     unit = built["unit"]
     if unit <= 0:
         unit = 2.50 if is_gold else (0.15 if is_jpy else 0.0010)
 
     p = built["params"]
-    slots = select_slots(built["zones"], current_price, unit, p, symbol=symbol)
+    slots = select_slots(built["zones"], current_price, unit, p, symbol=symbol, use_ml=use_tuned)
 
     proximity_dist = max(1.5, min(5.0, unit * 0.30)) if is_gold else max(5.0, min(15.0, (unit * 0.30) / pip_size))
     rejection_thresh = max(0.6, unit * 0.12) if is_gold else max(2.0, (unit * 0.08) / pip_size)
@@ -1118,10 +1153,13 @@ def calculate_all_decision_zones(
     current_price: float,
     levels: Dict[str, Any],
     symbol: str = "EURUSD",
-    htf_direction: str = "NEUTRAL"
+    htf_direction: str = "NEUTRAL",
+    params_override: Optional[Dict[str, Any]] = None,
+    use_tuned: bool = True,
 ) -> Dict[str, Any]:
     """Calculate multi-timeframe Decision Zones (M15, H1, H4) anchored dynamically to current market price."""
     current_price = _safe_float(current_price)
+    ov = params_override or {}
     
     # Common macro anchors (clean horizontal S/R & session benchmarks for H1 & H4)
     macro_anchors = []
@@ -1143,12 +1181,20 @@ def calculate_all_decision_zones(
     htf_levels = htf_swing_levels(df_h1)
     m15_zones = calculate_m15_decision_zones(
         df_m15, current_price, symbol=symbol,
-        anchors=macro_anchors, htf_levels=htf_levels, htf_direction=htf_direction
+        anchors=macro_anchors, htf_levels=htf_levels, htf_direction=htf_direction,
+        params_override=ov.get("m15_params"), use_tuned=use_tuned,
     )
 
     # H1 and H4 retain structural macro anchors
-    h1_zones = calculate_tf_decision_zones(df_h1, current_price, "h1", extra_anchors=macro_anchors, symbol=symbol)
-    h4_zones = calculate_tf_decision_zones(df_h4, current_price, "h4", extra_anchors=macro_anchors, symbol=symbol)
+    htf_ov = ov.get("htf_params", {})
+    h1_zones = calculate_tf_decision_zones(
+        df_h1, current_price, "h1", extra_anchors=macro_anchors, symbol=symbol,
+        htf_params_override=htf_ov.get("H1"), use_tuned=use_tuned,
+    )
+    h4_zones = calculate_tf_decision_zones(
+        df_h4, current_price, "h4", extra_anchors=macro_anchors, symbol=symbol,
+        htf_params_override=htf_ov.get("H4"), use_tuned=use_tuned,
+    )
 
     # Calculate key benchmark levels proximity radar
     ref_atr = m15_zones.get("atr", 0.0020)

@@ -15,7 +15,7 @@ Use this workflow to ingest trader-drawn TradingView chart snapshots into the is
 1. **Check Dropoff Folder**:
    - Inspect `trader_dna/dropoff/` directory for new image snapshots (`.png`, `.jpg`, `.jpeg`, `.webp`).
    - If empty, inform the user to save TradingView chart snapshots there (Camera icon -> Download image).
-   - If multiple files exist, sort descending by Windows creation time and select up to the **3 latest snapshots**.
+   - If multiple files exist, sort descending by Windows creation time and process all pending snapshots.
 
 2. **Native Vision Inspection (Zero API Quota)**:
    - Open each snapshot directly using Antigravity's built-in native vision (0 external API quota used).

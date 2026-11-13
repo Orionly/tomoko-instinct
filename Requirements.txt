@@ -12,5 +12,10 @@ python-dotenv>=1.0.0
 customtkinter>=5.2.0
 CTkTable>=0.1.0
 
+# Offline Weekend ML Calibration (Trader DNA Tuning)
+optuna>=3.6.0
+scikit-learn>=1.4.0
+lightgbm>=4.3.0
+
 # Optional MT5 Bridge (Legacy - not required for autonomous deployment)
 # MetaTrader5>=5.0.45

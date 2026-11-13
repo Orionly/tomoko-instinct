@@ -63,7 +63,7 @@ Whenever the user enters `/dna` or `dna`:
    - Inspect `trader_dna/dropoff/` directory (`c:\Users\USER\Documents\Tomoko\trader_dna\dropoff\`).
    - If no new chart images exist, notify the user with a quick reminder:
      *"No new chart images found in `trader_dna/dropoff/`. Save your TradingView snapshots there (Camera icon -> Download image) and run `/dna` again."*
-   - If images exist, sort by Windows creation/modification time descending (newest first) and strictly process up to the **3 latest snapshots** (`[:3]`).
+   - If images exist, sort by Windows creation/modification time descending (newest first) and process all pending snapshots.
 
 2. **Native Vision Inspection (Zero API Quota)**:
    - Open each snapshot directly using Antigravity's built-in `view_file` tool.

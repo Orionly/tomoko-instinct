@@ -12,7 +12,11 @@
 # The engine is stateless: every call replays the supplied candles so zone state is deterministic
 # and survives restarts. It never emits entry signals - only where, how strong, which retest, what state.
 
+import copy
+import json
 import math
+import os
+import pickle
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -20,12 +24,16 @@ import numpy as np
 import pandas as pd
 
 
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TUNED_PARAMS_PATH = os.path.join(ROOT_DIR, "data", "tuned_zone_params.json")
+SCORER_MODEL_PATH = os.path.join(ROOT_DIR, "data", "models", "dna_zone_scorer.pkl")
+
 # --------------------------------------------------------------------------- #
 # Tunable parameters per timeframe. "unit" = rolling mean True Range over
 # `unit_period` bars (a full-day average on M15, so Asian-session ATR collapse
 # does not shrink zones).
 # --------------------------------------------------------------------------- #
-TF_PARAMS: Dict[str, Dict[str, float]] = {
+DEFAULT_TF_PARAMS: Dict[str, Dict[str, float]] = {
     "M15": {
         "pivot_window": 3,        # bars each side for a swing pivot
         "departure_bars": 8,      # bars after origin to measure departure
@@ -43,6 +51,66 @@ TF_PARAMS: Dict[str, Dict[str, float]] = {
         "proximity": 1.0,         # APPROACHING radius (units)
     },
 }
+
+TF_PARAMS: Dict[str, Dict[str, float]] = copy.deepcopy(DEFAULT_TF_PARAMS)
+
+_TUNED_CACHE: Dict[str, Any] = {"mtime": None, "data": None}
+_SCORER_CACHE: Dict[str, Any] = {"mtime": None, "model": None}
+
+
+def load_tuned_config() -> Optional[Dict[str, Any]]:
+    """Load calibrated weekend ML config from data/tuned_zone_params.json (mtime-cached)."""
+    try:
+        if not os.path.isfile(TUNED_PARAMS_PATH):
+            _TUNED_CACHE["mtime"] = None
+            _TUNED_CACHE["data"] = None
+            return None
+        mtime = os.path.getmtime(TUNED_PARAMS_PATH)
+        if _TUNED_CACHE["mtime"] != mtime:
+            with open(TUNED_PARAMS_PATH, "r", encoding="utf-8") as f:
+                _TUNED_CACHE["data"] = json.load(f)
+            _TUNED_CACHE["mtime"] = mtime
+        return _TUNED_CACHE["data"]
+    except Exception:
+        return None
+
+
+def _load_scorer_model():
+    """Load frozen LightGBM / sklearn zone preference scorer if present (mtime-cached)."""
+    try:
+        if not os.path.isfile(SCORER_MODEL_PATH):
+            _SCORER_CACHE["mtime"] = None
+            _SCORER_CACHE["model"] = None
+            return None
+        mtime = os.path.getmtime(SCORER_MODEL_PATH)
+        if _SCORER_CACHE["mtime"] != mtime:
+            with open(SCORER_MODEL_PATH, "rb") as f:
+                _SCORER_CACHE["model"] = pickle.load(f)
+            _SCORER_CACHE["mtime"] = mtime
+        return _SCORER_CACHE["model"]
+    except Exception:
+        return None
+
+
+def get_tf_params(
+    timeframe: str = "M15",
+    override: Optional[Dict[str, float]] = None,
+    use_tuned: bool = True,
+) -> Dict[str, float]:
+    """Return effective parameters for a timeframe, merging calibrated overrides if available."""
+    tf = timeframe.upper()
+    base = dict(DEFAULT_TF_PARAMS.get(tf, DEFAULT_TF_PARAMS["M15"]))
+    if use_tuned:
+        tuned = load_tuned_config()
+        if tuned and isinstance(tuned.get("m15_params"), dict) and tf == "M15":
+            for k, v in tuned["m15_params"].items():
+                if k in base and v is not None:
+                    base[k] = float(v)
+    if override:
+        for k, v in override.items():
+            if k in base and v is not None:
+                base[k] = float(v)
+    return base
 
 GRADE_STRONG = 70
 GRADE_MEDIUM = 40
@@ -385,8 +453,10 @@ def build_zones(
     symbol: str = "XAUUSD",
     anchors: Optional[List[Dict[str, Any]]] = None,
     htf_levels: Optional[List[float]] = None,
+    params_override: Optional[Dict[str, float]] = None,
+    use_tuned: bool = True,
 ) -> Dict[str, Any]:
-    p = TF_PARAMS.get(timeframe.upper(), TF_PARAMS["M15"])
+    p = get_tf_params(timeframe, override=params_override, use_tuned=use_tuned)
     df = df.reset_index(drop=False) if "time" not in df.columns else df.reset_index(drop=True)
     unit = _unit_series(df, int(p["unit_period"]))
     unit_now = float(unit[-1]) if len(unit) else 0.0
@@ -402,7 +472,7 @@ def build_zones(
         live.append(z)
 
     # Dedupe overlapping zones with the same current role: keep the better one
-    live.sort(key=lambda z: _priority(z), reverse=True)
+    live.sort(key=lambda z: _priority(z, unit_now=unit_now, use_ml=use_tuned), reverse=True)
     kept: List[Zone] = []
     for z in live:
         if any(k.role == z.role and _gap(k, z) < 0 for k in kept):
@@ -412,9 +482,72 @@ def build_zones(
     return {"zones": kept, "unit": unit_now, "params": p}
 
 
-def _priority(z: Zone) -> float:
-    # Freshness matters to the trader: each prior retest costs priority.
-    return z.score - 8.0 * z.retest_count + (5.0 if z.is_swap and z.retest_count == 0 else 0.0)
+def extract_zone_features(
+    z: Zone,
+    unit_now: float = 1.0,
+    price: float = 0.0,
+) -> List[float]:
+    """Fixed-order numeric feature vector shared identically by training and live inference."""
+    u = unit_now if unit_now > 0 else 1.0
+    height_atr = (z.top - z.bottom) / u
+    dist_atr = (abs(z.mid - price) / u) if price > 0 else 0.0
+    confs = " ".join(z.confluences).lower()
+    has_htf = 1.0 if "htf swing" in confs else 0.0
+    has_round = 1.0 if "round number" in confs else 0.0
+    vol_r = float(z.volume_ratio) if z.volume_ratio is not None else 1.0
+    return [
+        float(z.departure),
+        1.0 if z.bos else 0.0,
+        1.0 if z.is_swap else 0.0,
+        float(z.retest_count),
+        float(z.swept_count),
+        float(height_atr),
+        float(dist_atr),
+        has_htf,
+        has_round,
+        vol_r,
+        float(z.score),
+    ]
+
+
+def _priority(
+    z: Zone,
+    unit_now: float = 1.0,
+    price: float = 0.0,
+    use_ml: bool = True,
+) -> float:
+    """Rank candidate zones using baseline rubric, optionally blended with weekend-calibrated ML."""
+    base_prio = z.score - 8.0 * z.retest_count + (5.0 if z.is_swap and z.retest_count == 0 else 0.0)
+    if not use_ml:
+        return base_prio
+
+    # Stage 2: Frozen LightGBM / sklearn probability model
+    model = _load_scorer_model()
+    if model is not None:
+        try:
+            feats = np.asarray([extract_zone_features(z, unit_now=unit_now, price=price)], dtype=float)
+            prob = float(model.predict_proba(feats)[0][1])
+            return 0.50 * base_prio + 0.50 * (prob * 100.0)
+        except Exception:
+            pass
+
+    # Stage 1.5: Tuned linear priority weights from data/tuned_zone_params.json
+    tuned = load_tuned_config()
+    weights = (tuned or {}).get("priority_weights")
+    if isinstance(weights, dict):
+        try:
+            feats = extract_zone_features(z, unit_now=unit_now, price=price)
+            coef = weights.get("coef", [])
+            intercept = float(weights.get("intercept", 0.0))
+            if len(coef) == len(feats):
+                z_val = intercept + sum(float(c) * float(f) for c, f in zip(coef, feats))
+                z_val = max(-20.0, min(20.0, z_val))
+                prob = 1.0 / (1.0 + math.exp(-z_val))
+                return 0.55 * base_prio + 0.45 * (prob * 100.0)
+        except Exception:
+            pass
+
+    return base_prio
 
 
 def _gap(a: Zone, b: Zone) -> float:
@@ -427,7 +560,8 @@ def select_slots(
     price: float,
     unit: float,
     p: Dict[str, float],
-    symbol: str = "EURUSD"
+    symbol: str = "EURUSD",
+    use_ml: bool = True,
 ) -> Dict[str, Any]:
     """Pick Upper/Lower 1 & 2 using strength, freshness and spacing. Slots may be None."""
     max_d = p["max_distance"] * unit
@@ -479,7 +613,7 @@ def select_slots(
             faded.append(z)
 
     def pick(pool: List[Zone]) -> List[Zone]:
-        pool = sorted(pool, key=_priority, reverse=True)
+        pool = sorted(pool, key=lambda z: _priority(z, unit_now=unit, price=price, use_ml=use_ml), reverse=True)
         chosen: List[Zone] = []
         for z in pool:
             if all(_gap(k, z) >= spacing for k in chosen):

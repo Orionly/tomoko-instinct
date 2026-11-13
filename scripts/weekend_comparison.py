@@ -1,20 +1,18 @@
 """
-Tomoko Instinct — Weekend Comparison & Model Fine-Tuning CLI
------------------------------------------------------------
-Compares the human trader's hand-drawn TradingView markups stored in
-`data/trader_profile.json` against Tomoko's autonomous zone engine
-(`core.zone_engine` and `core.decision_zones`).
+Tomoko Instinct — Weekend Comparison & ML Fine-Tuning CLI
+--------------------------------------------------------
+Compares the human trader's hand-drawn TradingView markups stored across
+`data/trader_profile.json` (/ingest) and `trader_dna/data/trader_dna_profile.json` (/dna)
+against Tomoko's autonomous zone engine (`core.zone_engine` and `core.decision_zones`).
 
 Usage:
-    python scripts/weekend_comparison.py [--symbol XAUUSD] [--verbose]
+    python scripts/weekend_comparison.py [--symbol XAUUSD] [--tune] [--trials 160] [--dry-run] [--reset-defaults]
 """
 
 import os
 import sys
-import json
 import pickle
 import argparse
-from datetime import datetime
 from typing import Dict, Any, List
 from collections import Counter
 
@@ -22,38 +20,23 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from core.zone_engine import build_zones, select_slots, htf_swing_levels, TF_PARAMS
-from core.decision_zones import calculate_all_decision_zones
-from core.trader_dna_engine import purge_weekly_archive, load_trader_dna_profile
-
-
-def load_trader_history(symbol: str = "XAUUSD") -> List[Dict[str, Any]]:
-    data = load_trader_dna_profile()
-    if not data or (not data.get("history") and not data.get("active_session")):
-        return []
-
-    snapshots = []
-    # 1. Historical entries
-    for entry in data.get("history", []):
-        if entry.get("symbol", "").upper() == symbol.upper():
-            snapshots.append(entry)
-
-    # 2. Active session entries
-    active = data.get("active_session", {})
-    for tf_key, tf_sess in active.items():
-        if tf_sess.get("symbol", "").upper() == symbol.upper():
-            snapshots.append(tf_sess)
-
-    # Deduplicate by file_timestamp
-    seen = set()
-    deduped = []
-    for s in snapshots:
-        ts = s.get("file_timestamp") or f"{s.get('chart_date')}_{s.get('session')}_{s.get('timeframe')}"
-        if ts not in seen:
-            seen.add(ts)
-            deduped.append(s)
-
-    return deduped
+from core.zone_engine import (
+    DEFAULT_TF_PARAMS,
+    TUNED_PARAMS_PATH,
+    build_zones,
+    get_tf_params,
+    htf_swing_levels,
+    select_slots,
+)
+from core.decision_zones import DEFAULT_HTF_PARAMS, calculate_tf_decision_zones
+from core.trader_dna_engine import purge_weekly_archive
+from core.dna_ml_tuner import (
+    compute_overlap,
+    load_unified_snapshots,
+    reset_tuned_params,
+    run_ml_calibration,
+    slice_candles_at_timestamp,
+)
 
 
 def load_candles_cache():
@@ -66,31 +49,48 @@ def load_candles_cache():
     return data.get("candles", {})
 
 
-def compute_overlap(z1_low: float, z1_high: float, z2_low: float, z2_high: float) -> float:
-    """Returns overlap fraction relative to the smaller zone height."""
-    inter_low = max(z1_low, z2_low)
-    inter_high = min(z1_high, z2_high)
-    if inter_high <= inter_low:
-        return 0.0
-    inter_len = inter_high - inter_low
-    min_len = min(z1_high - z1_low, z2_high - z2_low)
-    if min_len <= 0:
-        return 0.0
-    return inter_len / min_len
+def _print_param_diffs(m15_tuned: Dict[str, float], htf_tuned: Dict[str, Dict[str, float]]):
+    base_m15 = DEFAULT_TF_PARAMS["M15"]
+    diffs = []
+    for k, base_v in base_m15.items():
+        new_v = m15_tuned.get(k, base_v)
+        if abs(float(new_v) - float(base_v)) > 1e-6:
+            diffs.append((f"M15.{k}", base_v, new_v))
+    for tf in ("H1", "H4"):
+        base_h = DEFAULT_HTF_PARAMS[tf]
+        cur_h = htf_tuned.get(tf, base_h)
+        for k, base_v in base_h.items():
+            new_v = cur_h.get(k, base_v)
+            if abs(float(new_v) - float(base_v)) > 1e-6:
+                diffs.append((f"{tf}.{k}", base_v, new_v))
+
+    if not diffs:
+        print("  [*] Parameter Calibration: Baseline defaults already optimal for current snapshots.")
+    else:
+        print("  [*] Parameter Calibrations Applied (Baseline -> Tuned):")
+        for name, old_v, new_v in diffs:
+            print(f"      - {name:<22}: {old_v} -> {new_v}")
 
 
-def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: bool = False, purge_archive: bool = False):
+def run_weekend_comparison(
+    symbol: str = "XAUUSD",
+    verbose: bool = False,
+    tune: bool = False,
+    purge_archive: bool = False,
+    n_trials: int = 160,
+    dry_run: bool = False,
+):
     print("=" * 76)
-    print(f"  TOMOKO INSTINCT // WEEKEND COMPARISON & FINE-TUNING SUITE [{symbol}]")
+    print(f"  TOMOKO INSTINCT // WEEKEND COMPARISON & ML FINE-TUNING SUITE [{symbol}]")
     print("=" * 76)
 
-    snapshots = load_trader_history(symbol)
-    if not snapshots:
-        print(f"[i] No ingested trader markups found for {symbol} in data/trader_profile.json.")
-        print("    Ingest chart snapshots using `/ingest` during the week to build training data.")
+    snapshots, executed_trades = load_unified_snapshots(symbol)
+    if not snapshots and not executed_trades:
+        print(f"[i] No ingested trader markups found for {symbol}.")
+        print("    Ingest chart snapshots using `/ingest` or `/dna` during the week to build training data.")
         return
 
-    print(f"[*] Loaded {len(snapshots)} human benchmark snapshot(s) for {symbol}.\n")
+    print(f"[*] Loaded {len(snapshots)} unified benchmark snapshot(s) + {len(executed_trades)} trade(s) for {symbol}.\n")
 
     candles_data = load_candles_cache()
     sym_candles = candles_data.get(symbol, {})
@@ -108,37 +108,68 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
     pip_scale = 1.0 if is_gold else (100.0 if is_jpy else 10000.0)
 
     total_trader_zones = 0
+    skipped_out_of_window = 0
     matched_zones = 0
     ce_midline_errors = []
     category_matches = 0
 
-    # Zone DNA Aggregators
     anchor_counter = Counter()
     role_counter = Counter()
-    box_heights_by_tf: Dict[str, List[float]] = {"M15": [], "H1": [], "H4": []}
+    box_heights_by_tf: Dict[str, List[float]] = {"M15": [], "H1": [], "H4": [], "M5": []}
     why_marked_log: List[str] = []
 
     for idx, snap in enumerate(snapshots, 1):
         tf = snap.get("timeframe", "M15").upper()
         snap_time = snap.get("file_timestamp") or snap.get("chart_date") or f"Snapshot #{idx}"
-        live_p = snap.get("live_price_on_chart") or (float(df_m15["close"].iloc[-1]) if not df_m15.empty else 0.0)
+        utc_ts = snap.get("_utc_ts")
         trader_zones = snap.get("zones", [])
 
+        # Collect Zone DNA characteristics regardless of cache window
+        for tz in trader_zones:
+            t_high = float(tz.get("high", 0))
+            t_low = float(tz.get("low", 0))
+            box_h = tz.get("box_height_pts", abs(t_high - t_low))
+            if tf in box_heights_by_tf:
+                box_heights_by_tf[tf].append(box_h)
+            if tz.get("anchor_type"):
+                anchor_counter[tz["anchor_type"]] += 1
+            if tz.get("structural_role"):
+                role_counter[tz["structural_role"]] += 1
+            if tz.get("why_marked"):
+                why_marked_log.append(f"[{tf}] {tz.get('name', 'Zone')} ({tz.get('type', '')}): {tz['why_marked']}")
+
+        # Point-in-time candle slicing (no future lookahead)
+        if tf == "M15":
+            cand_df, in_window = slice_candles_at_timestamp(df_m15, utc_ts)
+            h1_slice, _ = slice_candles_at_timestamp(df_h1, utc_ts, min_bars=15)
+        elif tf == "H1":
+            cand_df, in_window = slice_candles_at_timestamp(df_h1, utc_ts)
+            h1_slice = cand_df
+        elif tf == "H4":
+            cand_df, in_window = slice_candles_at_timestamp(df_h4, utc_ts)
+            h1_slice = None
+        else:
+            cand_df, in_window = None, False
+            h1_slice = None
+
+        if not in_window or cand_df is None:
+            skipped_out_of_window += len(trader_zones)
+            print(f"\n[{idx}/{len(snapshots)}] Benchmark: {symbol} {tf} ({snap_time}) - [OUT OF CACHE WINDOW]")
+            print("-" * 76)
+            print(f"  [SKIP] Candle cache does not cover {tf} at {snap_time} (retained for DNA stats only).")
+            continue
+
+        live_p = float(snap.get("live_price_on_chart") or cand_df["close"].iloc[-1])
         print(f"\n[{idx}/{len(snapshots)}] Benchmark: {symbol} {tf} ({snap_time}) - Ref Price: {live_p:.2f}")
         print("-" * 76)
 
-        # Slice candles up to snapshot time if possible, or use full series
         if tf == "M15":
-            cand_df = df_m15
-            res = build_zones(cand_df, timeframe="M15", symbol=symbol)
-            tomoko_slots = select_slots(res["zones"], live_p, res["unit"], res["params"])
+            htf_lvls = htf_swing_levels(h1_slice) if h1_slice is not None else []
+            res = build_zones(cand_df, timeframe="M15", symbol=symbol, htf_levels=htf_lvls)
+            tomoko_slots = select_slots(res["zones"], live_p, res["unit"], res["params"], symbol=symbol)
             active_tomoko = tomoko_slots["upper"] + tomoko_slots["lower"]
         else:
-            cand_df = df_h1 if tf == "H1" else df_h4
-            if cand_df is None or cand_df.empty:
-                cand_df = df_m15
-            dz_all = calculate_all_decision_zones(df_m15, df_h1, df_h4, live_p, {}, symbol=symbol)
-            tf_dz = dz_all.get(tf.lower(), {})
+            tf_dz = calculate_tf_decision_zones(cand_df, live_p, tf.lower(), symbol=symbol)
             active_tomoko = []
             for k in ["upper_dz_1", "upper_dz_2", "lower_dz_1", "lower_dz_2"]:
                 if tf_dz.get(k):
@@ -147,7 +178,7 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
                         "top": z["high"], "bottom": z["low"],
                         "mid": z.get("midline", (z["high"] + z["low"]) / 2),
                         "role": "RESISTANCE" if z.get("is_upper") else "SUPPORT",
-                        "grade": "HTF_STRUCTURAL", "score": 80
+                        "grade": z.get("strength_grade", "HTF_STRUCTURAL"),
                     })())
 
         print(f"  Trader Hand-Drawn Zones: {len(trader_zones)}  |  Tomoko Algorithmic Zones: {len(active_tomoko)}")
@@ -159,23 +190,8 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
             t_mid = float(tz.get("midline", (t_high + t_low) / 2))
             t_type = tz.get("type", "RESISTANCE").upper()
             t_name = tz.get("name", "Zone")
-
-            # Collect Zone DNA
-            box_h = tz.get("box_height_pts", abs(t_high - t_low))
-            if tf in box_heights_by_tf:
-                box_heights_by_tf[tf].append(box_h)
-            
-            anchor = tz.get("anchor_type")
-            if anchor:
-                anchor_counter[anchor] += 1
-            role = tz.get("structural_role")
-            if role:
-                role_counter[role] += 1
             why = tz.get("why_marked")
-            if why:
-                why_marked_log.append(f"[{tf}] {t_name} ({t_type}): {why}")
 
-            # Find best matching Tomoko zone
             best_match = None
             best_overlap = 0.0
             for mz in active_tomoko:
@@ -184,36 +200,27 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
                     best_overlap = ov
                     best_match = mz
 
-            why_disp = f" | Why: {why}" if why else ""
+            why_disp = f" | Why: {why}" if (why and verbose) else ""
             if best_match and best_overlap >= 0.35:
                 matched_zones += 1
                 mid_diff = abs(best_match.mid - t_mid) * pip_scale
                 ce_midline_errors.append(mid_diff)
-
-                type_match = (t_type == getattr(best_match, "role", "RESISTANCE"))
-                if type_match:
+                if t_type == getattr(best_match, "role", "RESISTANCE"):
                     category_matches += 1
-
                 print(f"  [MATCH] {t_name:<16} [{t_low:.2f} - {t_high:.2f}] (50% CE: {t_mid:.2f}){why_disp}")
                 print(f"    -> Tomoko Match:   [{best_match.bottom:.2f} - {best_match.top:.2f}] (50% CE: {best_match.mid:.2f})")
                 print(f"    -> Overlap: {best_overlap*100:.1f}% | 50% CE Discrepancy: {mid_diff:.2f} {unit_str} | Grade: {getattr(best_match, 'grade', 'N/A')}")
             else:
-                # Discrepancy: Trader marked a zone that Tomoko did not isolate
                 print(f"  [MISS ] {t_name:<16} [{t_low:.2f} - {t_high:.2f}] (50% CE: {t_mid:.2f}){why_disp}")
-                print(f"    -> [CALIBRATION TARGET]: No overlapping Tomoko zone detected above 35% threshold.")
+                print("    -> [CALIBRATION TARGET]: No overlapping Tomoko zone detected above 35% threshold.")
 
     # -------------------------------------------------------------
     # Executed Trade Replay & Entry Style Alignment
     # -------------------------------------------------------------
-    profile_data = load_trader_dna_profile()
-    executed_trades = [t for t in profile_data.get("executed_trades", []) if t.get("symbol", "").upper() == symbol.upper()]
     if executed_trades:
         print("\n" + "=" * 76)
         print(f"  EXECUTED TRADE REPLAY & ENTRY STYLE ALIGNMENT ({len(executed_trades)} trade(s))")
         print("=" * 76)
-        res_m15 = build_zones(df_m15, timeframe="M15", symbol=symbol)
-        all_m15_zones = res_m15.get("zones", [])
-
         for t_idx, trade in enumerate(executed_trades, 1):
             t_dir = trade.get("direction", "LONG")
             t_entry = float(trade.get("entry_price", 0.0))
@@ -223,6 +230,8 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
             t_pat = trade.get("pattern_type", "N/A")
             t_why = trade.get("why_entered") or trade.get("invalidation_logic", "")
 
+            res_m15 = build_zones(df_m15, timeframe="M15", symbol=symbol)
+            all_m15_zones = res_m15.get("zones", [])
             best_entry_zone = None
             min_entry_dist = float("inf")
             for mz in all_m15_zones:
@@ -239,7 +248,7 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
             if best_entry_zone and min_entry_dist <= 4.0:
                 print(f"      -> Confluent Algorithmic Shelf: [{best_entry_zone.bottom:.2f} - {best_entry_zone.top:.2f}] (50% CE: {best_entry_zone.mid:.2f}, Delta: {min_entry_dist:.2f} {unit_str})")
             else:
-                print(f"      -> Discrepancy: Closest Tomoko zone was {min_entry_dist:.2f} {unit_str} away. Check if displacement threshold was satisfied.")
+                print(f"      -> Discrepancy: Closest Tomoko zone was {min_entry_dist:.2f} {unit_str} away.")
 
     # -------------------------------------------------------------
     # Weekend Scorecard Summary
@@ -252,12 +261,11 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
     avg_ce_error = (sum(ce_midline_errors) / len(ce_midline_errors)) if ce_midline_errors else 0.0
     cat_pct = (category_matches / matched_zones * 100) if matched_zones > 0 else 0.0
 
-    print(f"  * Total Trader Zones Audited:         {total_trader_zones}")
+    print(f"  * In-Window Trader Zones Audited:    {total_trader_zones} (skipped out-of-window: {skipped_out_of_window})")
     print(f"  * Tomoko Confluent Matches:          {matched_zones} ({recall_pct:.1f}%)")
     print(f"  * Role Classification Accuracy:      {category_matches}/{matched_zones} ({cat_pct:.1f}%)")
     print(f"  * Average 50% CE Midline Offset:     {avg_ce_error:.2f} {unit_str}")
 
-    # Zone DNA Profile Output
     print("\n  [+] Ingested Trader DNA Profile (Empirical Ground Truth):")
     if anchor_counter:
         print("      * Anchor Types:")
@@ -269,7 +277,7 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
         for rle, cnt in role_counter.most_common():
             pct = (cnt / sum(role_counter.values())) * 100
             print(f"        - {rle:<24}: {cnt} ({pct:.1f}%)")
-    
+
     print("      * Average Box Thickness:")
     for tf_key in ["M15", "H1", "H4"]:
         arr = box_heights_by_tf.get(tf_key, [])
@@ -280,41 +288,40 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
             print(f"        - {tf_key}: N/A (no snapshots logged)")
 
     # -------------------------------------------------------------
-    # Algorithmic Calibration Recommendations (--tune)
+    # Offline ML Calibration (--tune)
     # -------------------------------------------------------------
     if tune:
         print("\n" + "=" * 76)
-        print("  RECOMMENDED ALGORITHMIC CALIBRATIONS (core/zone_engine.py)")
+        print(f"  ML BAYESIAN & DNA CALIBRATION ({n_trials} Optuna trials){' [DRY RUN]' if dry_run else ''}")
         print("=" * 76)
-        
-        current_m15 = TF_PARAMS.get("M15", {})
-        m15_heights = box_heights_by_tf.get("M15", [])
-        
-        if m15_heights:
-            avg_m15_h = sum(m15_heights) / len(m15_heights)
-            print(f"  [1] Box Height Clamp Calibration:")
-            print(f"      Current M15 Range: [{current_m15.get('min_height', 0.9)} - {current_m15.get('max_height', 2.6)}] units")
-            print(f"      Trader Empirical Avg: {avg_m15_h:.2f} {unit_str}")
-        
-        if anchor_counter:
-            top_anchor, top_count = anchor_counter.most_common(1)[0]
-            print(f"  [2] Anchor Bias Alignment:")
-            print(f"      Dominant Trader Anchor: {top_anchor} ({top_count} occurrences)")
-            if top_anchor == "WICK_CLUSTER":
-                print("      -> Ensure `cluster_bars` >= 4 and `cluster_tol` is tuned to tighten wick clusters.")
-            elif top_anchor == "BODY_EXTREME":
-                print("      -> Favor candle body closes over extreme wick tips in anchor selection.")
-            elif top_anchor == "ORDER_BLOCK":
-                print("      -> Prioritize origin candle before high-displacement legs.")
 
-        if recall_pct < 70.0:
-            print(f"  [3] Zone Selection Tuning:")
-            print(f"      Alignment is {recall_pct:.1f}%. Consider relaxing `min_departure` from {current_m15.get('min_departure', 2.0)} to 1.5")
-            print("      to capture secondary consolidation bases marked by the trader.")
+        cal = run_ml_calibration(
+            snapshots=snapshots,
+            df_m15=df_m15,
+            df_h1=df_h1,
+            df_h4=df_h4,
+            symbol=symbol,
+            n_trials=n_trials,
+            dry_run=dry_run,
+        )
+        b = cal["baseline_metrics"]
+        t = cal["tuned_metrics"]
+        print(f"  * ML Stage        : {cal['ml_stage']}")
+        print(f"  * Progression     : {cal['ml_status_note']}")
+        print(f"  * Covered Window  : {cal['snapshots_in_cache_window']}/{cal['snapshots_total']} snapshots")
+        print("\n  [Before vs. After Scorecard]")
+        print(f"      - Match Recall   : {b['recall_pct']:.1f}% ({b['matched_zones']}/{b['total_zones']})  -->  {t['recall_pct']:.1f}% ({t['matched_zones']}/{t['total_zones']})")
+        print(f"      - Mean Zone IoU  : {b['mean_iou']:.3f}  -->  {t['mean_iou']:.3f}")
+        print(f"      - 50% CE Offset  : {b['avg_ce_error']:.2f} {unit_str}  -->  {t['avg_ce_error']:.2f} {unit_str}")
+        print("")
+        _print_param_diffs(cal["m15_params"], cal["htf_params"])
+        if dry_run:
+            print("\n  [DRY RUN] No files written. Re-run without `--dry-run` to apply calibration.")
         else:
-            print(f"  [3] Zone Selection Tuning: High alignment ({recall_pct:.1f}%). Current `TF_PARAMS` are well-calibrated.")
+            print(f"\n  [SAVED] Calibrated weights persisted to `{TUNED_PARAMS_PATH}`.")
+            print("          Daily live scans will load these tuned parameters automatically.")
 
-    print("\n  [i] Ingested numerical markups remain safely stored in `trader_dna/data/trader_dna_profile.json`.")
+    print("\n  [i] Ingested numerical markups remain safely stored offline.")
     print("      Live Tomoko trading engines continue operating 100% autonomously.")
 
     # -------------------------------------------------------------
@@ -328,14 +335,27 @@ def run_weekend_comparison(symbol: str = "XAUUSD", verbose: bool = False, tune: 
         print(f"  Successfully purged {purged} weekly screenshot files from archive.")
         print("  `markups/` and `markups/archive/` are clean for the upcoming trading week.")
 
-    print("=" * 76 + "\n")
-
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Tomoko Weekend Comparison & Fine-Tuning CLI")
+    parser = argparse.ArgumentParser(description="Tomoko Weekend Benchmark & ML Calibration")
     parser.add_argument("--symbol", default="XAUUSD", help="Symbol to compare (default: XAUUSD)")
     parser.add_argument("--verbose", action="store_true", help="Verbose telemetry")
-    parser.add_argument("--tune", action="store_true", help="Generate algorithmic parameter calibrations for core/zone_engine.py")
+    parser.add_argument("--tune", action="store_true", help="Run Optuna/ML parameter calibration")
+    parser.add_argument("--trials", type=int, default=160, help="Number of Optuna trials per timeframe (default: 160)")
+    parser.add_argument("--dry-run", action="store_true", help="Evaluate ML tuning without saving tuned_zone_params.json")
+    parser.add_argument("--reset-defaults", action="store_true", help="Delete tuned_zone_params.json and restore factory defaults")
     parser.add_argument("--purge-archive", action="store_true", help="Purge the weekly raw screenshot images after running fine-tuning comparison")
     args = parser.parse_args()
-    run_weekend_comparison(args.symbol, args.verbose, tune=args.tune, purge_archive=args.purge_archive)
+
+    if args.reset_defaults:
+        removed = reset_tuned_params()
+        print("[RESET] Removed calibrated ML parameters; factory defaults active." if removed else "[RESET] Already using factory defaults.")
+    else:
+        run_weekend_comparison(
+            args.symbol,
+            args.verbose,
+            tune=args.tune,
+            purge_archive=args.purge_archive,
+            n_trials=args.trials,
+            dry_run=args.dry_run,
+        )
