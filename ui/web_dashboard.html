@@ -1597,13 +1597,53 @@
   footer.bar{ padding:9px 16px; border-top:1px solid var(--border); background:rgba(12,17,27,.7);
     font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); }
 
-  #logsModal{ position:fixed; inset:0; background:rgba(3,6,12,.85); display:none; align-items:flex-start;
-    justify-content:center; padding:40px 16px; z-index:60; overflow:auto; }
+  #logsModal{ position:fixed; inset:0; background:rgba(3,6,12,.88); display:none; align-items:flex-start;
+    justify-content:center; padding:28px 16px; z-index:60; overflow:auto; backdrop-filter:blur(6px); }
   #logsModal.show{ display:flex; }
-  #logsModal .box{ background:var(--card); border:1px solid var(--border); border-radius:12px; width:100%; max-width:1000px; padding:16px; }
-  #logsModal table{ width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:10px; }
-  #logsModal th, #logsModal td{ border:1px solid var(--border); padding:4px 6px; text-align:left; color:#CBD5E1; }
-  #logsModal th{ color:var(--cyan); }
+  #logsModal .box{ background:var(--card); border:1px solid rgba(0,229,255,.25); border-radius:14px; width:100%; max-width:1240px; padding:18px 20px; box-shadow:0 24px 70px rgba(0,0,0,.7); position:relative; }
+  #logsModal .br-header{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; padding-right:28px; }
+  #logsModal .br-title{ font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:var(--cyan); letter-spacing:.04em; display:flex; align-items:center; gap:8px; }
+  #logsModal .br-rule-chip{ font-size:10px; color:#94a3b8; background:rgba(15,23,42,.8); border:1px solid var(--border); padding:3px 8px; border-radius:6px; font-weight:500; }
+  #logsModal .br-kpi-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:8px; margin-bottom:12px; }
+  #logsModal .br-kpi{ background:rgba(15,23,42,.65); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+  #logsModal .br-kpi .k{ font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  #logsModal .br-kpi .v{ font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; color:#f8fafc; margin-top:2px; }
+  #logsModal .br-kpi .s{ font-size:10px; color:#94a3b8; margin-top:1px; }
+  #logsModal .br-filters{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  #logsModal .br-tabs{ display:flex; gap:6px; flex-wrap:wrap; }
+  #logsModal .br-tab{ background:rgba(15,23,42,.7); border:1px solid var(--border); color:#94a3b8; font-family:'JetBrains Mono',monospace; font-size:10px; padding:5px 10px; border-radius:6px; cursor:pointer; }
+  #logsModal .br-tab.active{ border-color:var(--cyan); color:var(--cyan); background:rgba(0,229,255,.12); font-weight:700; }
+  #logsModal .br-controls{ display:flex; gap:8px; align-items:center; }
+  #logsModal select.br-select{ background:#0f172a; border:1px solid var(--border); color:#e2e8f0; font-family:'JetBrains Mono',monospace; font-size:10.5px; padding:5px 8px; border-radius:6px; }
+  #logsModal .br-eval-btn{ background:rgba(0,229,255,.12); border:1px solid rgba(0,229,255,.4); color:var(--cyan); font-family:'JetBrains Mono',monospace; font-size:10px; padding:5px 10px; border-radius:6px; cursor:pointer; font-weight:600; }
+  #logsModal .br-eval-btn:hover{ background:rgba(0,229,255,.22); }
+  #logsModal .br-list{ display:flex; flex-direction:column; gap:10px; max-height:62vh; overflow:auto; padding-right:4px; }
+  #logsModal .br-card{ background:rgba(15,23,42,.62); border:1px solid var(--border); border-radius:10px; padding:11px 13px; }
+  #logsModal .br-card.win{ border-left:3px solid #22c55e; }
+  #logsModal .br-card.loss{ border-left:3px solid #ef4444; }
+  #logsModal .br-card.active{ border-left:3px solid var(--cyan); }
+  #logsModal .br-card.pending{ border-left:3px solid #f59e0b; }
+  #logsModal .br-card.missed{ border-left:3px solid #a855f7; }
+  #logsModal .br-card-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+  #logsModal .br-pair-link{ font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:800; color:#f8fafc; text-decoration:none; }
+  #logsModal .br-pair-link:hover{ color:var(--cyan); }
+  #logsModal .br-badge{ font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:5px; letter-spacing:.04em; }
+  #logsModal .br-badge.long{ background:rgba(34,197,94,.16); color:#4ade80; border:1px solid rgba(34,197,94,.35); }
+  #logsModal .br-badge.short{ background:rgba(239,68,68,.16); color:#f87171; border:1px solid rgba(239,68,68,.35); }
+  #logsModal .br-badge.st-win{ background:rgba(34,197,94,.18); color:#4ade80; border:1px solid rgba(34,197,94,.4); }
+  #logsModal .br-badge.st-loss{ background:rgba(239,68,68,.18); color:#f87171; border:1px solid rgba(239,68,68,.4); }
+  #logsModal .br-badge.st-active{ background:rgba(0,229,255,.15); color:var(--cyan); border:1px solid rgba(0,229,255,.4); }
+  #logsModal .br-badge.st-pending{ background:rgba(245,158,11,.15); color:#fbbf24; border:1px solid rgba(245,158,11,.4); }
+  #logsModal .br-badge.st-missed{ background:rgba(168,85,247,.16); color:#c084fc; border:1px solid rgba(168,85,247,.4); }
+  #logsModal .br-badge.st-muted{ background:rgba(100,116,139,.2); color:#94a3b8; border:1px solid rgba(148,163,184,.3); }
+  #logsModal .br-badge.sweep{ background:rgba(250,204,21,.16); color:#fde047; border:1px solid rgba(250,204,21,.4); }
+  #logsModal .br-badge.arch{ background:rgba(56,189,248,.12); color:#7dd3fc; border:1px solid rgba(56,189,248,.3); }
+  #logsModal .br-levels{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:6px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#cbd5e1; margin-bottom:7px; background:rgba(2,6,23,.45); padding:7px 9px; border-radius:7px; }
+  #logsModal .br-reason{ font-size:11.5px; color:#e2e8f0; line-height:1.45; margin-bottom:8px; padding:6px 9px; background:rgba(30,41,59,.45); border-radius:6px; border-left:2px solid rgba(0,229,255,.45); }
+  #logsModal .br-verdicts{ display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+  #logsModal .br-vtag{ font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:3px 7px; border-radius:5px; cursor:pointer; background:rgba(15,23,42,.85); border:1px solid var(--border); color:#94a3b8; transition:all .15s; }
+  #logsModal .br-vtag:hover{ border-color:var(--cyan); color:#e2e8f0; }
+  #logsModal .br-vtag.on{ background:rgba(0,229,255,.18); border-color:var(--cyan); color:var(--cyan); font-weight:700; }
   /* Persistent Fixed Shock Banner */
   .sticky-shock-banner {
     position: fixed; top: 0; left: 0; right: 0; z-index: 99999;
@@ -1752,7 +1792,7 @@
       <span class="sep">•</span>
       <span id="session-status">SESSION: --</span>
       <span class="sep">•</span>
-      <button id="logsLink">Signal logs</button>
+      <button id="logsLink" title="Open BattleRecord — Monitored Entry Plans & Win-Rate Archive">⚔️ BattleRecord</button>
       <span class="sep">•</span><span id="live-time">live: --:--:--</span>
     </div>
   </header>
@@ -2213,8 +2253,36 @@
 <div id="logsModal">
   <div class="box">
     <span class="x" id="logsClose">×</span>
-    <h3 style="font-family:'JetBrains Mono',monospace;color:var(--cyan);margin-top:0;">SIGNAL LOGS — last 100</h3>
-    <div id="logsBody" style="max-height:70vh;overflow:auto;"></div>
+    <div class="br-header">
+      <div class="br-title">
+        <span>⚔️ BATTLERECORD — MONITORED ENTRY PLAN LEDGER</span>
+        <span class="br-rule-chip">Entry: Wick Touch · Win: TP1+ · SL: M15 Close · Expiry: 24h</span>
+      </div>
+    </div>
+    <div class="br-kpi-grid" id="brKpis"></div>
+    <div class="br-filters">
+      <div class="br-tabs" id="brStatusTabs">
+        <button class="br-tab active" data-st="ALL">ALL</button>
+        <button class="br-tab" data-st="OPEN">OPEN (LIVE)</button>
+        <button class="br-tab" data-st="WINS">WINS (TP1+)</button>
+        <button class="br-tab" data-st="LOSSES">LOSSES (SL)</button>
+        <button class="br-tab" data-st="MISSED">MISSED / EXPIRED</button>
+      </div>
+      <div class="br-controls">
+        <select id="brPairFilter" class="br-select">
+          <option value="ALL">ALL PAIRS</option>
+          <option value="XAUUSD">XAUUSD</option>
+          <option value="EURUSD">EURUSD</option>
+          <option value="GBPUSD">GBPUSD</option>
+          <option value="USDJPY">USDJPY</option>
+          <option value="GBPJPY">GBPJPY</option>
+          <option value="EURJPY">EURJPY</option>
+          <option value="EURGBP">EURGBP</option>
+        </select>
+        <button id="brEvalBtn" class="br-eval-btn" title="Re-evaluate all open plans against latest M15 candles">🔄 Evaluate M15</button>
+      </div>
+    </div>
+    <div id="logsBody" class="br-list"></div>
   </div>
 </div>
 
@@ -3458,22 +3526,157 @@ function renderTrapRadarStrip(data){
   strip.style.display = 'flex';
 }
 
-async function loadLogs(){
-  const box=document.getElementById('logsBody');
+let BR_STATE = { status: 'ALL', symbol: 'ALL', verdictOptions: [], battles: [] };
+
+function _brStatusMeta(b){
+  const st = b.status || 'PENDING';
+  if(st === 'WIN_TP3') return { cls: 'st-win', card: 'win', lbl: '🏆 WIN · TP3' };
+  if(st === 'WIN_TP2') return { cls: 'st-win', card: 'win', lbl: '✅ WIN · TP2' };
+  if(st === 'WIN_TP1') return { cls: 'st-win', card: 'win', lbl: '✅ WIN · TP1' };
+  if(st === 'STOPPED_OUT') return { cls: 'st-loss', card: 'loss', lbl: '🛑 STOPPED (M15 CLOSE)' };
+  if(st === 'ACTIVE') return { cls: 'st-active', card: 'active', lbl: '⚡ ACTIVE · MONITORING' };
+  if(st === 'PENDING') return { cls: 'st-pending', card: 'pending', lbl: '⏳ PENDING ZONE TOUCH' };
+  if(st === 'MISSED_TP') return { cls: 'st-missed', card: 'missed', lbl: '🎯 MISSED ZONE → HIT TP1' };
+  if(st === 'INVALIDATED') return { cls: 'st-muted', card: 'missed', lbl: '✕ INVALIDATED PRE-ENTRY' };
+  if(st === 'EXPIRED') return { cls: 'st-muted', card: 'missed', lbl: '⌛ EXPIRED (24H)' };
+  return { cls: 'st-muted', card: 'missed', lbl: st };
+}
+
+function _escHtml(s){
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function toggleBattleVerdict(battleId, tag){
+  const b = (BR_STATE.battles || []).find(x => x.battle_id === battleId);
+  if(!b) return;
+  const cur = Array.isArray(b.verdict_tags) ? [...b.verdict_tags] : [];
+  const idx = cur.indexOf(tag);
+  if(idx >= 0) cur.splice(idx, 1); else cur.push(tag);
   try{
-    const r=await fetch('/api/logs'); const j=await r.json();
-    const rows=j.rows||[];
-    if(!rows.length){ box.innerHTML='<div class="v">No signals logged yet.</div>'; return; }
-    const cols=['timestamp','symbol','action','score','weekly_open','liq_high','liq_low','news_is_clean','fund_bias'];
-    box.innerHTML='<table><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>'+
-      rows.map(rw=>'<tr>'+cols.map(c=>`<td>${rw[c]??''}</td>`).join('')+'</tr>').join('')+'</table>';
-  }catch(e){ box.innerHTML='<div class="v">logs error</div>'; }
+    const r = await fetch(`/api/battle-record/${encodeURIComponent(battleId)}/verdict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verdict_tags: cur })
+    });
+    const j = await r.json();
+    if(j.success && j.battle){
+      b.verdict_tags = j.battle.verdict_tags;
+      renderBattleRecordList();
+    }
+  }catch(e){ console.error('Verdict tag error:', e); }
+}
+
+function renderBattleRecordList(){
+  const box = document.getElementById('logsBody');
+  const rows = BR_STATE.battles || [];
+  const tagOpts = BR_STATE.verdictOptions || ['Good Zone','SL Too Tight','News Spike','Missed by Hair','Counter-Trend Trap','Wick Sweep Saved'];
+  if(!rows.length){
+    box.innerHTML = '<div class="v" style="padding:20px;text-align:center;color:#94a3b8;">No entry plans match this filter yet. Every generated Battle-Plan is automatically recorded and monitored here.</div>';
+    return;
+  }
+  box.innerHTML = rows.map(b => {
+    const sm = _brStatusMeta(b);
+    const isLong = b.bias === 'LONG';
+    const rStr = (b.realized_r !== null && b.realized_r !== undefined) ? `${b.realized_r >= 0 ? '+' : ''}${b.realized_r}R` : '--';
+    const rColor = (b.realized_r > 0) ? '#4ade80' : (b.realized_r < 0 ? '#f87171' : '#cbd5e1');
+    const tpList = [b.tp1, b.tp2, b.tp3].filter(x => x !== null && x !== undefined).map((v,i)=>`TP${i+1}: ${v}`).join(' · ');
+    const sweepBadge = (b.wick_breached_sl && b.is_win)
+      ? `<span class="br-badge sweep" title="Wicked ${b.max_wick_beyond_sl_atr} ATR past SL without M15 close, then hit TP1!">🛡️ WICK SWEEP SAVED</span>`
+      : (b.wick_breached_sl ? `<span class="br-badge st-pending">⚠️ WICK PAST SL (${b.max_wick_beyond_sl_atr} ATR)</span>` : '');
+    const archBadge = b.archived ? `<span class="br-badge arch" title="Permanently archived to ${_escHtml(b.archive_file || 'data/battle_archive/')}">📦 ARCHIVED</span>` : '';
+    const extraMetric = b.triggered
+      ? `MFE: <b>${b.mfe_atr ?? 0} ATR</b> (Max ${b.max_r_reached ?? 0}R) · MAE: <b>${b.mae_atr ?? 0} ATR</b>`
+      : (b.missed_by_atr !== null && b.missed_by_atr !== undefined ? `Closest Approach: <b>${b.missed_by_atr} ATR</b> from zone` : 'Awaiting first touch');
+    const activeTags = Array.isArray(b.verdict_tags) ? b.verdict_tags : [];
+    const tagPills = tagOpts.map(t => {
+      const on = activeTags.includes(t) ? 'on' : '';
+      return `<button class="br-vtag ${on}" onclick="toggleBattleVerdict('${_escHtml(b.battle_id)}','${_escHtml(t)}')">${on ? '✓ ' : '+ '}${_escHtml(t)}</button>`;
+    }).join('');
+
+    return `
+      <div class="br-card ${sm.card}">
+        <div class="br-card-top">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+            <a class="br-pair-link" href="/pair/${_escHtml(b.symbol)}?battle_id=${encodeURIComponent(b.battle_id)}" target="_blank" title="Open ${_escHtml(b.symbol)} chart with this Battle overlaid">${_escHtml(b.symbol)}</a>
+            <span class="br-badge ${isLong ? 'long' : 'short'}">${_escHtml(b.bias)}</span>
+            <span class="br-badge ${sm.cls}">${sm.lbl}</span>
+            ${sweepBadge}
+            ${archBadge}
+            <a href="/pair/${_escHtml(b.symbol)}?battle_id=${encodeURIComponent(b.battle_id)}" target="_blank" class="br-eval-btn" style="text-decoration:none;padding:2px 7px;font-size:9.5px;" title="Draw this battle's Entry Zone, SL, and TP1-TP3 directly on the chart">📈 Chart Overlay</a>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8;">
+            ${_escHtml(b.session || '')} · ${_escHtml((b.created_at_utc || '').replace(':00 UTC',' UTC'))} · <span style="color:#64748b;">${_escHtml(b.engine_mode === 'SYNTHESIZED_RULE_BASED' ? 'RULE' : 'AI')}</span>
+          </div>
+        </div>
+        <div class="br-levels">
+          <div><span style="color:#64748b;">ENTRY ZONE:</span> <b style="color:var(--cyan);">${_escHtml(b.entry_zone)}</b></div>
+          <div><span style="color:#64748b;">SL (M15 CLOSE):</span> <b style="color:#f87171;">${_escHtml(b.stop_loss)}</b></div>
+          <div><span style="color:#64748b;">TARGETS:</span> <b style="color:#4ade80;">${_escHtml(tpList)}</b></div>
+          <div><span style="color:#64748b;">RESULT / R:</span> <b style="color:${rColor};">${rStr}</b> <span style="color:#64748b;">(RR 1:${b.rr_to_tp1 ?? '--'})</span></div>
+          <div><span style="color:#64748b;">EXCURSION:</span> ${extraMetric}</div>
+        </div>
+        <div class="br-reason"><b style="color:var(--cyan);">WHY ENTRY:</b> ${_escHtml(b.entry_reason || b.executive_bottom_line || '—')}</div>
+        <div class="br-verdicts">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#64748b;margin-right:2px;">VERDICT:</span>
+          ${tagPills}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadBattleRecord(evaluateNow=false){
+  const box = document.getElementById('logsBody');
+  const kpiBox = document.getElementById('brKpis');
+  box.innerHTML = '<div class="v" style="padding:18px;text-align:center;color:#94a3b8;">Loading BattleRecord...</div>';
+  try{
+    const qs = new URLSearchParams({
+      symbol: BR_STATE.symbol,
+      status: BR_STATE.status,
+      limit: '100',
+      evaluate: evaluateNow ? 'true' : 'false'
+    });
+    const r = await fetch('/api/battle-record?' + qs.toString());
+    const j = await r.json();
+    BR_STATE.battles = j.battles || [];
+    BR_STATE.verdictOptions = j.verdict_tag_options || [];
+    const st = j.stats || {};
+    const wrStr = (st.win_rate !== null && st.win_rate !== undefined) ? `${st.win_rate}%` : '—';
+    const frStr = (st.fill_rate !== null && st.fill_rate !== undefined) ? `${st.fill_rate}%` : '—';
+    const netRStr = (st.net_r !== undefined) ? `${st.net_r >= 0 ? '+' : ''}${st.net_r}R` : '0R';
+    const avgRStr = (st.avg_r !== null && st.avg_r !== undefined) ? `Avg ${st.avg_r >= 0 ? '+' : ''}${st.avg_r}R` : 'No closed trades';
+    kpiBox.innerHTML = `
+      <div class="br-kpi"><div class="k">WIN RATE (TP1+)</div><div class="v" style="color:${(st.win_rate||0)>=50?'#4ade80':'#fbbf24'};">${wrStr}</div><div class="s">${st.wins||0}W / ${st.losses||0}L (${st.tp2_plus_runners||0} TP2+)</div></div>
+      <div class="br-kpi"><div class="k">NET EXPECTANCY</div><div class="v" style="color:${(st.net_r||0)>=0?'#4ade80':'#f87171'};">${netRStr}</div><div class="s">${avgRStr}</div></div>
+      <div class="br-kpi"><div class="k">OPEN MONITORED</div><div class="v" style="color:var(--cyan);">${(st.active||0)+(st.pending||0)}</div><div class="s">${st.active||0} Active · ${st.pending||0} Pending</div></div>
+      <div class="br-kpi"><div class="k">ZONE FILL RATE</div><div class="v">${frStr}</div><div class="s">${st.missed_tp||0} Missed→TP · ${st.expired||0} Exp</div></div>
+      <div class="br-kpi"><div class="k">WICK SWEEPS SAVED</div><div class="v" style="color:#fde047;">${st.wick_sweeps_saved||0}</div><div class="s">M15 close SL protection</div></div>
+      <div class="br-kpi"><div class="k">WEEKEND ARCHIVE</div><div class="v" style="color:#7dd3fc;">${st.archived_count||0}</div><div class="s">Saved to battle_archive/</div></div>
+    `;
+    renderBattleRecordList();
+  }catch(e){
+    box.innerHTML = '<div class="v" style="color:#f87171;">BattleRecord load error</div>';
+  }
 }
 
 document.getElementById('logsLink').addEventListener('click', async (e)=>{
-  e.preventDefault(); document.getElementById('logsModal').classList.add('show'); await loadLogs();
+  e.preventDefault();
+  document.getElementById('logsModal').classList.add('show');
+  await loadBattleRecord(true);
 });
 document.getElementById('logsClose').addEventListener('click', ()=> document.getElementById('logsModal').classList.remove('show'));
+document.getElementById('brEvalBtn').addEventListener('click', async ()=> await loadBattleRecord(true));
+document.getElementById('brPairFilter').addEventListener('change', async (e)=>{
+  BR_STATE.symbol = e.target.value;
+  await loadBattleRecord(false);
+});
+document.querySelectorAll('#brStatusTabs .br-tab').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    document.querySelectorAll('#brStatusTabs .br-tab').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    BR_STATE.status = btn.dataset.st || 'ALL';
+    await loadBattleRecord(false);
+  });
+});
 
 function tick(){
   const el=document.getElementById('live-time');

@@ -37,6 +37,72 @@ from core.dna_ml_tuner import (
     run_ml_calibration,
     slice_candles_at_timestamp,
 )
+from core.battle_record_engine import compute_weekend_diagnostics
+
+
+def print_battle_record_diagnostics(symbol: str = "ALL"):
+    """Prints Weekend BattleRecord Tuning Diagnostics from data/battle_archive/ + logs/battle_record.json."""
+    diag = compute_weekend_diagnostics(symbol=None if symbol.upper() == "ALL" else symbol.upper())
+    ov = diag["overall"]
+    mm = diag["mfe_mae"]
+    zd = diag["zone_depth"]
+
+    print("\n" + "=" * 76)
+    print(f"  WEEKEND BATTLERECORD TUNING DIAGNOSTICS [{diag['symbol_filter']}]")
+    print("=" * 76)
+
+    if ov["total"] == 0:
+        print("  [i] No BattleRecord entries found yet in `data/battle_archive/` or `logs/battle_record.json`.")
+        return
+
+    wr_s = f"{ov['win_rate']}%" if ov["win_rate"] is not None else "N/A"
+    fr_s = f"{ov['fill_rate']}%" if ov["fill_rate"] is not None else "N/A"
+    avg_r_s = f"{ov['avg_r']:+.2f}R" if ov["avg_r"] is not None else "N/A"
+    net_r_s = f"{ov['net_r']:+.2f}R"
+
+    print(f"  * Total Plans Tracked : {ov['total']} (Open: {ov['active']} Active, {ov['pending']} Pending | Archived: {ov['archived_count']})")
+    print(f"  * Win Rate (TP1+)     : {wr_s}  ({ov['wins']}W / {ov['losses']}L, {ov['tp2_plus_runners']} TP2+ runners)")
+    print(f"  * Expectancy / Net R  : {avg_r_s} avg  |  {net_r_s} net")
+    print(f"  * Zone Fill Rate      : {fr_s}  (Missed->TP1: {ov['missed_tp']}, Expired: {ov['expired']}, Invalidated: {ov['invalidated']})")
+    print(f"  * Wick Sweeps Saved   : {ov['wick_sweeps_saved']} wins survived a wick past SL (M15 close SL rule)")
+
+    def _print_table(title: str, mapping: Dict[str, Dict[str, Any]]):
+        if not mapping:
+            return
+        print(f"\n  [{title}]")
+        print(f"      {'KEY':<18} {'TOT':>4} {'W/L':>7} {'WIN%':>7} {'FILL%':>7} {'NET R':>8} {'MISS->TP':>8}")
+        for k, r in mapping.items():
+            wl = f"{r['wins']}W/{r['losses']}L"
+            wr = f"{r['win_rate']:.1f}%" if r["win_rate"] is not None else "  N/A"
+            fr = f"{r['fill_rate']:.1f}%" if r["fill_rate"] is not None else "  N/A"
+            nr = f"{r['net_r']:+.2f}R"
+            print(f"      {k:<18} {r['total']:>4} {wl:>7} {wr:>7} {fr:>7} {nr:>8} {r['missed_tp']:>8}")
+
+    _print_table("Breakdown by Pair", diag["by_pair"])
+    _print_table("Breakdown by Session", diag["by_session"])
+    _print_table("Breakdown by Engine Mode (AI vs Rule)", diag["by_engine"])
+
+    print("\n  [MFE / MAE & SL-Buffer Check]")
+    print(f"      - Avg SL Distance          : {mm['avg_sl_distance_atr'] if mm['avg_sl_distance_atr'] is not None else 'N/A'} ATR")
+    print(f"      - Avg Win MAE (Drawdown)   : {mm['avg_win_mae_atr'] if mm['avg_win_mae_atr'] is not None else 'N/A'} ATR")
+    print(f"      - Avg Loss MFE (Peak Gain) : {mm['avg_loss_mfe_atr'] if mm['avg_loss_mfe_atr'] is not None else 'N/A'} ATR")
+    print(f"      - Wick Sweep Overshoot Avg : {mm['avg_sweep_overshoot_atr'] if mm['avg_sweep_overshoot_atr'] is not None else 'N/A'} ATR ({mm['wick_sweeps_saved']} saved)")
+    print(f"      - Near-TP1 Reversals (>=70%): {mm['near_tp1_reversals']} loss(es)")
+
+    print("\n  [Zone-Depth Calibration (Missed-by-ATR)]")
+    print(f"      - Missed->TP1 Count        : {zd['missed_tp_count']}")
+    print(f"      - Avg Missed Distance      : {zd['avg_missed_by_atr'] if zd['avg_missed_by_atr'] is not None else 'N/A'} ATR")
+    print(f"      - Median Missed Distance   : {zd['median_missed_by_atr'] if zd['median_missed_by_atr'] is not None else 'N/A'} ATR")
+
+    if diag["verdict_counts"]:
+        print("\n  [1-Click Trader Verdict Tags]")
+        for tag, cnt in sorted(diag["verdict_counts"].items(), key=lambda kv: kv[1], reverse=True):
+            print(f"      - {tag:<22}: {cnt}")
+
+    if diag["calibration_hints"]:
+        print("\n  [Weekend Calibration Hints]")
+        for h in diag["calibration_hints"]:
+            print(f"      -> {h}")
 
 
 def load_candles_cache():
@@ -88,6 +154,7 @@ def run_weekend_comparison(
     if not snapshots and not executed_trades:
         print(f"[i] No ingested trader markups found for {symbol}.")
         print("    Ingest chart snapshots using `/ingest` or `/dna` during the week to build training data.")
+        print_battle_record_diagnostics(symbol="ALL")
         return
 
     print(f"[*] Loaded {len(snapshots)} unified benchmark snapshot(s) + {len(executed_trades)} trade(s) for {symbol}.\n")
@@ -324,6 +391,9 @@ def run_weekend_comparison(
     print("\n  [i] Ingested numerical markups remain safely stored offline.")
     print("      Live Tomoko trading engines continue operating 100% autonomously.")
 
+    # Weekend BattleRecord Tuning Diagnostics (across all archived & ledger battles)
+    print_battle_record_diagnostics(symbol="ALL")
+
     # -------------------------------------------------------------
     # Post-Tune Weekly Archive Purge
     # -------------------------------------------------------------
@@ -345,11 +415,15 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true", help="Evaluate ML tuning without saving tuned_zone_params.json")
     parser.add_argument("--reset-defaults", action="store_true", help="Delete tuned_zone_params.json and restore factory defaults")
     parser.add_argument("--purge-archive", action="store_true", help="Purge the weekly raw screenshot images after running fine-tuning comparison")
+    parser.add_argument("--battle-only", action="store_true", help="Run only the Weekend BattleRecord Tuning Diagnostics (skip markup comparison)")
+    parser.add_argument("--all-pairs", action="store_true", help="With --battle-only, analyze all pairs instead of only --symbol")
     args = parser.parse_args()
 
     if args.reset_defaults:
         removed = reset_tuned_params()
         print("[RESET] Removed calibrated ML parameters; factory defaults active." if removed else "[RESET] Already using factory defaults.")
+    elif args.battle_only:
+        print_battle_record_diagnostics(symbol="ALL" if args.all_pairs else args.symbol)
     else:
         run_weekend_comparison(
             args.symbol,

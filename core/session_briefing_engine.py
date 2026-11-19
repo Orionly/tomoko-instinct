@@ -15,8 +15,8 @@ import json
 import logging
 import threading
 import urllib.request
-from datetime import datetime, timezone
-from typing import Dict, Optional
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, Optional
 
 import config
 from core.macro_scenario_engine import MacroScenarioEngine
@@ -43,7 +43,7 @@ class SessionBriefingEngine:
     with embedded Catalyst-to-Pair scenario trees and deterministic fallback.
     """
 
-    def __init__(self, price_engine=None, levels_engine=None, news_engine=None, macro_engine=None, macro_scenario_engine=None, trap_radar_engine=None):
+    def __init__(self, price_engine=None, levels_engine=None, news_engine=None, macro_engine=None, macro_scenario_engine=None, trap_radar_engine=None, battle_record_engine=None):
         self.api_key = getattr(config, "GEMINI_API_KEY", "")
         self.model = getattr(config, "GEMINI_MODEL", "gemini-2.5-flash")
         self.price_engine = price_engine
@@ -56,14 +56,22 @@ class SessionBriefingEngine:
         self.trap_radar_engine = trap_radar_engine or TrapRadarEngine(
             price_engine=price_engine, levels_engine=levels_engine
         )
+        self.battle_record_engine = battle_record_engine
 
         self.latest_briefing: Dict = {}
         self._lock = threading.Lock()
+        self._gen_lock = threading.Lock()
+        self._is_generating = False
         self._stop_event = threading.Event()
         self._last_triggered_session: Optional[str] = None
 
         # Load existing briefing from disk cache for 0ms startup
         self._load_cache()
+        if self.battle_record_engine and not self.battle_record_engine.battles and self.latest_briefing:
+            try:
+                self.battle_record_engine.record_briefing(self.latest_briefing)
+            except Exception as e:
+                log.debug("[SessionBriefing] BattleRecord initial seed note: %s", e)
 
         # Start background scheduler thread
         self._thread = threading.Thread(target=self._scheduler_loop, daemon=True, name="session-briefing-scheduler")
@@ -92,31 +100,49 @@ class SessionBriefingEngine:
             log.debug("[SessionBriefing] Cache write note: %s", e)
 
     @staticmethod
-    def get_current_session_info() -> Dict[str, str]:
-        """Calculates current UTC/MYT time and identifies active/upcoming session."""
-        now_utc = datetime.now(timezone.utc)
-        hour = now_utc.hour
-        minute = now_utc.minute
-        time_dec = hour + minute / 60.0
+    def get_current_session_info(now_utc: Optional[datetime] = None) -> Dict[str, Any]:
+        """Calculates current UTC time, market-open status, and active/upcoming session."""
+        if now_utc is None:
+            now_utc = datetime.now(timezone.utc)
+        elif now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+        else:
+            now_utc = now_utc.astimezone(timezone.utc)
 
-        # Session boundaries:
-        # Tokyo:    23:30 UTC -> 07:30 UTC
-        # London:   07:30 UTC -> 12:30 UTC
-        # New York: 12:30 UTC -> 23:30 UTC
-        if 23.5 <= time_dec or time_dec < 7.5:
+        weekday = now_utc.weekday()  # 0=Mon .. 4=Fri, 5=Sat, 6=Sun
+        cur_min = now_utc.hour * 60 + now_utc.minute
+
+        # Global FX institutional week: closes Fri 21:00 UTC (1260m), reopens Sun 21:00 UTC (1260m)
+        is_weekend = (weekday == 5) or (weekday == 4 and cur_min >= 1260) or (weekday == 6 and cur_min < 1260)
+
+        # Session boundaries (UTC):
+        # - Weekend close: Fri 21:00 -> Sun 21:00
+        # - Tokyo / Asian: 23:30 -> 07:30 (plus Sun 21:00 -> 23:30 weekly open)
+        # - London / European: 07:30 -> 12:30
+        # - New York / US: 12:30 -> 23:30 (Fri ends at 21:00)
+        if is_weekend:
+            session_name = "WEEKEND_CLOSED"
+            session_title = "Weekend Market Close (Pre-Tokyo)"
+        elif (weekday == 6 and cur_min >= 1260) or cur_min >= 1410 or cur_min < 450:
             session_name = "TOKYO_ASIAN"
             session_title = "Tokyo / Asian Session"
-        elif 7.5 <= time_dec < 12.5:
+        elif 450 <= cur_min < 750:
             session_name = "LONDON_EUROPEAN"
             session_title = "London / European Session"
         else:
             session_name = "NEW_YORK_US"
             session_title = "New York / US Session"
 
+        # Anchor Tokyo evening hours (21:00-23:59 UTC) to next UTC date so the session key stays continuous past 00:00 UTC
+        session_date = (now_utc + timedelta(days=1)).strftime("%Y-%m-%d") if (session_name == "TOKYO_ASIAN" and cur_min >= 1260) else now_utc.strftime("%Y-%m-%d")
+
         return {
             "session_name": session_name,
             "session_title": session_title,
             "time_utc": now_utc.strftime("%Y-%m-%d %H:%M UTC"),
+            "is_weekend": is_weekend,
+            "is_market_open": not is_weekend,
+            "session_key": f"{session_date}:{session_name}",
         }
 
     def _build_telemetry_payload(self) -> Dict:
@@ -212,27 +238,37 @@ class SessionBriefingEngine:
 
         return payload
 
-    def is_briefing_stale(self) -> bool:
+    def is_briefing_stale(self, now_utc: Optional[datetime] = None) -> bool:
         """Determines if current cached briefing is stale (different session, missing pairs, or > 6 hours old)."""
+        now = now_utc or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        else:
+            now = now.astimezone(timezone.utc)
+
         with self._lock:
             if not self.latest_briefing or not self.latest_briefing.get("pairs"):
                 return True
-            curr_info = self.get_current_session_info()
+            curr_info = self.get_current_session_info(now)
             cached_session = self.latest_briefing.get("session", "")
-            if cached_session and cached_session != curr_info["session_title"]:
+            if not cached_session or cached_session != curr_info["session_title"]:
                 return True
 
             gen_utc_str = self.latest_briefing.get("generated_at_utc", "")
-            if gen_utc_str:
-                try:
-                    cleaned = gen_utc_str.replace(" UTC", "").replace("Z", "").strip()
-                    dt = datetime.fromisoformat(cleaned) if "T" in cleaned else datetime.strptime(cleaned, "%Y-%m-%d %H:%M")
+            if not gen_utc_str:
+                return True
+            try:
+                cleaned = gen_utc_str.replace(" UTC", "").replace("Z", "").strip()
+                dt = datetime.fromisoformat(cleaned) if "T" in cleaned else datetime.strptime(cleaned, "%Y-%m-%d %H:%M")
+                if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
-                    age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0
-                    if age_hours > 6.0:
-                        return True
-                except Exception:
-                    pass
+                else:
+                    dt = dt.astimezone(timezone.utc)
+                age_hours = (now - dt).total_seconds() / 3600.0
+                if age_hours > 6.0 or age_hours < -0.1:
+                    return True
+            except Exception:
+                return True
         return False
 
     @staticmethod
@@ -503,10 +539,18 @@ class SessionBriefingEngine:
                 }
             }
 
+            entry_reason = (
+                f"{bias} reaction zone anchored at {entry_low}-{entry_high} around session pivot {pivot} "
+                f"(spot {spot}, H1 ATR {round(atr, digits + 1)}, PDH {pdh} / PDL {pdl}). "
+                f"Macro driver: {primary_driver}."
+                + (f" Trap context: {trap_info.get('trap_title')}." if trap_state != "NONE" else "")
+            )
+
             setup_dict = {
                 "bias": bias,
                 "probability": prob,
                 "entry_zone": f"{entry_low} - {entry_high}",
+                "entry_reason": entry_reason,
                 "trigger_confirmation": f"M5 rejection wick >= 2x candle body at {pivot} + bullish engulfing close" if bias == "LONG" else f"M5 upper wick rejection at {pivot} + bearish engulfing close",
                 "stop_loss": sl,
                 "targets": tgts,
@@ -551,24 +595,58 @@ class SessionBriefingEngine:
             "pairs": pairs_plan
         }
 
-    def generate_briefing(self) -> Dict:
+    def _store_briefing(self, briefing: Dict, curr_info: Dict[str, Any], telemetry: Optional[Dict] = None) -> Dict:
+        """Normalize session/timestamp metadata, update cache, archive into BattleRecord, and mark session triggered."""
+        briefing["session"] = curr_info["session_title"]
+        briefing["generated_at_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        with self._lock:
+            self.latest_briefing = briefing
+        self._last_triggered_session = curr_info["session_key"]
+        self._save_cache()
+        if self.battle_record_engine:
+            try:
+                self.battle_record_engine.record_briefing(briefing, telemetry=telemetry)
+            except Exception as e:
+                log.warning("[SessionBriefing] BattleRecord ingestion note: %s", e)
+        return briefing
+
+    def _trigger_background_refresh(self, force: bool = False) -> bool:
+        """Launch a single-flight background refresh if generation is not already running."""
+        if self._is_generating:
+            return False
+
+        def _bg_run():
+            try:
+                self.generate_briefing(force=force)
+            except Exception as e:
+                log.debug("[SessionBriefing] Background refresh note: %s", e)
+
+        threading.Thread(target=_bg_run, daemon=True, name="session-briefing-autorefresh").start()
+        return True
+
+    def generate_briefing(self, force: bool = True) -> Dict:
         """
         Executes a single batched prompt to Gemini 2.5 Flash for all 7 pairs.
         Falls back to rule-based synthesis if API key is absent or network fails.
         """
-        log.info("[SessionBriefing] Compiling real-time telemetry for all 7 pairs...")
-        telemetry = self._build_telemetry_payload()
-        session_title = telemetry["session"]
+        with self._gen_lock:
+            if not force and not self.is_briefing_stale():
+                with self._lock:
+                    return dict(self.latest_briefing)
 
-        if not self.api_key:
-            log.info("[SessionBriefing] No GEMINI_API_KEY configured. Utilizing deterministic MacroScenarioEngine synthesis.")
-            briefing = self._generate_rule_based_briefing(telemetry)
-            with self._lock:
-                self.latest_briefing = briefing
-            self._save_cache()
-            return briefing
+            self._is_generating = True
+            try:
+                log.info("[SessionBriefing] Compiling real-time telemetry for all 7 pairs...")
+                curr_info = self.get_current_session_info()
+                telemetry = self._build_telemetry_payload()
+                session_title = telemetry["session"]
 
-        user_prompt = f"""You are analyzing live institutional market telemetry 30 minutes before the upcoming {session_title}.
+                if not self.api_key:
+                    log.info("[SessionBriefing] No GEMINI_API_KEY configured. Utilizing deterministic MacroScenarioEngine synthesis.")
+                    briefing = self._generate_rule_based_briefing(telemetry)
+                    return self._store_briefing(briefing, curr_info, telemetry=telemetry)
+
+                user_prompt = f"""You are analyzing live institutional market telemetry 30 minutes before the upcoming {session_title}.
 Generate a comprehensive, tactical 5-block battle-plan for EACH of the 7 pairs: EURUSD, GBPUSD, USDJPY, GBPJPY, EURJPY, EURGBP, XAUUSD.
 
 TELEMETRY DATA (100% REAL-TIME LIVE DATA WITH EMBEDDED IF-THEN SCENARIOS):
@@ -582,6 +660,7 @@ REQUIREMENTS:
      - bias: "LONG" | "SHORT" | "RANGE_FADE" | "WAIT"
      - probability: e.g. "65%"
      - entry_zone: exact price range formatted as "$low - $high" or "low - high"
+     - entry_reason: MANDATORY 1-2 sentences explaining WHY this exact entry zone and direction were chosen (cite structural level/anchor, liquidity or EMA21/pivot confluence, and macro driver — used for weekend performance tuning)
      - trigger_confirmation: mechanical trigger rule (e.g. "M5 lower wick rejection >= 2x body at [level] + bullish engulf close")
      - stop_loss: exact price level (beneath structural invalidation)
      - targets: array of 3 to 5 realistic target prices (TP1, TP2, TP3, TP4)
@@ -615,54 +694,56 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
   }}
 }}"""
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-        body = json.dumps({
-            "contents": [{"parts": [{"text": f"{SYSTEM_PROMPT}\n\n{user_prompt}"}]}],
-            "generationConfig": {"responseMimeType": "application/json"}
-        }).encode("utf-8")
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+                body = json.dumps({
+                    "contents": [{"parts": [{"text": f"{SYSTEM_PROMPT}\n\n{user_prompt}"}]}],
+                    "generationConfig": {"responseMimeType": "application/json"}
+                }).encode("utf-8")
 
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        t0 = time.time()
-        try:
-            log.info("[SessionBriefing] Dispatching single batched call to Gemini (%s)...", self.model)
-            with urllib.request.urlopen(req, timeout=60.0) as resp:
-                raw_resp = json.loads(resp.read().decode("utf-8"))
-                text_content = raw_resp["candidates"][0]["content"]["parts"][0]["text"]
-                parsed_data = json.loads(text_content)
-                if isinstance(parsed_data, list) and len(parsed_data) > 0:
-                    parsed_data = parsed_data[0]
-                elapsed = round(time.time() - t0, 2)
-                log.info("[SessionBriefing] Successfully generated institutional briefing in %ss!", elapsed)
+                req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+                t0 = time.time()
+                try:
+                    log.info("[SessionBriefing] Dispatching single batched call to Gemini (%s)...", self.model)
+                    with urllib.request.urlopen(req, timeout=60.0) as resp:
+                        raw_resp = json.loads(resp.read().decode("utf-8"))
+                        text_content = raw_resp["candidates"][0]["content"]["parts"][0]["text"]
+                        parsed_data = json.loads(text_content)
+                        if isinstance(parsed_data, list) and len(parsed_data) > 0:
+                            parsed_data = parsed_data[0]
+                        elapsed = round(time.time() - t0, 2)
+                        log.info("[SessionBriefing] Successfully generated institutional briefing in %ss!", elapsed)
 
-                # Institutional Assertion Gate: Sanitize every pair from Gemini
-                for sym, p_plan in parsed_data.get("pairs", {}).items():
-                    p_data = telemetry.get("pairs", {}).get(sym, {})
-                    spot = float(p_data.get("spot_price") or 0.0)
-                    digits = 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5)
-                    pdh = float(p_data.get("pdh") or (spot * 1.004 if spot else 0.0))
-                    pdl = float(p_data.get("pdl") or (spot * 0.996 if spot else 0.0))
-                    today_high = float(p_data.get("today_high") or spot)
-                    today_low = float(p_data.get("today_low") or spot)
-                    atr = float(p_data.get("h1_atr") or (spot * 0.003 if spot else 1.0))
-                    if atr <= 0:
-                        atr = spot * 0.003 if spot else 1.0
-                    if isinstance(p_plan, dict) and "primary_setup" in p_plan:
-                        p_plan["primary_setup"] = self._validate_and_sanitize_setup(
-                            p_plan["primary_setup"], sym, spot, atr, digits, pdh, pdl, today_high, today_low
-                        )
+                        # Institutional Assertion Gate: Sanitize every pair from Gemini
+                        for sym, p_plan in parsed_data.get("pairs", {}).items():
+                            p_data = telemetry.get("pairs", {}).get(sym, {})
+                            spot = float(p_data.get("spot_price") or 0.0)
+                            digits = 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5)
+                            pdh = float(p_data.get("pdh") or (spot * 1.004 if spot else 0.0))
+                            pdl = float(p_data.get("pdl") or (spot * 0.996 if spot else 0.0))
+                            today_high = float(p_data.get("today_high") or spot)
+                            today_low = float(p_data.get("today_low") or spot)
+                            atr = float(p_data.get("h1_atr") or (spot * 0.003 if spot else 1.0))
+                            if atr <= 0:
+                                atr = spot * 0.003 if spot else 1.0
+                            if isinstance(p_plan, dict) and "primary_setup" in p_plan:
+                                p_plan["primary_setup"] = self._validate_and_sanitize_setup(
+                                    p_plan["primary_setup"], sym, spot, atr, digits, pdh, pdl, today_high, today_low
+                                )
+                                if not str(p_plan["primary_setup"].get("entry_reason") or "").strip():
+                                    drv = (p_plan.get("macro_catalyst") or {}).get("primary_driver", "")
+                                    eb = p_plan.get("executive_bottom_line", "")
+                                    p_plan["primary_setup"]["entry_reason"] = (
+                                        f"{eb} {('Driver: ' + drv) if drv else ''}".strip()
+                                        or f"{p_plan['primary_setup'].get('bias', 'SETUP')} anchored at {p_plan['primary_setup'].get('entry_zone', '')}."
+                                    )
 
-                with self._lock:
-                    self.latest_briefing = parsed_data
-
-                self._save_cache()
-                return parsed_data
-        except Exception as e:
-            log.warning("[SessionBriefing] Gemini API call error: %s. Falling back to rule-based synthesis.", e)
-            briefing = self._generate_rule_based_briefing(telemetry)
-            with self._lock:
-                self.latest_briefing = briefing
-            self._save_cache()
-            return briefing
+                        return self._store_briefing(parsed_data, curr_info, telemetry=telemetry)
+                except Exception as e:
+                    log.warning("[SessionBriefing] Gemini API call error: %s. Falling back to rule-based synthesis.", e)
+                    briefing = self._generate_rule_based_briefing(telemetry)
+                    return self._store_briefing(briefing, curr_info, telemetry=telemetry)
+            finally:
+                self._is_generating = False
 
     def _scheduler_loop(self):
         """
@@ -670,64 +751,77 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
         Checks every 30s and fires 30 minutes before Tokyo (23:30 UTC), London (07:30 UTC), New York (12:30 UTC),
         or on startup / session rollover if cached briefing is stale.
         """
-        # If cache does not exist or is stale on startup, trigger one immediate run
-        if self.is_briefing_stale():
+        # If cache does not exist or is stale on startup during open market hours, trigger one immediate run
+        startup_info = self.get_current_session_info()
+        if startup_info["is_market_open"] and self.is_briefing_stale():
             time.sleep(3)  # Brief delay to let price engine seed
             try:
                 log.info("[SessionBriefing] Startup check: cache is stale or missing. Generating fresh briefing...")
-                self.generate_briefing()
+                self.generate_briefing(force=False)
             except Exception as e:
                 log.debug("[SessionBriefing] Startup briefing generation warning: %s", e)
 
         while not self._stop_event.is_set():
             time.sleep(30)
             now_utc = datetime.now(timezone.utc)
+            curr_info = self.get_current_session_info(now_utc)
+            if not curr_info["is_market_open"]:
+                continue
+
             hour = now_utc.hour
             minute = now_utc.minute
 
-            # Check for trigger windows or session transitions:
-            target_session = None
-            if hour == 23 and 30 <= minute <= 35:
-                target_session = "TOKYO"
-            elif hour == 7 and 30 <= minute <= 35:
-                target_session = "LONDON"
-            elif hour == 12 and 30 <= minute <= 35:
-                target_session = "NEW_YORK"
-            elif self.is_briefing_stale() and (now_utc.weekday() < 5 or (now_utc.weekday() == 6 and hour >= 21)):
-                target_session = self.get_current_session_info()["session_name"]
+            # Check scheduled 30-min pre-session handoff windows or stale/rollover cache
+            in_handoff_window = (
+                (hour == 23 and 30 <= minute <= 35)
+                or (hour == 7 and 30 <= minute <= 35)
+                or (hour == 12 and 30 <= minute <= 35)
+            )
+            session_key = curr_info["session_key"]
 
-            if target_session and target_session != self._last_triggered_session:
-                # Monday morning Asia through Friday evening NY
-                if now_utc.weekday() < 5 or (now_utc.weekday() == 6 and hour >= 21):
-                    log.info("[SessionBriefing] Triggering scheduled Pre-Session Briefing for %s session...", target_session)
-                    try:
-                        self.generate_briefing()
-                        self._last_triggered_session = target_session
-                    except Exception as ex:
-                        log.error("[SessionBriefing] Scheduled trigger error: %s", ex)
+            if in_handoff_window and session_key != self._last_triggered_session:
+                log.info("[SessionBriefing] Triggering scheduled Pre-Session Briefing for %s...", curr_info["session_title"])
+                try:
+                    self.generate_briefing(force=True)
+                except Exception as ex:
+                    log.error("[SessionBriefing] Scheduled trigger error: %s", ex)
+            elif self.is_briefing_stale(now_utc) and not self._is_generating:
+                log.info("[SessionBriefing] Stale/rollover detected for %s. Refreshing briefing...", curr_info["session_title"])
+                try:
+                    self.generate_briefing(force=False)
+                except Exception as ex:
+                    log.error("[SessionBriefing] Rollover trigger error: %s", ex)
 
     def get_briefing(self, symbol: Optional[str] = None, auto_refresh_stale: bool = True) -> Dict:
         """Returns the latest cached briefing for the pair or full portfolio, auto-refreshing if stale."""
-        if auto_refresh_stale and self.is_briefing_stale():
-            if not getattr(self, "_is_generating", False):
-                self._is_generating = True
-                def _bg_run():
-                    try:
-                        self.generate_briefing()
-                    finally:
-                        self._is_generating = False
-                threading.Thread(target=_bg_run, daemon=True, name="session-briefing-autorefresh").start()
+        curr_info = self.get_current_session_info()
+        stale = self.is_briefing_stale()
+        if auto_refresh_stale and stale and curr_info["is_market_open"]:
+            self._trigger_background_refresh(force=False)
+
+        meta = {
+            "current_session": curr_info["session_title"],
+            "current_session_name": curr_info["session_name"],
+            "current_time_utc": curr_info["time_utc"],
+            "is_weekend": curr_info["is_weekend"],
+            "is_stale": stale,
+            "is_updating": bool(self._is_generating),
+        }
 
         with self._lock:
             if not self.latest_briefing:
-                return {}
+                return meta if symbol else dict(meta)
             if symbol:
                 pair_plan = self.latest_briefing.get("pairs", {}).get(symbol.upper(), {})
                 return {
+                    **meta,
                     "session": self.latest_briefing.get("session"),
                     "generated_at_utc": self.latest_briefing.get("generated_at_utc"),
                     "global_macro_executive_thesis": self.latest_briefing.get("global_macro_executive_thesis"),
-                    "plan": pair_plan
+                    "engine_mode": self.latest_briefing.get("engine_mode", "GEMINI_AI"),
+                    "plan": pair_plan,
                 }
-            return dict(self.latest_briefing)
+            res = dict(self.latest_briefing)
+            res.update(meta)
+            return res
 

@@ -21,8 +21,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel
 
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime, timezone
 
 from core.price_engine import PriceEngine, calculate_currency_strength, sanitize_for_json, safe_float
@@ -43,6 +44,7 @@ from core.world_news_engine import get_world_news_engine
 from core.macro_scenario_engine import MacroScenarioEngine
 from core.trap_radar_engine import TrapRadarEngine
 from core.session_briefing_engine import SessionBriefingEngine
+from core.battle_record_engine import BattleRecordEngine
 import config
 
 tracker = PerformanceTracker()
@@ -133,6 +135,18 @@ def get_trap_radar_engine():
     return _trap_radar_engine
 
 
+_battle_record_engine = None
+
+
+def get_battle_record_engine():
+    global _battle_record_engine
+    if _battle_record_engine is None:
+        _battle_record_engine = BattleRecordEngine(
+            price_engine=get_price_engine(),
+        )
+    return _battle_record_engine
+
+
 _session_briefing_engine = None
 
 
@@ -146,6 +160,7 @@ def get_session_briefing_engine():
             macro_engine=get_macro_engine(),
             macro_scenario_engine=get_macro_scenario_engine(),
             trap_radar_engine=get_trap_radar_engine(),
+            battle_record_engine=get_battle_record_engine(),
         )
     return _session_briefing_engine
 
@@ -227,8 +242,10 @@ TIMEFRAME_W1 = 32769
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Log calendar source once at startup."""
+    """Log calendar source and initialize scheduled briefing & battle record engines at startup."""
     _get_ea_calendar()
+    get_battle_record_engine()
+    get_session_briefing_engine()
     yield
 
 
@@ -802,6 +819,12 @@ def get_pair_deep(symbol: str):
             "session": briefing.get("session"),
             "generated_at_utc": briefing.get("generated_at_utc"),
             "global_macro_executive_thesis": briefing.get("global_macro_executive_thesis"),
+            "current_session": briefing.get("current_session"),
+            "current_time_utc": briefing.get("current_time_utc"),
+            "is_weekend": briefing.get("is_weekend", False),
+            "is_stale": briefing.get("is_stale", False),
+            "is_updating": briefing.get("is_updating", False),
+            "engine_mode": briefing.get("engine_mode"),
         },
         "trap_radar": traps,
         "macro_scenarios": scenarios,
@@ -920,8 +943,81 @@ def force_generate_briefing():
     """Trigger on-demand pre-session briefing generation across all pairs."""
     try:
         engine = get_session_briefing_engine()
-        res = engine.generate_briefing()
+        res = engine.generate_briefing(force=True)
         return sanitize_for_json({"success": True, "briefing": res})
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# --- BattleRecord Ledger & Monitoring Routes -------------------------------- #
+class BattleVerdictPayload(BaseModel):
+    verdict_tags: Optional[List[str]] = None
+    trader_note: Optional[str] = None
+
+
+@app.get("/api/battle-record")
+def get_battle_record(
+    symbol: Optional[str] = None,
+    status: Optional[str] = None,
+    session: Optional[str] = None,
+    limit: int = 100,
+    evaluate: bool = False,
+):
+    """Retrieve monitored BattleRecord entry plans, live outcomes, and performance stats."""
+    try:
+        engine = get_battle_record_engine()
+        # Ensure briefing engine is initialized so cached briefing is seeded if ledger is empty
+        get_session_briefing_engine()
+        if evaluate:
+            engine.evaluate_all()
+        return sanitize_for_json(
+            engine.get_records(symbol=symbol, status=status, session=session, limit=limit)
+        )
+    except Exception as e:
+        return {"count": 0, "battles": [], "stats": {}, "error": str(e)}
+
+
+@app.post("/api/battle-record/evaluate")
+def evaluate_battle_record():
+    """Force immediate M15 candle evaluation across all open BattleRecord entries."""
+    try:
+        engine = get_battle_record_engine()
+        updated = engine.evaluate_all()
+        return sanitize_for_json({"success": True, "updated": updated})
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/battle-record/{battle_id}")
+def get_battle_record_item(battle_id: str):
+    """Fetch a single BattleRecord entry (live ledger or monthly permanent archive) for Chart Overlay."""
+    try:
+        engine = get_battle_record_engine()
+        battle = engine.get_battle_by_id(battle_id)
+        if battle is None:
+            raise HTTPException(status_code=404, detail=f"Battle {battle_id} not found")
+        return sanitize_for_json({"success": True, "battle": battle})
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/battle-record/{battle_id}/verdict")
+def update_battle_verdict(battle_id: str, payload: BattleVerdictPayload):
+    """Save 1-Click Trader Verdict tags and optional note for a battle (syncs to archive)."""
+    try:
+        engine = get_battle_record_engine()
+        updated = engine.update_verdict(
+            battle_id=battle_id,
+            verdict_tags=payload.verdict_tags,
+            trader_note=payload.trader_note,
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"Battle {battle_id} not found")
+        return sanitize_for_json({"success": True, "battle": updated})
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "error": str(e)}
 

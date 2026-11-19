@@ -1028,6 +1028,7 @@
         <div class="bp-bl-text" id="bp-thesis">
           Evaluating multi-timeframe candle close, EMA21 distance, and market structure...
         </div>
+        <div id="bp-entry-reason" style="display:none;margin-top:6px;padding-top:6px;border-top:1px dashed rgba(0,229,255,0.18);font-size:11.5px;color:#cbd5e1;line-height:1.45;"></div>
       </div>
 
       <!-- 4-Metric Quick Execution Matrix -->
@@ -1210,6 +1211,22 @@
       </div>
     </section>
 
+    <!-- 2B. BATTLERECORD — MONITORED ENTRY PLANS FOR THIS PAIR -->
+    <section id="pair-battle-record-panel" class="panel" style="margin-top:12px;">
+      <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <h3 class="panel-title">
+          <span>⚔️ BattleRecord — Monitored Plans</span>
+        </h3>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="panel-subtitle" id="pair-br-summary">Entry: Wick Touch · Win: TP1+ · SL: M15 Close</span>
+          <button class="bp-refresh-btn" onclick="loadPairBattleRecord(true)" title="Evaluate open plans against latest M15 candles">🔄 Evaluate</button>
+        </div>
+      </div>
+      <div id="pair-br-list" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+        <div style="font-size:11.5px;color:#94a3b8;">Loading monitored plans...</div>
+      </div>
+    </section>
+
     <!-- 3. EXPLAINABLE 5-PILLAR INSTITUTIONAL SCORECARD -->
     <section id="score-breakdown" class="panel">
       <div class="panel-header">
@@ -1263,6 +1280,10 @@
 
       <!-- 2. Interactive Candlestick Chart (TradingView Live Terminal + Raw MT5 Engine) -->
       <div id="dz-chart-box" class="dz-chart-box">
+        <div id="battle-overlay-banner" style="display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 12px;margin-bottom:8px;border-radius:8px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.45);font-family:'JetBrains Mono',monospace;font-size:11px;color:#fde68a;">
+          <div id="battle-overlay-text">⚔️ REPLAY OVERLAY ACTIVE</div>
+          <button onclick="clearBattleOverlay()" style="background:rgba(15,23,42,0.85);border:1px solid rgba(245,158,11,0.5);color:#fde68a;font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 8px;border-radius:5px;cursor:pointer;font-weight:700;">✕ Clear Overlay</button>
+        </div>
         <div class="dz-chart-topbar">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <div style="display:flex;gap:6px;">
@@ -1850,13 +1871,48 @@ function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
   const actionText = $('bp-action-text');
   const pill = $('bp-action-pill');
 
-  // Session pill header
-  if(sessionInfo && (sessionInfo.session || sessionInfo.generated_at_utc)){
-    const sName = sessionInfo.session ? sessionInfo.session.toUpperCase().replace(' SESSION', '') : 'SCHEDULED BRIEFING';
+  // Session pill header (with live session / staleness / weekend time awareness)
+  const badgeEl = $('bp-session-badge');
+  const pillEl = badgeEl ? badgeEl.closest('.bp-session-pill') : null;
+  const dotEl = pillEl ? pillEl.querySelector('.bp-live-dot') : null;
+  const fmtSess = (s) => s ? String(s).toUpperCase().replace(' SESSION', '') : '';
+
+  if(sessionInfo){
+    const cachedName = fmtSess(sessionInfo.session);
+    const currName = fmtSess(sessionInfo.current_session);
     const sTime = sessionInfo.generated_at_utc ? sessionInfo.generated_at_utc.replace(' UTC', 'Z') : '';
-    $('bp-session-badge').textContent = `${sName} · ${sTime}`;
-  } else {
-    $('bp-session-badge').textContent = 'SCHEDULED BRIEFING';
+    const isWeekend = !!sessionInfo.is_weekend;
+    const isStale = !!sessionInfo.is_stale;
+    const isUpdating = !!sessionInfo.is_updating;
+
+    if(isWeekend){
+      badgeEl.textContent = cachedName ? `WEEKEND CLOSED · LAST: ${cachedName}${sTime ? ' · ' + sTime : ''}` : 'WEEKEND MARKET CLOSE';
+      if(pillEl){ pillEl.style.borderColor = 'rgba(245,158,11,0.45)'; pillEl.style.color = '#F59E0B'; pillEl.style.background = 'rgba(245,158,11,0.08)'; }
+      if(dotEl){ dotEl.style.background = '#F59E0B'; dotEl.style.boxShadow = '0 0 8px #F59E0B'; }
+    } else if(isStale || isUpdating){
+      const targetLbl = currName || cachedName || 'CURRENT SESSION';
+      const statusLbl = isUpdating ? 'UPDATING' : 'STALE';
+      const prevNote = (cachedName && currName && cachedName !== currName)
+        ? ` (CACHED: ${cachedName}${sTime ? ' · ' + sTime : ''})`
+        : (sTime ? ` (LAST: ${sTime})` : '');
+      badgeEl.textContent = `NOW: ${targetLbl} · ${statusLbl}${prevNote}`;
+      if(pillEl){ pillEl.style.borderColor = 'rgba(255,184,0,0.45)'; pillEl.style.color = 'var(--gold)'; pillEl.style.background = 'rgba(255,184,0,0.08)'; }
+      if(dotEl){ dotEl.style.background = 'var(--gold)'; dotEl.style.boxShadow = '0 0 8px var(--gold)'; }
+    } else if(cachedName || sTime){
+      badgeEl.textContent = `${cachedName || 'SCHEDULED BRIEFING'}${sTime ? ' · ' + sTime : ''}`;
+      if(pillEl){ pillEl.style.borderColor = 'rgba(0,229,255,0.25)'; pillEl.style.color = 'var(--cyan)'; pillEl.style.background = 'rgba(0,229,255,0.08)'; }
+      if(dotEl){ dotEl.style.background = 'var(--cyan)'; dotEl.style.boxShadow = '0 0 8px var(--cyan)'; }
+    } else {
+      badgeEl.textContent = currName ? `NOW: ${currName}` : 'SCHEDULED BRIEFING';
+    }
+
+    if(pillEl){
+      const utcNow = sessionInfo.current_time_utc || '--';
+      const genAt = sessionInfo.generated_at_utc || 'None';
+      pillEl.title = `Live Session: ${sessionInfo.current_session || '--'} (${utcNow}) | Briefing Session: ${sessionInfo.session || '--'} | Generated: ${genAt}`;
+    }
+  } else if(badgeEl) {
+    badgeEl.textContent = 'SCHEDULED BRIEFING';
   }
 
   // 1. Action Banner & Edge Probability
@@ -1907,13 +1963,23 @@ function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
     }
   }
 
-  // 2. Executive Bottom Line (At a Glance)
+  // 2. Executive Bottom Line & Entry Reason
   if(plan && plan.executive_bottom_line){
     $('bp-thesis').textContent = plan.executive_bottom_line;
   } else if(scan.reason){
     $('bp-thesis').textContent = scan.reason;
   } else {
     $('bp-thesis').textContent = `H4 structure is ${h4.direction || 'Neutral'}. Price is positioned ${fmt(h1.dist_ema21_atr, 2)} ATR from H1 EMA21. Await confirmation before commitment.`;
+  }
+  const erEl = $('bp-entry-reason');
+  if(erEl){
+    const erText = primary && primary.entry_reason ? String(primary.entry_reason).trim() : '';
+    if(erText){
+      erEl.innerHTML = `<b style="color:var(--cyan);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.05em;">WHY THIS ENTRY:</b> ${erText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}`;
+      erEl.style.display = 'block';
+    } else {
+      erEl.style.display = 'none';
+    }
   }
 
   // 3. 4-Metric Quick Execution Matrix
@@ -2567,8 +2633,30 @@ function updateDzSvgOverlay(curPrice, D){
     } catch(e){}
   });
 
-  // 4. Anchored Corridor for Battle-Plan Entry Zone (forward projection only)
-  if(CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup && CURRENT_BATTLE_PLAN.primary_setup.entry_zone){
+  // 4. Anchored Corridor for Battle-Plan Entry Zone (or Historical BattleRecord Replay Overlay)
+  if(OVERLAY_BATTLE && OVERLAY_BATTLE.entry_low != null && OVERLAY_BATTLE.entry_high != null){
+    try {
+      const yE1 = dzCandleSeries.priceToCoordinate(parseFloat(OVERLAY_BATTLE.entry_high));
+      const yE2 = dzCandleSeries.priceToCoordinate(parseFloat(OVERLAY_BATTLE.entry_low));
+      if(yE1 != null && yE2 != null){
+        const topE = Math.min(yE1, yE2);
+        const heightE = Math.max(Math.abs(yE2 - yE1), 6);
+        const fullW = Math.max(svg.clientWidth || 800, boxWidth);
+        elements += `
+          <rect x="0" y="${topE}" width="${fullW}" height="${heightE}" fill="rgba(245, 158, 11, 0.14)" stroke="#F59E0B" stroke-dasharray="5,3" stroke-width="1.4" />
+        `;
+        if(dzShowLabels){
+          const lbl = `⚔️ REPLAY ENTRY (${OVERLAY_BATTLE.bias} · ${OVERLAY_BATTLE.status})`;
+          elements += `
+            <g opacity="0.96">
+              <rect x="8" y="${topE + 3}" width="${lbl.length * 6.2 + 12}" height="16" rx="3" fill="rgba(7, 11, 18, 0.94)" stroke="#F59E0B" stroke-width="0.9" />
+              <text x="14" y="${topE + 14}" fill="#FDE68A" font-family="'JetBrains Mono',monospace" font-size="8.5" font-weight="700">${esc(lbl)}</text>
+            </g>
+          `;
+        }
+      }
+    } catch(e){}
+  } else if(CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup && CURRENT_BATTLE_PLAN.primary_setup.entry_zone){
     try {
       const ezMatch = CURRENT_BATTLE_PLAN.primary_setup.entry_zone.match(/([0-9]+\.?[0-9]*)\s*-\s*([0-9]+\.?[0-9]*)/);
       if(ezMatch){
@@ -2734,8 +2822,28 @@ function syncDzOverlayAndLines(scan, tf){
       }
     });
 
-    // Only project Battle-Plan Entry, SL, and TP1 onto chart price axis (clean & uncluttered)
-    if(CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup){
+    // Project Replay BattleRecord Overlay (Entry, SL, TP1-TP3) OR current Battle-Plan onto chart price axis
+    if(OVERLAY_BATTLE){
+      const ob = OVERLAY_BATTLE;
+      const addLine = (price, color, lineWidth, lineStyle, title) => {
+        const p = parseFloat(price);
+        if(!isNaN(p) && p > 0){
+          try{
+            dzPriceLines.push(dzCandleSeries.createPriceLine({
+              price: p, color, lineWidth, lineStyle, axisLabelVisible: true, title
+            }));
+          }catch(e){}
+        }
+      };
+      addLine(ob.entry_ref ?? ob.entry_mid, '#F59E0B', 2, 0, `REPLAY ENTRY (${ob.bias})`);
+      addLine(ob.stop_loss, '#FF5A79', 2, 2, 'REPLAY SL (M15)');
+      addLine(ob.tp1, '#00FF88', 1.8, 1, 'REPLAY TP1');
+      if(ob.tp2 != null) addLine(ob.tp2, '#22C55E', 1.4, 1, 'REPLAY TP2');
+      if(ob.tp3 != null) addLine(ob.tp3, '#10B981', 1.2, 2, 'REPLAY TP3');
+      if(ob.exit_price != null && ob.finalized){
+        addLine(ob.exit_price, '#C084FC', 1.5, 3, `EXIT (${ob.status})`);
+      }
+    } else if(CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup){
       const ps = CURRENT_BATTLE_PLAN.primary_setup;
       if(ps.entry_zone){
         const m = ps.entry_zone.match(/([0-9]+\.?[0-9]*)\s*-\s*([0-9]+\.?[0-9]*)/);
@@ -3397,6 +3505,152 @@ function tick(){
   if(el) el.textContent = 'live: ' + new Date().toLocaleTimeString();
 }
 
+let PAIR_BR_CACHE = { battles: [], verdictOptions: [] };
+let OVERLAY_BATTLE = null;
+
+function activateBattleOverlay(battle, scrollToChart = true){
+  if(!battle) return;
+  OVERLAY_BATTLE = battle;
+  const banner = $('battle-overlay-banner');
+  const txt = $('battle-overlay-text');
+  if(banner && txt){
+    const rStr = (battle.realized_r !== null && battle.realized_r !== undefined) ? ` · ${battle.realized_r >= 0 ? '+' : ''}${battle.realized_r}R` : '';
+    const tps = [battle.tp1, battle.tp2, battle.tp3].filter(x => x != null).map((v,i)=>`TP${i+1}:${v}`).join(' ');
+    txt.innerHTML = `⚔️ <b>REPLAY OVERLAY:</b> ${_pEsc(battle.bias)} [${_pEsc(battle.status)}${rStr}] · Entry <b>${_pEsc(battle.entry_zone)}</b> · SL <b>${_pEsc(battle.stop_loss)}</b> · ${tps} · <span style="color:#cbd5e1;">${_pEsc((battle.created_at_utc||'').replace(':00 UTC',' UTC'))}</span>`;
+    banner.style.display = 'flex';
+  }
+  if(typeof setChartMode === 'function'){
+    setChartMode('lightweight');
+  }
+  if(typeof renderDecisionZones === 'function' && LAST_SCAN){
+    renderDecisionZones(LAST_SCAN);
+  }
+  if(scrollToChart){
+    const chartSec = $('decision-zones');
+    if(chartSec) chartSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function clearBattleOverlay(){
+  OVERLAY_BATTLE = null;
+  const banner = $('battle-overlay-banner');
+  if(banner) banner.style.display = 'none';
+  if(typeof renderDecisionZones === 'function' && LAST_SCAN){
+    renderDecisionZones(LAST_SCAN);
+  }
+}
+
+function overlayBattleById(battleId){
+  const local = (PAIR_BR_CACHE.battles || []).find(x => x.battle_id === battleId);
+  if(local){
+    activateBattleOverlay(local, true);
+    return;
+  }
+  fetch(`/api/battle-record/${encodeURIComponent(battleId)}`)
+    .then(r => r.json())
+    .then(j => {
+      if(j.success && j.battle) activateBattleOverlay(j.battle, true);
+    })
+    .catch(e => console.error('Overlay fetch error:', e));
+}
+
+function _pEsc(s){
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _pairBrBadge(st){
+  if(st === 'WIN_TP3') return { bg:'rgba(34,197,94,.18)', fg:'#4ade80', bd:'rgba(34,197,94,.4)', txt:'🏆 WIN · TP3' };
+  if(st === 'WIN_TP2') return { bg:'rgba(34,197,94,.18)', fg:'#4ade80', bd:'rgba(34,197,94,.4)', txt:'✅ WIN · TP2' };
+  if(st === 'WIN_TP1') return { bg:'rgba(34,197,94,.18)', fg:'#4ade80', bd:'rgba(34,197,94,.4)', txt:'✅ WIN · TP1' };
+  if(st === 'STOPPED_OUT') return { bg:'rgba(239,68,68,.18)', fg:'#f87171', bd:'rgba(239,68,68,.4)', txt:'🛑 STOPPED (M15)' };
+  if(st === 'ACTIVE') return { bg:'rgba(0,229,255,.14)', fg:'#00E5FF', bd:'rgba(0,229,255,.4)', txt:'⚡ ACTIVE' };
+  if(st === 'PENDING') return { bg:'rgba(245,158,11,.15)', fg:'#fbbf24', bd:'rgba(245,158,11,.4)', txt:'⏳ PENDING TOUCH' };
+  if(st === 'MISSED_TP') return { bg:'rgba(168,85,247,.16)', fg:'#c084fc', bd:'rgba(168,85,247,.4)', txt:'🎯 MISSED→TP1' };
+  return { bg:'rgba(100,116,139,.18)', fg:'#94a3b8', bd:'rgba(148,163,184,.3)', txt:st || 'CLOSED' };
+}
+
+async function togglePairBattleVerdict(battleId, tag){
+  const b = (PAIR_BR_CACHE.battles || []).find(x => x.battle_id === battleId);
+  if(!b) return;
+  const cur = Array.isArray(b.verdict_tags) ? [...b.verdict_tags] : [];
+  const i = cur.indexOf(tag);
+  if(i >= 0) cur.splice(i, 1); else cur.push(tag);
+  try{
+    const r = await fetch(`/api/battle-record/${encodeURIComponent(battleId)}/verdict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verdict_tags: cur })
+    });
+    const j = await r.json();
+    if(j.success && j.battle){
+      b.verdict_tags = j.battle.verdict_tags;
+      renderPairBattleRecord();
+    }
+  }catch(e){ console.error('Pair verdict error:', e); }
+}
+
+function renderPairBattleRecord(){
+  const box = $('pair-br-list');
+  if(!box) return;
+  const rows = PAIR_BR_CACHE.battles || [];
+  const tagOpts = PAIR_BR_CACHE.verdictOptions || ['Good Zone','SL Too Tight','News Spike','Missed by Hair','Counter-Trend Trap','Wick Sweep Saved'];
+  if(!rows.length){
+    box.innerHTML = '<div style="font-size:11.5px;color:#94a3b8;">No recorded entry plans for this pair yet. When a Battle-Plan is generated, it stays monitored here even if a newer plan arrives.</div>';
+    return;
+  }
+  box.innerHTML = rows.map(b => {
+    const bd = _pairBrBadge(b.status);
+    const isLong = b.bias === 'LONG';
+    const rStr = (b.realized_r !== null && b.realized_r !== undefined) ? `${b.realized_r >= 0 ? '+' : ''}${b.realized_r}R` : '--';
+    const rCol = b.realized_r > 0 ? '#4ade80' : (b.realized_r < 0 ? '#f87171' : '#cbd5e1');
+    const activeTags = Array.isArray(b.verdict_tags) ? b.verdict_tags : [];
+    const pills = tagOpts.map(t => {
+      const on = activeTags.includes(t);
+      return `<button onclick="togglePairBattleVerdict('${_pEsc(b.battle_id)}','${_pEsc(t)}')" style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:2px 6px;border-radius:4px;cursor:pointer;border:1px solid ${on ? '#00E5FF' : 'rgba(148,163,184,.25)'};background:${on ? 'rgba(0,229,255,.16)' : 'rgba(15,23,42,.8)'};color:${on ? '#00E5FF' : '#94a3b8'};">${on ? '✓ ' : '+ '}${_pEsc(t)}</button>`;
+    }).join('');
+    const sweepHtml = (b.wick_breached_sl && b.is_win) ? `<span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(250,204,21,.15);color:#fde047;border:1px solid rgba(250,204,21,.35);">🛡️ WICK SAVED</span>` : '';
+    return `
+      <div style="background:rgba(15,23,42,.62);border:1px solid rgba(148,163,184,.16);border-left:3px solid ${bd.fg};border-radius:8px;padding:9px 11px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:5px;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${isLong?'rgba(34,197,94,.16)':'rgba(239,68,68,.16)'};color:${isLong?'#4ade80':'#f87171'};">${_pEsc(b.bias)}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${bd.bg};color:${bd.fg};border:1px solid ${bd.bd};">${bd.txt}</span>
+            ${sweepHtml}
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:${rCol};font-weight:700;">${rStr}</span>
+            <button onclick="overlayBattleById('${_pEsc(b.battle_id)}')" style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:2px 7px;border-radius:4px;cursor:pointer;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.4);color:#fde68a;font-weight:600;" title="Draw this battle's Entry Zone, SL, and TP1-TP3 on the chart">📈 Overlay on Chart</button>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#94a3b8;">${_pEsc(b.session || '')} · ${_pEsc((b.created_at_utc||'').replace(':00 UTC',' UTC'))}</span>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#cbd5e1;margin-bottom:5px;">
+          <span>ENTRY: <b style="color:#00E5FF;">${_pEsc(b.entry_zone)}</b></span>
+          <span>SL(M15): <b style="color:#f87171;">${_pEsc(b.stop_loss)}</b></span>
+          <span>TP1: <b style="color:#4ade80;">${_pEsc(b.tp1)}</b>${b.tp2 ? ` · TP2: <b style="color:#4ade80;">${_pEsc(b.tp2)}</b>` : ''}</span>
+          <span>MFE/MAE: <b>${b.mfe_atr ?? 0}</b> / <b>${b.mae_atr ?? 0} ATR</b></span>
+        </div>
+        <div style="font-size:11px;color:#cbd5e1;margin-bottom:6px;line-height:1.4;"><b style="color:#00E5FF;">WHY:</b> ${_pEsc(b.entry_reason || b.executive_bottom_line || '—')}</div>
+        <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${pills}</div>
+      </div>`;
+  }).join('');
+}
+
+async function loadPairBattleRecord(evaluateNow=false){
+  try{
+    const qs = new URLSearchParams({ symbol: SYMBOL, limit: '10', evaluate: evaluateNow ? 'true' : 'false' });
+    const r = await fetch('/api/battle-record?' + qs.toString());
+    const j = await r.json();
+    PAIR_BR_CACHE.battles = j.battles || [];
+    PAIR_BR_CACHE.verdictOptions = j.verdict_tag_options || [];
+    const st = j.stats || {};
+    const sumEl = $('pair-br-summary');
+    if(sumEl){
+      const wr = (st.win_rate !== null && st.win_rate !== undefined) ? `${st.win_rate}% WR` : 'WR —';
+      const nr = (st.net_r !== undefined) ? `${st.net_r >= 0 ? '+' : ''}${st.net_r}R` : '0R';
+      sumEl.textContent = `${wr} (${st.wins||0}W/${st.losses||0}L · ${nr}) · ${(st.active||0)+(st.pending||0)} Open · ${st.wick_sweeps_saved||0} Sweeps Saved`;
+    }
+    renderPairBattleRecord();
+  }catch(e){ console.error('Pair BattleRecord error:', e); }
+}
+
 async function forceRefreshBattlePlan(){
   const btn = $('bp-refresh-btn');
   if(btn){
@@ -3409,6 +3663,7 @@ async function forceRefreshBattlePlan(){
     if(j.success){
       pollInFlight = false;
       await poll();
+      await loadPairBattleRecord(true);
     }
   }catch(e){
     console.error('Refresh error:', e);
@@ -3422,8 +3677,29 @@ async function forceRefreshBattlePlan(){
 
 setChartMode(currentChartMode);
 poll();
+loadPairBattleRecord(false);
+setInterval(()=>loadPairBattleRecord(false), 60000);
 setInterval(tick, 1000);
 tick();
+
+// Auto-activate Chart Replay Overlay if navigated from BattleRecord with ?battle_id=...
+(function checkUrlBattleOverlay(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    const bid = params.get('battle_id');
+    if(bid){
+      fetch(`/api/battle-record/${encodeURIComponent(bid)}`)
+        .then(r => r.json())
+        .then(j => {
+          if(j.success && j.battle){
+            // Small delay so initial chart scan populates LAST_SCAN & candles
+            setTimeout(() => activateBattleOverlay(j.battle, true), 650);
+          }
+        })
+        .catch(e => console.error('URL battle_id overlay error:', e));
+    }
+  }catch(e){}
+})();
 </script>
 </body>
 </html>
