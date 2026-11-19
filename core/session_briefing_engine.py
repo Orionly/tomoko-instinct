@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional
 import config
 from core.macro_scenario_engine import MacroScenarioEngine
 from core.trap_radar_engine import TrapRadarEngine
+from core.decision_zones import calculate_all_decision_zones
 
 log = logging.getLogger(__name__)
 
@@ -189,12 +190,13 @@ class SessionBriefingEngine:
                     pair_data["h1_rsi"] = float(df_h1["RSI"].iloc[-1]) if "RSI" in df_h1 else None
                     pair_data["h1_ema21"] = float(df_h1["EMA21"].iloc[-1]) if "EMA21" in df_h1 else None
 
-            # Levels
+            # Levels & Decision Zones (M15/H1 Supply & Demand anchors)
+            lv = {}
             if self.levels_engine and self.price_engine:
                 try:
                     df_d1 = self.price_engine.get_rates(sym, "D1", 10)
                     df_w1 = self.price_engine.get_rates(sym, "W1", 5)
-                    df_h1 = self.price_engine.get_rates(sym, "H1", 20)
+                    df_h1 = self.price_engine.get_rates(sym, "H1", 200)
                     if not df_d1.empty and not df_h1.empty:
                         lv = self.levels_engine.get_key_levels(df_d1, df_w1, df_h1)
                         pair_data["pdh"] = lv.get("daily_high")
@@ -205,6 +207,40 @@ class SessionBriefingEngine:
                         pair_data["pivot"] = lv.get("pivot")
                 except Exception as e:
                     log.debug("[SessionBriefing] Levels error for %s: %s", sym, e)
+
+            if self.price_engine and pair_data.get("spot_price"):
+                try:
+                    df_m15 = self.price_engine.get_rates(sym, "M15", 200)
+                    df_h1_dz = self.price_engine.get_rates(sym, "H1", 200)
+                    df_h4_dz = self.price_engine.get_rates(sym, "H4", 120)
+                    dz_all = calculate_all_decision_zones(
+                        df_m15, df_h1_dz, df_h4_dz, float(pair_data["spot_price"]), lv, symbol=sym
+                    )
+                    def _compact_dz(z):
+                        if not isinstance(z, dict) or z.get("low") is None or z.get("high") is None:
+                            return None
+                        return {
+                            "low": round(float(z["low"]), 5),
+                            "high": round(float(z["high"]), 5),
+                            "midline": round(float(z.get("midline") or (z["low"] + z["high"]) / 2.0), 5),
+                            "is_swap": bool(z.get("is_swap", False)),
+                        }
+                    m15_d = dz_all.get("m15") or {}
+                    h1_d = dz_all.get("h1") or {}
+                    pair_data["decision_zones"] = {
+                        "m15": {
+                            "upper_dz_1": _compact_dz(m15_d.get("upper_dz_1")),
+                            "upper_dz_2": _compact_dz(m15_d.get("upper_dz_2")),
+                            "lower_dz_1": _compact_dz(m15_d.get("lower_dz_1")),
+                            "lower_dz_2": _compact_dz(m15_d.get("lower_dz_2")),
+                        },
+                        "h1": {
+                            "upper_dz_1": _compact_dz(h1_d.get("upper_dz_1")),
+                            "lower_dz_1": _compact_dz(h1_d.get("lower_dz_1")),
+                        },
+                    }
+                except Exception as e:
+                    log.debug("[SessionBriefing] DecisionZones telemetry note for %s: %s", sym, e)
 
             # MacroScenarioEngine catalyst-to-pair scenario trees
             if self.macro_scenario_engine:
@@ -272,22 +308,42 @@ class SessionBriefingEngine:
         return False
 
     @staticmethod
-    def _validate_and_sanitize_setup(setup: Dict, sym: str, spot: float, atr: float, digits: int, pdh: float, pdl: float, today_high: float, today_low: float) -> Dict:
+    def _validate_and_sanitize_setup(
+        setup: Dict,
+        sym: str,
+        spot: float,
+        atr: float,
+        digits: int,
+        pdh: float,
+        pdl: float,
+        today_high: float,
+        today_low: float,
+        decision_zones: Optional[Dict] = None,
+    ) -> Dict:
         """
         Institutional Guardrail / Assertion Gate.
-        Enforces mathematical consistency across every setup:
+        Enforces mathematical & structural consistency across every setup:
         - Entry corridor: entry_low < entry_high (width >= 0.15 * ATR).
+        - Anti-Collision & Discount/Premium Gate:
+          * LONG must NOT sit above spot chasing into Upper DZ 1 Supply; re-anchors to Lower DZ 1 Demand (or discount pullback).
+          * SHORT must NOT sit below spot chasing into Lower DZ 1 Demand; re-anchors to Upper DZ 1 Supply (or premium pullback).
         - SHORT: Stop Loss MUST be strictly > entry_high. All TPs MUST be < entry_low and descending.
         - LONG: Stop Loss MUST be strictly < entry_low. All TPs MUST be > entry_high and ascending.
-        Automatically repairs any inverted or collapsed levels from AI or fallback math.
         """
         if not setup or not isinstance(setup, dict):
             return setup
 
         bias = str(setup.get("bias", "LONG")).upper()
+        is_short = "SHORT" in bias or "SELL" in bias
         entry_zone_str = str(setup.get("entry_zone", ""))
         min_buf = 1.50 if sym == "XAUUSD" else (0.15 if "JPY" in sym else 0.0015)
         corridor_buf = max(0.25 * atr, min_buf)
+
+        # Extract M15 (fallback H1) Decision Zones for structural anchoring
+        dz_m15 = (decision_zones or {}).get("m15") or {}
+        dz_h1 = (decision_zones or {}).get("h1") or {}
+        u1 = dz_m15.get("upper_dz_1") or dz_h1.get("upper_dz_1")
+        l1 = dz_m15.get("lower_dz_1") or dz_h1.get("lower_dz_1")
 
         # 1. Parse and validate entry corridor
         match = re.search(r'([0-9]+\.?[0-9]*)\s*-\s*([0-9]+\.?[0-9]*)', entry_zone_str)
@@ -303,7 +359,51 @@ class SessionBriefingEngine:
             e_low = round(spot - corridor_buf * 0.5, digits)
             e_high = round(spot + corridor_buf * 0.5, digits)
 
-        setup["entry_zone"] = f"{e_low} - {e_high}"
+        # 1b. Anti-Collision & Discount/Premium Gate
+        reanchored = False
+        if spot > 0:
+            if not is_short:
+                # LONG: never buy above spot chasing into Upper DZ 1 Supply
+                chasing_above = e_low > (spot + 0.10 * atr)
+                colliding_supply = (
+                    u1 is not None
+                    and e_high > spot
+                    and e_high >= (float(u1["low"]) - 0.15 * atr)
+                )
+                if chasing_above or colliding_supply:
+                    if l1 is not None and float(l1["high"]) <= (spot + 0.15 * atr):
+                        e_low = round(float(l1["low"]), digits)
+                        e_high = round(float(l1["high"]), digits)
+                    else:
+                        e_high = round(spot, digits)
+                        e_low = round(spot - max(0.6 * atr, corridor_buf), digits)
+                    reanchored = True
+                    log.warning(
+                        "[SessionBriefingSanitizer] Re-anchored LONG entry for %s into demand/discount (%s - %s) to avoid buying above spot/into Upper DZ 1",
+                        sym, e_low, e_high,
+                    )
+            else:
+                # SHORT: never sell below spot chasing into Lower DZ 1 Demand
+                chasing_below = e_high < (spot - 0.10 * atr)
+                colliding_demand = (
+                    l1 is not None
+                    and e_low < spot
+                    and e_low <= (float(l1["high"]) + 0.15 * atr)
+                )
+                if chasing_below or colliding_demand:
+                    if u1 is not None and float(u1["low"]) >= (spot - 0.15 * atr):
+                        e_low = round(float(u1["low"]), digits)
+                        e_high = round(float(u1["high"]), digits)
+                    else:
+                        e_low = round(spot, digits)
+                        e_high = round(spot + max(0.6 * atr, corridor_buf), digits)
+                    reanchored = True
+                    log.warning(
+                        "[SessionBriefingSanitizer] Re-anchored SHORT entry for %s into supply/premium (%s - %s) to avoid selling below spot/into Lower DZ 1",
+                        sym, e_low, e_high,
+                    )
+
+        setup["entry_zone"] = f"{round(e_low, digits)} - {round(e_high, digits)}"
 
         # 2. Parse and validate SL and Targets
         try:
@@ -324,19 +424,18 @@ class SessionBriefingEngine:
             except Exception:
                 pass
 
-        is_short = "SHORT" in bias or "SELL" in bias
         if is_short:
             # STOP LOSS MUST BE > entry_high
-            overhead_roof = max(e_high, spot, today_high, pdh)
-            if sl <= e_high:
-                sl = round(overhead_roof + max(1.5 * atr, min_buf * 2), digits)
-                log.warning("[SessionBriefingSanitizer] Fixed inverted Short SL for %s -> %s", sym, sl)
+            overhead_roof = max(e_high, spot, today_high, pdh) if not reanchored else e_high
+            if reanchored or sl <= e_high:
+                sl = round(overhead_roof + max(0.8 * atr, min_buf * 1.5), digits)
+                log.warning("[SessionBriefingSanitizer] Fixed Short SL for %s -> %s", sym, sl)
 
             setup["stop_loss"] = sl
             risk = max(abs(sl - e_low), 1.0 * atr)
 
             # TARGETS MUST BE < entry_low and strictly descending
-            sanitized_targets = [t for t in valid_targets if t < e_low]
+            sanitized_targets = [t for t in valid_targets if t < e_low] if not reanchored else []
             if len(sanitized_targets) < 3:
                 tp1 = round(e_low - 1.0 * risk, digits)
                 tp2 = round(min(pdl if pdl < e_low else tp1, e_low - 2.0 * risk), digits)
@@ -348,16 +447,16 @@ class SessionBriefingEngine:
             setup["targets"] = sanitized_targets[:4]
         else:
             # STOP LOSS MUST BE < entry_low
-            floor_support = min(e_low, spot, today_low if today_low > 0 else spot, pdl if pdl > 0 else spot)
-            if sl >= e_low or sl <= 0:
-                sl = round(floor_support - max(1.5 * atr, min_buf * 2), digits)
-                log.warning("[SessionBriefingSanitizer] Fixed inverted Long SL for %s -> %s", sym, sl)
+            floor_support = min(e_low, spot, today_low if today_low > 0 else spot, pdl if pdl > 0 else spot) if not reanchored else e_low
+            if reanchored or sl >= e_low or sl <= 0:
+                sl = round(floor_support - max(0.8 * atr, min_buf * 1.5), digits)
+                log.warning("[SessionBriefingSanitizer] Fixed Long SL for %s -> %s", sym, sl)
 
             setup["stop_loss"] = sl
             risk = max(abs(e_high - sl), 1.0 * atr)
 
             # TARGETS MUST BE > entry_high and strictly ascending
-            sanitized_targets = [t for t in valid_targets if t > e_high]
+            sanitized_targets = [t for t in valid_targets if t > e_high] if not reanchored else []
             if len(sanitized_targets) < 3:
                 tp1 = round(e_high + 1.0 * risk, digits)
                 tp2 = round(max(pdh if pdh > e_high else tp1, e_high + 2.0 * risk), digits)
@@ -557,9 +656,10 @@ class SessionBriefingEngine:
                 "trade_management": "Bank 50% risk off at TP1; trail stop to Breakeven. Avoid holding through unmanaged red folders.",
                 "risk_playbook": risk_playbook
             }
-            # Enforce institutional validation gate
+            # Enforce institutional validation gate (including Decision-Zone anti-collision)
             sanitized_setup = self._validate_and_sanitize_setup(
-                setup_dict, sym, spot, atr, digits, pdh, pdl, today_high, today_low
+                setup_dict, sym, spot, atr, digits, pdh, pdl, today_high, today_low,
+                decision_zones=p_data.get("decision_zones"),
             )
 
             pairs_plan[sym] = {
@@ -654,7 +754,11 @@ TELEMETRY DATA (100% REAL-TIME LIVE DATA WITH EMBEDDED IF-THEN SCENARIOS):
 
 REQUIREMENTS:
 1. Ensure strict macroeconomic consistency across all 7 pairs. (If DXY is weak, Gold and EURUSD must align logically).
-2. For every pair, provide:
+2. STRICT DECISION-ZONE ANCHORING RULE (CRITICAL):
+   - Every pair includes `decision_zones` (`m15.upper_dz_1`, `m15.lower_dz_1`, `h1.upper_dz_1`, `h1.lower_dz_1`).
+   - For LONG setups: `entry_zone` MUST sit in discount AT OR BELOW current `spot_price` (anchored to `lower_dz_1` Demand). NEVER place a LONG entry above spot or underneath `upper_dz_1` Supply.
+   - For SHORT setups: `entry_zone` MUST sit in premium AT OR ABOVE current `spot_price` (anchored to `upper_dz_1` Supply). NEVER place a SHORT entry below spot or on top of `lower_dz_1` Demand.
+3. For every pair, provide:
    - executive_bottom_line: 1-sentence crisp summary that a beginner trader can understand instantly.
    - primary_setup:
      - bias: "LONG" | "SHORT" | "RANGE_FADE" | "WAIT"
@@ -727,7 +831,8 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
                                 atr = spot * 0.003 if spot else 1.0
                             if isinstance(p_plan, dict) and "primary_setup" in p_plan:
                                 p_plan["primary_setup"] = self._validate_and_sanitize_setup(
-                                    p_plan["primary_setup"], sym, spot, atr, digits, pdh, pdl, today_high, today_low
+                                    p_plan["primary_setup"], sym, spot, atr, digits, pdh, pdl, today_high, today_low,
+                                    decision_zones=p_data.get("decision_zones"),
                                 )
                                 if not str(p_plan["primary_setup"].get("entry_reason") or "").strip():
                                     drv = (p_plan.get("macro_catalyst") or {}).get("primary_driver", "")

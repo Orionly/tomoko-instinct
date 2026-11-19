@@ -2482,9 +2482,25 @@ function updateQuickHud(scan, tf) {
     if (CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup) {
       const ps = CURRENT_BATTLE_PLAN.primary_setup;
       const ez = ps.entry_zone || '—';
-      const sl = ps.invalidation ? fp(ps.invalidation) : '—';
-      const tp = (ps.targets && ps.targets[0]) ? fp(ps.targets[0]) : '—';
-      pEl.innerHTML = `🎯 Battle-Plan: Entry <b>${ez}</b> · SL <b>${sl}</b> · TP1 <b>${tp}</b>`;
+      const rawSl = (ps.stop_loss !== undefined && ps.stop_loss !== null && ps.stop_loss !== '') ? ps.stop_loss : ps.invalidation;
+      const slNum = rawSl != null ? parseFloat(String(rawSl).replace(/[^0-9.\-]/g, '')) : NaN;
+      const sl = !isNaN(slNum) ? fp(slNum) : '—';
+      const tp = (ps.targets && ps.targets[0]) ? fp(parseFloat(ps.targets[0])) : '—';
+      let statusBadge = '';
+      const latestBr = (typeof PAIR_BR_CACHE !== 'undefined' && PAIR_BR_CACHE.battles && PAIR_BR_CACHE.battles.length)
+        ? PAIR_BR_CACHE.battles[0] : null;
+      if (latestBr && latestBr.entry_zone === ez) {
+        if (latestBr.status === 'STOPPED_OUT') {
+          statusBadge = ` · <span style="color:#f87171;font-weight:800;">🛑 STOPPED (M15 CLOSE)</span>`;
+        } else if (latestBr.status === 'INVALIDATED') {
+          statusBadge = ` · <span style="color:#f87171;font-weight:800;">✕ INVALIDATED</span>`;
+        } else if (latestBr.is_win) {
+          statusBadge = ` · <span style="color:#4ade80;font-weight:800;">✅ ${latestBr.status.replace('_',' ')}</span>`;
+        } else if (latestBr.status === 'ACTIVE') {
+          statusBadge = ` · <span style="color:#00E5FF;font-weight:800;">⚡ ACTIVE</span>`;
+        }
+      }
+      pEl.innerHTML = `🎯 Battle-Plan: Entry <b>${ez}</b> · SL <b>${sl}</b> · TP1 <b>${tp}</b>${statusBadge}`;
     } else {
       pEl.innerHTML = `🎯 Battle-Plan: <i>Evaluating…</i>`;
     }
@@ -3585,6 +3601,9 @@ async function togglePairBattleVerdict(battleId, tag){
     if(j.success && j.battle){
       b.verdict_tags = j.battle.verdict_tags;
       renderPairBattleRecord();
+    if(typeof updateQuickHud === 'function' && LAST_SCAN){
+      updateQuickHud(LAST_SCAN, currentDzTf);
+    }
     }
   }catch(e){ console.error('Pair verdict error:', e); }
 }
@@ -3648,6 +3667,9 @@ async function loadPairBattleRecord(evaluateNow=false){
       sumEl.textContent = `${wr} (${st.wins||0}W/${st.losses||0}L · ${nr}) · ${(st.active||0)+(st.pending||0)} Open · ${st.wick_sweeps_saved||0} Sweeps Saved`;
     }
     renderPairBattleRecord();
+    if(typeof updateQuickHud === 'function' && LAST_SCAN){
+      updateQuickHud(LAST_SCAN, currentDzTf);
+    }
   }catch(e){ console.error('Pair BattleRecord error:', e); }
 }
 
