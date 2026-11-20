@@ -1005,6 +1005,7 @@
         </h3>
         <div class="bp-header-meta">
           <button id="bp-refresh-btn" class="bp-refresh-btn" onclick="forceRefreshBattlePlan()" title="Force Regenerate Pre-Session Battle-Plan">🔄 Refresh</button>
+          <span id="bp-mode-pill" style="display:none;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:999px;letter-spacing:.05em;border:1px solid rgba(0,229,255,0.3);background:rgba(0,229,255,0.08);color:var(--cyan);">AI</span>
           <span class="bp-session-pill">
             <span class="bp-live-dot"></span>
             <span id="bp-session-badge">SCHEDULED BRIEFING</span>
@@ -1029,6 +1030,17 @@
           Evaluating multi-timeframe candle close, EMA21 distance, and market structure...
         </div>
         <div id="bp-entry-reason" style="display:none;margin-top:6px;padding-top:6px;border-top:1px dashed rgba(0,229,255,0.18);font-size:11.5px;color:#cbd5e1;line-height:1.45;"></div>
+      </div>
+
+      <!-- Session Discipline / Crash-Mode / Trap Conflict Warning Strip -->
+      <div id="bp-discipline-bar" style="display:none;margin-top:8px;padding:7px 11px;border-radius:8px;background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.38);font-size:11.5px;color:#FDE68A;line-height:1.45;font-weight:600;"></div>
+
+      <!-- Compact Top-Down Structure Strip (D1/H4 -> H1 -> M15/M5) -->
+      <div id="bp-topdown-box" style="display:none;margin-top:8px;padding:9px 12px;border-radius:9px;background:rgba(15,23,42,0.55);border:1px solid rgba(148,163,184,0.16);font-size:11.5px;line-height:1.48;color:#CBD5E1;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--cyan);margin-bottom:5px;">📐 TOP-DOWN MULTI-TIMEFRAME STRUCTURE (LIVE MT5)</div>
+        <div id="bp-td-d1h4" style="margin-bottom:3px;"></div>
+        <div id="bp-td-h1" style="margin-bottom:3px;"></div>
+        <div id="bp-td-m15"></div>
       </div>
 
       <!-- 4-Metric Quick Execution Matrix -->
@@ -1131,6 +1143,14 @@
           </div>
         </div>
 
+        <div class="bp-card-box" id="bp-narrative-card" style="display:none;border:1px solid rgba(0,229,255,0.28);background:rgba(0,229,255,0.03);">
+          <div class="bp-card-box-header">
+            <span>📰 What Happened &amp; Why (Live Macro Narrative)</span>
+            <span id="bp-narrative-regime-pill" style="color:var(--gold);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;">LIVE MACRO</span>
+          </div>
+          <div id="bp-narrative-list" style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:#E2E8F0;line-height:1.5;"></div>
+        </div>
+
         <div class="bp-card-box">
           <div class="bp-card-box-header">
             <span>🌐 Global Session Macro Regime</span>
@@ -1181,6 +1201,18 @@
               <div class="bp-exec-val red" id="bp-contingency-invalidation" style="font-size:12px;margin-top:2px;">—</div>
               <div class="bp-exec-sub">Hard Stop on Thesis</div>
             </div>
+          </div>
+
+          <!-- Conditional Counter-Trend Scalp Card -->
+          <div id="bp-scalp-card" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(15,23,42,0.65);border:1px dashed rgba(255,184,0,0.4);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-size:11px;font-weight:800;color:var(--gold);letter-spacing:.04em;" id="bp-scalp-title">⚡ CONDITIONAL COUNTER-TREND SCALP</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#94A3B8;" id="bp-scalp-zone">—</span>
+            </div>
+            <div style="font-size:11.5px;color:#FDE68A;margin-bottom:5px;" id="bp-scalp-condition"></div>
+            <div style="font-size:11.5px;color:#CBD5E1;margin-bottom:6px;" id="bp-scalp-trigger"></div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#E2E8F0;" id="bp-scalp-levels"></div>
+            <div style="font-size:11px;color:#94A3B8;margin-top:5px;" id="bp-scalp-note"></div>
           </div>
         </div>
       </div>
@@ -1871,6 +1903,37 @@ function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
   const actionText = $('bp-action-text');
   const pill = $('bp-action-pill');
 
+  // Engine Mode Pill (AI Grounded vs AI vs Rule Fallback)
+  const modePill = $('bp-mode-pill');
+  if(modePill){
+    const eMode = sessionInfo && sessionInfo.engine_mode ? String(sessionInfo.engine_mode).toUpperCase() : '';
+    const fbReason = sessionInfo && sessionInfo.fallback_reason ? String(sessionInfo.fallback_reason) : '';
+    if(eMode === 'GEMINI_GROUNDED_AI'){
+      modePill.style.display = 'inline-block';
+      modePill.textContent = '🌐 AI GROUNDED';
+      modePill.style.color = '#00FF88';
+      modePill.style.borderColor = 'rgba(0,255,136,0.38)';
+      modePill.style.background = 'rgba(0,255,136,0.10)';
+      modePill.title = 'Gemini 2-Step Pipeline: Live Google Search Macro Narrative + Live MT5 Telemetry';
+    } else if(eMode === 'GEMINI_AI'){
+      modePill.style.display = 'inline-block';
+      modePill.textContent = '✨ GEMINI AI';
+      modePill.style.color = 'var(--cyan)';
+      modePill.style.borderColor = 'rgba(0,229,255,0.35)';
+      modePill.style.background = 'rgba(0,229,255,0.08)';
+      modePill.title = 'Gemini AI with WorldNewsEngine RSS Headlines + Live MT5 Telemetry';
+    } else if(eMode === 'SYNTHESIZED_RULE_BASED'){
+      modePill.style.display = 'inline-block';
+      modePill.textContent = '⚙️ RULE FALLBACK';
+      modePill.style.color = '#F59E0B';
+      modePill.style.borderColor = 'rgba(245,158,11,0.45)';
+      modePill.style.background = 'rgba(245,158,11,0.10)';
+      modePill.title = fbReason ? `Rule-based fallback active (${fbReason})` : 'Deterministic rule-based synthesis active';
+    } else {
+      modePill.style.display = 'none';
+    }
+  }
+
   // Session pill header (with live session / staleness / weekend time awareness)
   const badgeEl = $('bp-session-badge');
   const pillEl = badgeEl ? badgeEl.closest('.bp-session-pill') : null;
@@ -1982,6 +2045,45 @@ function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
     }
   }
 
+  // 2b. Session Discipline / Crash-Mode / Trap Conflict Warning Strip
+  const discEl = $('bp-discipline-bar');
+  if(discEl){
+    const parts = [];
+    if(primary && primary.trap_conflict_warning){
+      parts.push(`🚨 ${esc(primary.trap_conflict_warning)}`);
+    }
+    if(plan && plan.session_discipline_note){
+      parts.push(`⚠️ ${esc(plan.session_discipline_note)}`);
+    }
+    if(parts.length > 0){
+      discEl.innerHTML = parts.join('<br/>');
+      discEl.style.display = 'block';
+      if(primary && primary.trap_conflict_warning){
+        discEl.style.background = 'rgba(239,68,68,0.12)';
+        discEl.style.borderColor = 'rgba(239,68,68,0.45)';
+        discEl.style.color = '#FCA5A5';
+      } else {
+        discEl.style.background = 'rgba(245,158,11,0.10)';
+        discEl.style.borderColor = 'rgba(245,158,11,0.38)';
+        discEl.style.color = '#FDE68A';
+      }
+    } else {
+      discEl.style.display = 'none';
+    }
+  }
+
+  // 2c. Compact Top-Down Structure Strip (D1/H4 -> H1 -> M15/M5)
+  const tdBox = $('bp-topdown-box');
+  const td = (plan && plan.top_down_structure && typeof plan.top_down_structure === 'object') ? plan.top_down_structure : null;
+  if(tdBox && td && (td.daily_h4 || td.h1 || td.m15_m5)){
+    $('bp-td-d1h4').innerHTML = td.daily_h4 ? `<b style="color:#93C5FD;font-family:'JetBrains Mono',monospace;font-size:10px;">D1 / H4:</b> ${esc(td.daily_h4)}` : '';
+    $('bp-td-h1').innerHTML = td.h1 ? `<b style="color:#67E8F9;font-family:'JetBrains Mono',monospace;font-size:10px;">H1:</b> ${esc(td.h1)}` : '';
+    $('bp-td-m15').innerHTML = td.m15_m5 ? `<b style="color:#86EFAC;font-family:'JetBrains Mono',monospace;font-size:10px;">M15 / M5:</b> ${esc(td.m15_m5)}` : '';
+    tdBox.style.display = 'block';
+  } else if(tdBox){
+    tdBox.style.display = 'none';
+  }
+
   // 3. 4-Metric Quick Execution Matrix
   if(primary){
     $('bp-entry-zone').textContent = primary.entry_zone || '—';
@@ -2068,7 +2170,21 @@ function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
     `;
   }
 
-  // 5. Tab 2: Macro & Catalysts
+  // 5. Tab 2: Macro & Catalysts (Live "What Happened & Why" Narrative + Global Regime)
+  const narCard = $('bp-narrative-card');
+  const narList = $('bp-narrative-list');
+  const narRegimePill = $('bp-narrative-regime-pill');
+  const narBullets = (sessionInfo && Array.isArray(sessionInfo.macro_narrative_summary)) ? sessionInfo.macro_narrative_summary.filter(Boolean) : [];
+  if(narCard && narList && narBullets.length > 0){
+    if(narRegimePill){
+      narRegimePill.textContent = (sessionInfo && sessionInfo.macro_regime) ? String(sessionInfo.macro_regime) : 'LIVE MACRO';
+    }
+    narList.innerHTML = narBullets.map(b => `<div style="display:flex;gap:6px;"><span style="color:var(--cyan);font-weight:800;">•</span><span>${esc(b)}</span></div>`).join('');
+    narCard.style.display = 'block';
+  } else if(narCard){
+    narCard.style.display = 'none';
+  }
+
   if(sessionInfo && sessionInfo.global_macro_executive_thesis){
     $('bp-global-macro-text').textContent = sessionInfo.global_macro_executive_thesis;
   } else {
@@ -2085,7 +2201,7 @@ function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
   const scenarioTrees = (rawScenarios && rawScenarios.catalysts) ? rawScenarios.catalysts : (plan && plan.catalyst_scenarios ? plan.catalyst_scenarios : []);
   renderScenarioMatrixComponent(scenarioTrees, cat);
 
-  // 6. Tab 3: Contingency & Shock
+  // 6. Tab 3: Contingency & Shock (+ Conditional Counter-Trend Scalp)
   const cont = (plan && plan.contingency_plan) ? plan.contingency_plan : null;
   if(cont){
     if(cont.probability) $('bp-contingency-prob').textContent = `${cont.probability} PROBABILITY`;
@@ -2099,17 +2215,20 @@ function renderBattlePlan(scan, plan, sessionInfo, rawTrapData, rawScenarios){
     $('bp-contingency-invalidation').textContent = 'H1 Close past Swing High/Low';
   }
 
-  // 7. Tab 4: Timeframe pills & Alignment (preserving quantitative indicators)
-  if(cont){
-    if(cont.probability) $('bp-contingency-prob').textContent = `${cont.probability} PROBABILITY`;
-    if(cont.scenario) $('bp-contingency-scenario').textContent = cont.scenario;
-    $('bp-contingency-zone').textContent = cont.counter_zone || '—';
-    $('bp-contingency-invalidation').textContent = cont.invalidation || '—';
-  } else {
-    $('bp-contingency-prob').textContent = '30% PROBABILITY';
-    $('bp-contingency-scenario').textContent = 'Unexpected counter-trend liquidity squeeze or macroeconomic news shock.';
-    $('bp-contingency-zone').textContent = 'H4 Opposite Liquidity Pool';
-    $('bp-contingency-invalidation').textContent = 'H1 Close past Swing High/Low';
+  const scalpCard = $('bp-scalp-card');
+  const sc = (cont && cont.scalp_setup && typeof cont.scalp_setup === 'object') ? cont.scalp_setup : null;
+  if(scalpCard && sc && sc.zone){
+    const scBias = String(sc.bias || 'COUNTER').toUpperCase();
+    $('bp-scalp-title').textContent = `⚡ CONDITIONAL SCALP ${scBias} (COUNTER-TREND)`;
+    $('bp-scalp-zone').textContent = `ZONE: ${sc.zone}`;
+    $('bp-scalp-condition').innerHTML = sc.condition ? `<b>CONDITION:</b> ${esc(sc.condition)}` : '';
+    $('bp-scalp-trigger').innerHTML = sc.trigger ? `<b>TRIGGER:</b> ${esc(sc.trigger)}` : '';
+    const scTgts = Array.isArray(sc.targets) ? sc.targets.join(' / ') : (sc.targets || '—');
+    $('bp-scalp-levels').innerHTML = `<span>🛑 <b>SL:</b> ${esc(sc.stop_loss || '—')}</span><span>🏁 <b>TPs:</b> ${esc(scTgts)}</span>`;
+    $('bp-scalp-note').textContent = sc.note || '';
+    scalpCard.style.display = 'block';
+  } else if(scalpCard){
+    scalpCard.style.display = 'none';
   }
 
   // 7. Tab 4: Timeframe pills & Alignment (preserving quantitative indicators)
@@ -2482,9 +2601,25 @@ function updateQuickHud(scan, tf) {
     if (CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup) {
       const ps = CURRENT_BATTLE_PLAN.primary_setup;
       const ez = ps.entry_zone || '—';
-      const sl = ps.invalidation ? fp(ps.invalidation) : '—';
-      const tp = (ps.targets && ps.targets[0]) ? fp(ps.targets[0]) : '—';
-      pEl.innerHTML = `🎯 Battle-Plan: Entry <b>${ez}</b> · SL <b>${sl}</b> · TP1 <b>${tp}</b>`;
+      const rawSl = (ps.stop_loss !== undefined && ps.stop_loss !== null && ps.stop_loss !== '') ? ps.stop_loss : ps.invalidation;
+      const slNum = rawSl != null ? parseFloat(String(rawSl).replace(/[^0-9.\-]/g, '')) : NaN;
+      const sl = !isNaN(slNum) ? fp(slNum) : '—';
+      const tp = (ps.targets && ps.targets[0]) ? fp(parseFloat(ps.targets[0])) : '—';
+      let statusBadge = '';
+      const latestBr = (typeof PAIR_BR_CACHE !== 'undefined' && PAIR_BR_CACHE.battles && PAIR_BR_CACHE.battles.length)
+        ? PAIR_BR_CACHE.battles[0] : null;
+      if (latestBr && latestBr.entry_zone === ez) {
+        if (latestBr.status === 'STOPPED_OUT') {
+          statusBadge = ` · <span style="color:#f87171;font-weight:800;">🛑 STOPPED (M15 CLOSE)</span>`;
+        } else if (latestBr.status === 'INVALIDATED') {
+          statusBadge = ` · <span style="color:#f87171;font-weight:800;">✕ INVALIDATED</span>`;
+        } else if (latestBr.is_win) {
+          statusBadge = ` · <span style="color:#4ade80;font-weight:800;">✅ ${latestBr.status.replace('_',' ')}</span>`;
+        } else if (latestBr.status === 'ACTIVE') {
+          statusBadge = ` · <span style="color:#00E5FF;font-weight:800;">⚡ ACTIVE</span>`;
+        }
+      }
+      pEl.innerHTML = `🎯 Battle-Plan: Entry <b>${ez}</b> · SL <b>${sl}</b> · TP1 <b>${tp}</b>${statusBadge}`;
     } else {
       pEl.innerHTML = `🎯 Battle-Plan: <i>Evaluating…</i>`;
     }
@@ -3585,6 +3720,9 @@ async function togglePairBattleVerdict(battleId, tag){
     if(j.success && j.battle){
       b.verdict_tags = j.battle.verdict_tags;
       renderPairBattleRecord();
+    if(typeof updateQuickHud === 'function' && LAST_SCAN){
+      updateQuickHud(LAST_SCAN, currentDzTf);
+    }
     }
   }catch(e){ console.error('Pair verdict error:', e); }
 }
@@ -3648,6 +3786,9 @@ async function loadPairBattleRecord(evaluateNow=false){
       sumEl.textContent = `${wr} (${st.wins||0}W/${st.losses||0}L · ${nr}) · ${(st.active||0)+(st.pending||0)} Open · ${st.wick_sweeps_saved||0} Sweeps Saved`;
     }
     renderPairBattleRecord();
+    if(typeof updateQuickHud === 'function' && LAST_SCAN){
+      updateQuickHud(LAST_SCAN, currentDzTf);
+    }
   }catch(e){ console.error('Pair BattleRecord error:', e); }
 }
 

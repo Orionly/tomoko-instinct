@@ -23,6 +23,7 @@ if not GEMINI_API_KEY:
     except ImportError:
         pass
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+BRIEFING_ENABLE_WEB_GROUNDING = os.getenv("BRIEFING_ENABLE_WEB_GROUNDING", "true").lower() in ("1", "true", "yes")
 
 # Web API (uvicorn)
 API_HOST = "127.0.0.1"

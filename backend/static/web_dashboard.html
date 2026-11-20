@@ -2424,27 +2424,32 @@ function renderMacroIntel(data){
   const dxyPill = document.getElementById('dxy-pill');
   if(dxyPill){
     const chg = dxy.change_pct != null ? dxy.change_pct : 0;
+    const chg5d = dxy.change_5d_pct != null ? dxy.change_5d_pct : null;
     const sign = chg >= 0 ? '+' : '';
     const desc = chg >= 0.05 ? 'USD FIRM' : chg <= -0.05 ? 'USD SOFTENING' : 'FLAT';
+    const m5 = chg5d != null ? ` · 5D ${chg5d >= 0 ? '+' : ''}${fmt(chg5d, 1)}%` : '';
     dxyPill.className = 'mc-pill ' + (chg >= 0.05 ? 'up' : chg <= -0.05 ? 'down' : 'neut');
-    dxyPill.textContent = `${sign}${fmt(chg, 2)}% ${desc}`;
+    dxyPill.textContent = `${sign}${fmt(chg, 2)}% ${desc}${m5}`;
   }
   const dxyTrend = document.getElementById('dxy-trend');
-  if(dxyTrend) dxyTrend.textContent = dxy.trend || '—';
+  if(dxyTrend) dxyTrend.textContent = (dxy.macro_trend && dxy.macro_trend !== 'FLAT') ? dxy.macro_trend.replace('_', ' ') : (dxy.trend || '—');
 
   const us10y = m.US10Y || {};
   const us10yVal = document.getElementById('us10y-val');
   if(us10yVal) us10yVal.textContent = fmt(us10y.price, 2) + '%';
   const us10yPill = document.getElementById('us10y-pill');
   if(us10yPill){
-    const chgBps = us10y.change_pct != null ? us10y.change_pct * 100 : 0;
+    const chgBps = us10y.change_bps != null
+      ? Number(us10y.change_bps)
+      : (us10y.change_abs != null ? Number(us10y.change_abs) * 100 : (us10y.change_pct != null && us10y.price ? (us10y.price * us10y.change_pct) : 0));
     const sign = chgBps >= 0 ? '+' : '';
     const desc = chgBps >= 0.5 ? 'RISING' : chgBps <= -0.5 ? 'EASING' : 'FLAT';
+    const bps5d = us10y.change_5d_bps != null ? ` · 5D ${us10y.change_5d_bps >= 0 ? '+' : ''}${fmt(us10y.change_5d_bps, 0)}bp` : '';
     us10yPill.className = 'mc-pill ' + (chgBps >= 0.5 ? 'up' : chgBps <= -0.5 ? 'down' : 'neut');
-    us10yPill.textContent = `${sign}${fmt(chgBps, 0)} bps ${desc}`;
+    us10yPill.textContent = `${sign}${fmt(chgBps, 1)} bps ${desc}${bps5d}`;
   }
   const us10yTrend = document.getElementById('us10y-trend');
-  if(us10yTrend) us10yTrend.textContent = us10y.trend || '—';
+  if(us10yTrend) us10yTrend.textContent = (us10y.macro_trend && us10y.macro_trend !== 'FLAT') ? us10y.macro_trend.replace('_', ' ') : (us10y.trend || '—');
 
   const tips = m.TIPS_HYBRID || {};
   const tipsVal = document.getElementById('tips-val');
@@ -3315,17 +3320,19 @@ function renderUnifiedHeatmap(market_pulse, heatmapData){
     let yieldBearishForGold = false;
     if(us10yStatusEl){
       if(us10y.price){
-        const yChg = Number(us10y.change_pct || 0);
-        const yBps = Math.round(yChg * 100);
-        const ySign = yBps >= 0 ? '+' : '';
-        if(yBps > 1){
+        const yBps = us10y.change_bps != null
+          ? Number(us10y.change_bps)
+          : (us10y.change_abs != null ? Number(us10y.change_abs) * 100 : Math.round(Number(us10y.price) * Number(us10y.change_pct || 0)));
+        const yBpsRounded = Number(yBps.toFixed(1));
+        const ySign = yBpsRounded >= 0 ? '+' : '';
+        if(yBpsRounded > 1){
           yieldBearishForGold = true;
-          us10yStatusEl.innerHTML = `<span style="color:#FF5A79;">${us10y.price.toFixed(2)}% (${ySign}${yBps} bps) → Yield Pressure</span>`;
-        } else if(yBps < -1){
+          us10yStatusEl.innerHTML = `<span style="color:#FF5A79;">${us10y.price.toFixed(2)}% (${ySign}${yBpsRounded} bps) → Yield Pressure</span>`;
+        } else if(yBpsRounded < -1){
           yieldBullishForGold = true;
-          us10yStatusEl.innerHTML = `<span style="color:#00FF88;">${us10y.price.toFixed(2)}% (${ySign}${yBps} bps) → Support</span>`;
+          us10yStatusEl.innerHTML = `<span style="color:#00FF88;">${us10y.price.toFixed(2)}% (${ySign}${yBpsRounded} bps) → Support</span>`;
         } else {
-          us10yStatusEl.innerHTML = `<span style="color:#94A3B8;">${us10y.price.toFixed(2)}% (${ySign}${yBps} bps) → Flat</span>`;
+          us10yStatusEl.innerHTML = `<span style="color:#94A3B8;">${us10y.price.toFixed(2)}% (${ySign}${yBpsRounded} bps) → Flat</span>`;
         }
       } else {
         us10yStatusEl.textContent = 'Syncing...';

@@ -161,6 +161,7 @@ def get_session_briefing_engine():
             macro_scenario_engine=get_macro_scenario_engine(),
             trap_radar_engine=get_trap_radar_engine(),
             battle_record_engine=get_battle_record_engine(),
+            world_news_engine=get_world_news_engine(),
         )
     return _session_briefing_engine
 
@@ -819,12 +820,15 @@ def get_pair_deep(symbol: str):
             "session": briefing.get("session"),
             "generated_at_utc": briefing.get("generated_at_utc"),
             "global_macro_executive_thesis": briefing.get("global_macro_executive_thesis"),
+            "macro_narrative_summary": briefing.get("macro_narrative_summary", []),
+            "macro_regime": briefing.get("macro_regime"),
             "current_session": briefing.get("current_session"),
             "current_time_utc": briefing.get("current_time_utc"),
             "is_weekend": briefing.get("is_weekend", False),
             "is_stale": briefing.get("is_stale", False),
             "is_updating": briefing.get("is_updating", False),
             "engine_mode": briefing.get("engine_mode"),
+            "fallback_reason": briefing.get("fallback_reason"),
         },
         "trap_radar": traps,
         "macro_scenarios": scenarios,

@@ -19,9 +19,11 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 
 import config
+import pandas as pd
 from core.macro_scenario_engine import MacroScenarioEngine
 from core.trap_radar_engine import TrapRadarEngine
 from core.decision_zones import calculate_all_decision_zones
+from core.regime_engine import RegimeEngine
 
 log = logging.getLogger(__name__)
 
@@ -32,25 +34,43 @@ PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "EURGBP", "XAUUSD"]
 
 SYSTEM_PROMPT = """You are the Senior Chief Market Strategist for an elite institutional prop trading desk.
 Your mandate is to provide actionable, institutional-grade Pre-Session Trade Battle-Plans for professional traders.
-Avoid generic commentary. Every pair requires specific price levels, quantitative entry triggers (e.g. M5 rejection wicks), hard stop losses, staged take-profit targets, and catalyst IF/THEN scenario branching.
+Avoid generic commentary. Every pair requires specific price levels derived STRICTLY from the provided live MT5 broker telemetry, quantitative entry triggers (e.g. M5 rejection wicks), hard stop losses with realistic ATR risk, staged take-profit targets, top-down multi-timeframe structure, and catalyst IF/THEN scenario branching.
 
-You must respond with valid JSON adhering strictly to the requested schema for all pairs."""
+CRITICAL RULES:
+- NEVER invent or copy prices from web search snippets. Every price level (entry zone, SL, TP, invalidation, landmarks) MUST come strictly from Tomoko's live MT5 telemetry.
+- Respect multi-day crash/liquidation regimes and TrapRadar alerts: never recommend blind hero counter-trend trades or sell directly into an active CRITICAL BEAR TRAP.
+- You must respond with valid JSON adhering strictly to the requested schema for all pairs."""
 
 
 class SessionBriefingEngine:
     """
     Autonomous Pre-Session Briefing Engine.
-    Executes a single batched prompt for all 7 pairs 30 minutes before each major session,
-    with embedded Catalyst-to-Pair scenario trees and deterministic fallback.
+    Executes a 2-step institutional pipeline 30 minutes before each major session:
+      1. Lightweight Google-Search-grounded live macro narrative brief (with WorldNewsEngine RSS fallback).
+      2. Single batched structured JSON Battle-Plan across all 7 pairs anchored to live MT5 telemetry,
+         Decision Zones, Trap Radar, Multi-Day Regime, and Catalyst-to-Pair scenario trees.
     """
 
-    def __init__(self, price_engine=None, levels_engine=None, news_engine=None, macro_engine=None, macro_scenario_engine=None, trap_radar_engine=None, battle_record_engine=None):
+    def __init__(
+        self,
+        price_engine=None,
+        levels_engine=None,
+        news_engine=None,
+        macro_engine=None,
+        macro_scenario_engine=None,
+        trap_radar_engine=None,
+        battle_record_engine=None,
+        world_news_engine=None,
+    ):
         self.api_key = getattr(config, "GEMINI_API_KEY", "")
         self.model = getattr(config, "GEMINI_MODEL", "gemini-2.5-flash")
+        self.enable_web_grounding = bool(getattr(config, "BRIEFING_ENABLE_WEB_GROUNDING", True))
         self.price_engine = price_engine
         self.levels_engine = levels_engine
         self.news_engine = news_engine
         self.macro_engine = macro_engine
+        self.world_news_engine = world_news_engine
+        self.regime_engine = RegimeEngine()
         self.macro_scenario_engine = macro_scenario_engine or MacroScenarioEngine(
             news_engine=news_engine, macro_engine=macro_engine, price_engine=price_engine
         )
@@ -60,6 +80,7 @@ class SessionBriefingEngine:
         self.battle_record_engine = battle_record_engine
 
         self.latest_briefing: Dict = {}
+        self._grounded_macro_cache: Dict[str, Any] = {"session_key": None, "text": "", "fetched_at": 0.0}
         self._lock = threading.Lock()
         self._gen_lock = threading.Lock()
         self._is_generating = False
@@ -146,35 +167,214 @@ class SessionBriefingEngine:
             "session_key": f"{session_date}:{session_name}",
         }
 
+    @staticmethod
+    def _compute_d1_regime(df_d1, sym: str, spot: float, digits: int) -> Dict[str, Any]:
+        """Extract multi-day (1D/5D/20D) regime, streak, and recent D1 closes from live MT5 D1 bars."""
+        if df_d1 is None or len(df_d1) < 2:
+            return {}
+        try:
+            closes = df_d1["close"].dropna()
+            if len(closes) < 2:
+                return {}
+            last_close = float(spot or closes.iloc[-1])
+            prev_close = float(closes.iloc[-2])
+            chg_1d = round((last_close - prev_close) / prev_close * 100.0, 2) if prev_close else 0.0
+
+            idx_5d = max(0, len(closes) - 6)
+            base_5d = float(closes.iloc[idx_5d])
+            chg_5d = round((last_close - base_5d) / base_5d * 100.0, 2) if base_5d else 0.0
+
+            base_20d = float(closes.iloc[0])
+            chg_20d = round((last_close - base_20d) / base_20d * 100.0, 2) if base_20d else 0.0
+
+            high_20d = round(float(df_d1["high"].dropna().max()), digits) if "high" in df_d1 else round(float(closes.max()), digits)
+            low_20d = round(float(df_d1["low"].dropna().min()), digits) if "low" in df_d1 else round(float(closes.min()), digits)
+
+            # Consecutive red/green daily candle streak (completed + current)
+            streak_dir = None
+            streak_cnt = 0
+            for i in range(len(df_d1) - 1, -1, -1):
+                row = df_d1.iloc[i]
+                o, c = float(row["open"]), float(row["close"])
+                d = "RED" if c < o else ("GREEN" if c > o else "DOJI")
+                if streak_dir is None:
+                    if d == "DOJI":
+                        break
+                    streak_dir = d
+                    streak_cnt = 1
+                elif d == streak_dir:
+                    streak_cnt += 1
+                else:
+                    break
+            streak_str = f"{streak_cnt} {streak_dir.lower()} day{'s' if streak_cnt != 1 else ''}" if streak_dir else "flat"
+
+            # Recent 5 D1 closes for top-down narrative
+            recent_closes = []
+            for i in range(max(0, len(df_d1) - 5), len(df_d1)):
+                idx_val = df_d1.index[i]
+                if hasattr(idx_val, "strftime"):
+                    dt_lbl = idx_val.strftime("%m-%d")
+                elif "time" in df_d1.columns:
+                    try:
+                        dt_lbl = pd.to_datetime(df_d1["time"].iloc[i]).strftime("%m-%d")
+                    except Exception:
+                        dt_lbl = f"D-{len(df_d1)-1-i}"
+                else:
+                    dt_lbl = f"D-{len(df_d1)-1-i}"
+                recent_closes.append(f"{dt_lbl}: {round(float(df_d1['close'].iloc[i]), digits)}")
+
+            # Regime classification scaled for Metals vs FX volatility
+            is_gold = (sym == "XAUUSD")
+            crash_5d = -4.0 if is_gold else -1.8
+            crash_20d = -8.0 if is_gold else -3.0
+            trend_5d = 1.5 if is_gold else 0.7
+
+            if chg_5d <= crash_5d or chg_20d <= crash_20d:
+                regime_label = "CRASH_BREAKDOWN"
+            elif chg_5d >= abs(crash_5d) or chg_20d >= abs(crash_20d):
+                regime_label = "PARABOLIC_BREAKOUT"
+            elif chg_5d <= -trend_5d:
+                regime_label = "TRENDING_BEAR"
+            elif chg_5d >= trend_5d:
+                regime_label = "TRENDING_BULL"
+            else:
+                regime_label = "RANGE_CONSOLIDATION"
+
+            return {
+                "regime_label": regime_label,
+                "change_1d_pct": chg_1d,
+                "change_5d_pct": chg_5d,
+                "change_20d_pct": chg_20d,
+                "streak": streak_str,
+                "high_20d": high_20d,
+                "low_20d": low_20d,
+                "prev_close": round(prev_close, digits),
+                "recent_daily_closes": recent_closes,
+            }
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _compute_session_landmarks(df_h1, lv: Dict, digits: int) -> Dict[str, Any]:
+        """Extract today's Asia (00-07 UTC) and London (07-13 UTC) highs/lows from live H1 candles."""
+        landmarks = {
+            "pdh": round(float(lv["daily_high"]), digits) if lv.get("daily_high") else None,
+            "pdl": round(float(lv["daily_low"]), digits) if lv.get("daily_low") else None,
+            "prev_close": round(float(lv["prev_close"]), digits) if lv.get("prev_close") else None,
+            "today_high": round(float(lv["today_high"]), digits) if lv.get("today_high") else None,
+            "today_low": round(float(lv["today_low"]), digits) if lv.get("today_low") else None,
+            "pivot": round(float(lv["pivot"]), digits) if lv.get("pivot") else None,
+            "weekly_open": round(float(lv["weekly_open"]), digits) if lv.get("weekly_open") else None,
+        }
+        if df_h1 is None or len(df_h1) == 0:
+            return landmarks
+        try:
+            if isinstance(df_h1.index, pd.DatetimeIndex):
+                times = df_h1.index
+            elif "time" in df_h1.columns:
+                times = pd.to_datetime(df_h1["time"], utc=True, errors="coerce")
+            else:
+                return landmarks
+
+            if times.isna().all():
+                return landmarks
+
+            last_date = times[-1].date() if hasattr(times[-1], "date") else pd.Timestamp(times[-1]).date()
+            df_work = df_h1.copy()
+            df_work["_ts"] = pd.to_datetime(times, utc=True)
+            df_today = df_work[df_work["_ts"].dt.date == last_date]
+            if len(df_today) == 0:
+                return landmarks
+
+            asia = df_today[(df_today["_ts"].dt.hour >= 0) & (df_today["_ts"].dt.hour < 8)]
+            if len(asia) > 0:
+                landmarks["asia_high"] = round(float(asia["high"].max()), digits)
+                landmarks["asia_low"] = round(float(asia["low"].min()), digits)
+
+            london = df_today[(df_today["_ts"].dt.hour >= 7) & (df_today["_ts"].dt.hour < 14)]
+            if len(london) > 0:
+                landmarks["london_high"] = round(float(london["high"].max()), digits)
+                landmarks["london_low"] = round(float(london["low"].min()), digits)
+        except Exception:
+            pass
+        return landmarks
+
     def _build_telemetry_payload(self) -> Dict:
         """Assembles real-time telemetry from all sub-engines."""
-        session_info = self.get_current_session_info()
+        now_utc = datetime.now(timezone.utc)
+        session_info = self.get_current_session_info(now_utc)
+        day_name = now_utc.strftime("%A")
+        is_friday_ny = (now_utc.weekday() == 4 and session_info["session_name"] == "NEW_YORK_US")
+        discipline_hint = (
+            "FRIDAY NY SESSION: Use reduced sizing, bank partials early, and DO NOT hold open intraday trades overnight into the weekend close (21:00 UTC)."
+            if is_friday_ny
+            else f"{day_name} {session_info['session_title']}: Trade structural extremes with M5 confirmation; respect multi-day trend and active Trap Radar alerts."
+        )
+
         payload = {
             "session": session_info["session_title"],
+            "session_name": session_info["session_name"],
+            "day_of_week": day_name,
+            "is_friday_ny": is_friday_ny,
+            "session_discipline_hint": discipline_hint,
             "timestamp_utc": session_info["time_utc"],
             "macro_telemetry": {},
+            "world_news_headlines": [],
             "pairs": {}
         }
 
-        # 1. Macro Telemetry
+        # 1. Live Macro Telemetry (fixed wiring via get_full_intelligence / get_macro_matrix)
         if self.macro_engine:
             try:
-                snap = self.macro_engine.get_snapshot() if hasattr(self.macro_engine, "get_snapshot") else {}
-                tips = self.macro_engine.get_tips_real_yield() if hasattr(self.macro_engine, "get_tips_real_yield") else {}
+                if hasattr(self.macro_engine, "get_full_intelligence"):
+                    full_intel = self.macro_engine.get_full_intelligence() or {}
+                    matrix = full_intel.get("matrix", {})
+                    insight = full_intel.get("insight", {})
+                else:
+                    matrix = self.macro_engine.get_macro_matrix() if hasattr(self.macro_engine, "get_macro_matrix") else {}
+                    insight = self.macro_engine.synthesize_macro_insight(matrix) if hasattr(self.macro_engine, "synthesize_macro_insight") else {}
+                tips = matrix.get("TIPS_HYBRID", {})
                 payload["macro_telemetry"] = {
-                    "dxy": snap.get("DXY", {}),
-                    "us10y": snap.get("US10Y", {}),
-                    "vix": snap.get("VIX", {}),
-                    "spx": snap.get("SPX", {}),
-                    "real_yield_10y_tips": tips.get("real_yield_pct", 2.78),
+                    "dxy": matrix.get("DXY", {}),
+                    "us10y": matrix.get("US10Y", {}),
+                    "vix": matrix.get("VIX", {}),
+                    "spx": matrix.get("SPX", {}),
+                    "oil": matrix.get("OIL", {}),
+                    "gold_fut": matrix.get("GOLD_FUT", {}),
+                    "real_yield_10y_tips": tips.get("real_yield_pct", 2.88),
                     "real_yield_pressure": tips.get("yield_pressure", "STEADY"),
+                    "regime": insight.get("regime", "BALANCED // CONSOLIDATION REGIME"),
+                    "regime_thesis": insight.get("decision_context", ""),
+                    "playbook": insight.get("playbook", ""),
+                    "gold_impact": insight.get("gold_impact", ""),
+                    "usd_impact": insight.get("usd_impact", ""),
                 }
             except Exception as e:
-                log.debug("[SessionBriefing] Macro fetch note: %s", e)
+                log.warning("[SessionBriefing] Macro fetch error: %s", e)
+
+        # 1b. Recent World / FX / Gold / Fed Headlines (WorldNewsEngine)
+        if self.world_news_engine:
+            try:
+                if hasattr(self.world_news_engine, "get_macro_brief_headlines"):
+                    payload["world_news_headlines"] = self.world_news_engine.get_macro_brief_headlines(max_hours=36, limit=14)
+                elif hasattr(self.world_news_engine, "get_news"):
+                    raw_items = self.world_news_engine.get_news(limit=12)
+                    payload["world_news_headlines"] = [
+                        {"title": it.get("title", ""), "source": it.get("source", ""), "severity": it.get("severity", "MONITOR"), "impacted_pairs": it.get("impacted_pairs", [])}
+                        for it in raw_items
+                    ]
+            except Exception as e:
+                log.debug("[SessionBriefing] WorldNews fetch note: %s", e)
 
         # 2. Per-Pair Telemetry
         for sym in PAIRS:
+            digits = 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5)
             pair_data = {"symbol": sym}
+            df_d1 = pd.DataFrame()
+            df_h1 = pd.DataFrame()
+            df_h4 = pd.DataFrame()
+            df_m15 = pd.DataFrame()
+
             if self.price_engine:
                 p_info = self.price_engine.get_price(sym) or {}
                 pair_data["spot_price"] = p_info.get("price")
@@ -182,47 +382,68 @@ class SessionBriefingEngine:
                 pair_data["ask"] = p_info.get("ask")
                 pair_data["spread_pts"] = p_info.get("spread")
 
-                # Get latest candle closes and indicators
-                df_h1 = self.price_engine.get_rates(sym, "H1", 20)
+                df_d1 = self.price_engine.get_rates(sym, "D1", 30)
+                df_h4 = self.price_engine.get_rates(sym, "H4", 120)
+                df_h1 = self.price_engine.get_rates(sym, "H1", 200)
+                df_m15 = self.price_engine.get_rates(sym, "M15", 200)
+
                 if not df_h1.empty:
                     pair_data["h1_close"] = float(df_h1["close"].iloc[-1])
                     pair_data["h1_atr"] = float(df_h1["ATR"].iloc[-1]) if "ATR" in df_h1 else None
                     pair_data["h1_rsi"] = float(df_h1["RSI"].iloc[-1]) if "RSI" in df_h1 else None
                     pair_data["h1_ema21"] = float(df_h1["EMA21"].iloc[-1]) if "EMA21" in df_h1 else None
 
-            # Levels & Decision Zones (M15/H1 Supply & Demand anchors)
+                # Multi-day D1 regime (1D/5D/20D %, streak, 20D high/low, crash detection)
+                if not df_d1.empty:
+                    pair_data["d1_regime"] = self._compute_d1_regime(
+                        df_d1, sym, float(pair_data.get("spot_price") or df_d1["close"].iloc[-1]), digits
+                    )
+
+                # H4 institutional regime gate (direction, ADX, ATR ratio, EMA21 distance)
+                if not df_h4.empty and all(c in df_h4.columns for c in ("EMA20", "EMA50", "EMA21", "ADX", "ATR", "close")):
+                    try:
+                        h4_eval = self.regime_engine.evaluate_h4_gate(df_h4)
+                        pair_data["h4_regime"] = {
+                            "direction": h4_eval.get("direction"),
+                            "gate": h4_eval.get("gate"),
+                            "adx": h4_eval.get("adx"),
+                            "atr_ratio": h4_eval.get("atr_ratio"),
+                            "dist_ema21_atr": h4_eval.get("dist_ema21_atr"),
+                        }
+                    except Exception as e:
+                        log.debug("[SessionBriefing] H4 regime note for %s: %s", sym, e)
+
+            # Levels & Session Landmarks
             lv = {}
             if self.levels_engine and self.price_engine:
                 try:
-                    df_d1 = self.price_engine.get_rates(sym, "D1", 10)
                     df_w1 = self.price_engine.get_rates(sym, "W1", 5)
-                    df_h1 = self.price_engine.get_rates(sym, "H1", 200)
                     if not df_d1.empty and not df_h1.empty:
                         lv = self.levels_engine.get_key_levels(df_d1, df_w1, df_h1)
                         pair_data["pdh"] = lv.get("daily_high")
                         pair_data["pdl"] = lv.get("daily_low")
+                        pair_data["prev_close"] = lv.get("prev_close")
                         pair_data["weekly_open"] = lv.get("weekly_open")
                         pair_data["today_high"] = lv.get("today_high")
                         pair_data["today_low"] = lv.get("today_low")
                         pair_data["pivot"] = lv.get("pivot")
+                        pair_data["session_landmarks"] = self._compute_session_landmarks(df_h1, lv, digits)
                 except Exception as e:
                     log.debug("[SessionBriefing] Levels error for %s: %s", sym, e)
 
+            # Decision Zones (M15/H1 Supply & Demand anchors)
             if self.price_engine and pair_data.get("spot_price"):
                 try:
-                    df_m15 = self.price_engine.get_rates(sym, "M15", 200)
-                    df_h1_dz = self.price_engine.get_rates(sym, "H1", 200)
-                    df_h4_dz = self.price_engine.get_rates(sym, "H4", 120)
                     dz_all = calculate_all_decision_zones(
-                        df_m15, df_h1_dz, df_h4_dz, float(pair_data["spot_price"]), lv, symbol=sym
+                        df_m15, df_h1, df_h4, float(pair_data["spot_price"]), lv, symbol=sym
                     )
                     def _compact_dz(z):
                         if not isinstance(z, dict) or z.get("low") is None or z.get("high") is None:
                             return None
                         return {
-                            "low": round(float(z["low"]), 5),
-                            "high": round(float(z["high"]), 5),
-                            "midline": round(float(z.get("midline") or (z["low"] + z["high"]) / 2.0), 5),
+                            "low": round(float(z["low"]), digits),
+                            "high": round(float(z["high"]), digits),
+                            "midline": round(float(z.get("midline") or (z["low"] + z["high"]) / 2.0), digits),
                             "is_swap": bool(z.get("is_swap", False)),
                         }
                     m15_d = dz_all.get("m15") or {}
@@ -273,6 +494,131 @@ class SessionBriefingEngine:
             payload["pairs"][sym] = pair_data
 
         return payload
+
+    @staticmethod
+    def _build_prompt_telemetry(telemetry: Dict) -> Dict:
+        """
+        Produces a lean, high-signal telemetry subset for the Gemini prompt.
+        Strips redundant UI boilerplate from catalyst_scenarios & trap_radar to minimize latency and avoid timeouts.
+        """
+        compact_pairs = {}
+        for sym, pd_raw in telemetry.get("pairs", {}).items():
+            # Compact catalyst scenarios (top 2 events, only this pair's playbook)
+            c_list = []
+            for ev in (pd_raw.get("catalyst_scenarios") or [])[:2]:
+                sc = ev.get("scenarios") or {}
+                hot = sc.get("hot_beat") or {}
+                cool = sc.get("cool_miss") or {}
+                c_list.append({
+                    "event": ev.get("event_title"),
+                    "currency": ev.get("currency"),
+                    "time": ev.get("time"),
+                    "impact": ev.get("impact"),
+                    "forecast": ev.get("forecast"),
+                    "previous": ev.get("previous"),
+                    "hot_trigger": hot.get("trigger_condition"),
+                    "hot_playbook": (hot.get("pair_playbook") or {}).get(sym),
+                    "cool_trigger": cool.get("trigger_condition"),
+                    "cool_playbook": (cool.get("pair_playbook") or {}).get(sym),
+                })
+
+            trap = pd_raw.get("trap_radar") or {}
+            compact_trap = {
+                "trap_state": trap.get("trap_state", "NONE"),
+                "severity": trap.get("severity", "LOW"),
+                "trap_title": trap.get("trap_title"),
+                "description": trap.get("description"),
+                "guidance": (trap.get("operational_guidance") or {}).get("beginners"),
+            } if trap.get("trap_state", "NONE") != "NONE" else {"trap_state": "NONE"}
+
+            compact_pairs[sym] = {
+                "spot_price": pd_raw.get("spot_price"),
+                "spread_pts": pd_raw.get("spread_pts"),
+                "h1_close": pd_raw.get("h1_close"),
+                "h1_atr": round(float(pd_raw["h1_atr"]), 5) if pd_raw.get("h1_atr") else None,
+                "h1_rsi": round(float(pd_raw["h1_rsi"]), 1) if pd_raw.get("h1_rsi") else None,
+                "h1_ema21": round(float(pd_raw["h1_ema21"]), 5) if pd_raw.get("h1_ema21") else None,
+                "d1_regime": pd_raw.get("d1_regime"),
+                "h4_regime": pd_raw.get("h4_regime"),
+                "session_landmarks": pd_raw.get("session_landmarks"),
+                "decision_zones": pd_raw.get("decision_zones"),
+                "trap_radar": compact_trap,
+                "upcoming_catalysts": c_list,
+            }
+
+        return {
+            "session": telemetry.get("session"),
+            "day_of_week": telemetry.get("day_of_week"),
+            "is_friday_ny": telemetry.get("is_friday_ny"),
+            "session_discipline_hint": telemetry.get("session_discipline_hint"),
+            "timestamp_utc": telemetry.get("timestamp_utc"),
+            "macro_telemetry": telemetry.get("macro_telemetry"),
+            "world_news_headlines": (telemetry.get("world_news_headlines") or [])[:12],
+            "pairs": compact_pairs,
+        }
+
+    def _fetch_grounded_macro_brief(self, telemetry: Dict, curr_info: Dict[str, Any], force: bool = False) -> str:
+        """
+        Step 1 of the 2-step AI pipeline:
+        Lightweight Gemini call with live Google Search Grounding (plain text, NOT responseMimeType=json)
+        to pull real-world 24h-10d macro catalysts (Fed pricing, DXY/Yields narrative, Gold/FX drivers,
+        central bank speakers, geopolitics). Cached per session; falls back cleanly to empty string.
+        """
+        if not self.api_key or not self.enable_web_grounding:
+            return ""
+
+        now_ts = time.time()
+        s_key = curr_info.get("session_key")
+        cached = self._grounded_macro_cache
+        cache_age = now_ts - float(cached.get("fetched_at") or 0.0)
+        if cached.get("text") and cached.get("session_key") == s_key:
+            # Reuse within 90m on normal refresh, or within 10m even on force refresh to protect quota
+            if (not force and cache_age < 5400) or (force and cache_age < 600):
+                log.info("[SessionBriefing] Reusing cached Google-Search-grounded macro brief (%ds old).", int(cache_age))
+                return cached["text"]
+
+        macro = telemetry.get("macro_telemetry") or {}
+        dxy_p = (macro.get("dxy") or {}).get("price", "N/A")
+        us10y_p = (macro.get("us10y") or {}).get("price", "N/A")
+        vix_p = (macro.get("vix") or {}).get("price", "N/A")
+        gold_d1 = ((telemetry.get("pairs") or {}).get("XAUUSD") or {}).get("d1_regime") or {}
+        gold_5d = gold_d1.get("change_5d_pct", "N/A")
+
+        grounding_prompt = (
+            f"Today is {telemetry.get('timestamp_utc')} ({telemetry.get('day_of_week')}), heading into {telemetry.get('session')}.\n"
+            f"Live market snapshot from our broker feed: DXY ~{dxy_p}, US 10Y ~{us10y_p}%, VIX ~{vix_p}, Gold 5D change ~{gold_5d}%.\n\n"
+            "Search the latest financial & macro news from the last 24 hours to 10 days and provide a crisp, factual 5-bullet Institutional Macro Narrative Brief covering:\n"
+            "1. Federal Reserve / FOMC rate expectations (latest minutes, market-implied hike/cut odds, key Fed speakers)\n"
+            "2. US Dollar (DXY) & US Treasury Yield drivers (why DXY and yields are moving)\n"
+            "3. Gold (XAUUSD) / Metals narrative (why Gold is rallying or selling off — rates, dollar squeeze, liquidation, or safe-haven flows)\n"
+            "4. Major FX Central Banks (ECB, BoE, BoJ / Yen intervention watch)\n"
+            "5. Equities, Oil & Geopolitics (VIX risk tone, Middle East/energy/tariffs)\n\n"
+            "STRICT RULES:\n"
+            "- Be concise (max ~220 words total), institutional, and factual with dates/percentages where verified.\n"
+            "- Do NOT recommend trade entry/SL/TP prices or quote conflicting retail broker spot prices (our live MT5 feed handles all price levels)."
+        )
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        body = json.dumps({
+            "contents": [{"parts": [{"text": grounding_prompt}]}],
+            "tools": [{"google_search": {}}],
+        }).encode("utf-8")
+
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        t0 = time.time()
+        try:
+            log.info("[SessionBriefing] Step 1: Fetching Google-Search-grounded live macro narrative (%s)...", self.model)
+            with urllib.request.urlopen(req, timeout=25.0) as resp:
+                raw_resp = json.loads(resp.read().decode("utf-8"))
+                parts = raw_resp.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                text = "\n".join(str(p.get("text", "")).strip() for p in parts if p.get("text")).strip()
+                if text:
+                    self._grounded_macro_cache = {"session_key": s_key, "text": text, "fetched_at": now_ts}
+                    log.info("[SessionBriefing] Step 1 Grounded macro brief fetched in %.2fs (%d chars).", time.time() - t0, len(text))
+                    return text
+        except Exception as e:
+            log.warning("[SessionBriefing] Step 1 Google Search grounding skipped/failed (%s). Continuing with WorldNewsEngine headlines.", e)
+        return ""
 
     def is_briefing_stale(self, now_utc: Optional[datetime] = None) -> bool:
         """Determines if current cached briefing is stale (different session, missing pairs, or > 6 hours old)."""
@@ -425,20 +771,26 @@ class SessionBriefingEngine:
                 pass
 
         if is_short:
-            # STOP LOSS MUST BE > entry_high
-            overhead_roof = max(e_high, spot, today_high, pdh) if not reanchored else e_high
-            if reanchored or sl <= e_high:
-                sl = round(overhead_roof + max(0.8 * atr, min_buf * 1.5), digits)
+            # STOP LOSS MUST BE > entry_high AND capped within realistic structural ATR bounds
+            max_sl_dist = max(2.2 * atr, min_buf * 3.0)
+            default_sl_buf = max(0.85 * atr, min_buf * 1.5)
+            if reanchored or sl <= e_high or (sl - e_high) > max_sl_dist:
+                # Prefer intraday high if it sits cleanly just above e_high within cap, else zone + buffer
+                if today_high > e_high and (today_high - e_high) <= (1.4 * atr):
+                    sl = round(today_high + max(0.35 * atr, min_buf), digits)
+                else:
+                    sl = round(e_high + default_sl_buf, digits)
                 log.warning("[SessionBriefingSanitizer] Fixed Short SL for %s -> %s", sym, sl)
 
             setup["stop_loss"] = sl
-            risk = max(abs(sl - e_low), 1.0 * atr)
+            risk = max(abs(sl - e_low), 0.75 * atr)
 
-            # TARGETS MUST BE < entry_low and strictly descending
-            sanitized_targets = [t for t in valid_targets if t < e_low] if not reanchored else []
+            # TARGETS MUST BE < entry_low, strictly descending, with TP1 >= 0.8R
+            min_tp1 = e_low - 0.8 * risk
+            sanitized_targets = [t for t in valid_targets if t <= min_tp1] if not reanchored else []
             if len(sanitized_targets) < 3:
                 tp1 = round(e_low - 1.0 * risk, digits)
-                tp2 = round(min(pdl if pdl < e_low else tp1, e_low - 2.0 * risk), digits)
+                tp2 = round(min(pdl if (pdl > 0 and pdl < tp1 - 0.3 * atr) else (e_low - 2.0 * risk), e_low - 1.8 * risk), digits)
                 tp3 = round(tp2 - 1.0 * atr, digits)
                 sanitized_targets = sorted(list(set(sanitized_targets + [tp1, tp2, tp3])), reverse=True)
             else:
@@ -446,20 +798,25 @@ class SessionBriefingEngine:
 
             setup["targets"] = sanitized_targets[:4]
         else:
-            # STOP LOSS MUST BE < entry_low
-            floor_support = min(e_low, spot, today_low if today_low > 0 else spot, pdl if pdl > 0 else spot) if not reanchored else e_low
-            if reanchored or sl >= e_low or sl <= 0:
-                sl = round(floor_support - max(0.8 * atr, min_buf * 1.5), digits)
+            # STOP LOSS MUST BE < entry_low AND capped within realistic structural ATR bounds
+            max_sl_dist = max(2.2 * atr, min_buf * 3.0)
+            default_sl_buf = max(0.85 * atr, min_buf * 1.5)
+            if reanchored or sl >= e_low or sl <= 0 or (e_low - sl) > max_sl_dist:
+                if today_low > 0 and today_low < e_low and (e_low - today_low) <= (1.4 * atr):
+                    sl = round(today_low - max(0.35 * atr, min_buf), digits)
+                else:
+                    sl = round(e_low - default_sl_buf, digits)
                 log.warning("[SessionBriefingSanitizer] Fixed Long SL for %s -> %s", sym, sl)
 
             setup["stop_loss"] = sl
-            risk = max(abs(e_high - sl), 1.0 * atr)
+            risk = max(abs(e_high - sl), 0.75 * atr)
 
-            # TARGETS MUST BE > entry_high and strictly ascending
-            sanitized_targets = [t for t in valid_targets if t > e_high] if not reanchored else []
+            # TARGETS MUST BE > entry_high, strictly ascending, with TP1 >= 0.8R
+            min_tp1 = e_high + 0.8 * risk
+            sanitized_targets = [t for t in valid_targets if t >= min_tp1] if not reanchored else []
             if len(sanitized_targets) < 3:
                 tp1 = round(e_high + 1.0 * risk, digits)
-                tp2 = round(max(pdh if pdh > e_high else tp1, e_high + 2.0 * risk), digits)
+                tp2 = round(max(pdh if pdh > (tp1 + 0.3 * atr) else (e_high + 2.0 * risk), e_high + 1.8 * risk), digits)
                 tp3 = round(tp2 + 1.0 * atr, digits)
                 sanitized_targets = sorted(list(set(sanitized_targets + [tp1, tp2, tp3])))
             else:
@@ -467,26 +824,197 @@ class SessionBriefingEngine:
 
             setup["targets"] = sanitized_targets[:4]
 
+        setup["_reanchored"] = reanchored
         return setup
 
-    def _generate_rule_based_briefing(self, telemetry: Dict) -> Dict:
+    @staticmethod
+    def _sync_plan_text_after_sanitize(p_plan: Dict, sym: str, spot: float, digits: int, p_data: Dict) -> Dict:
+        """
+        If _validate_and_sanitize_setup re-anchored entry_zone, synchronize trigger_confirmation,
+        entry_reason, executive_bottom_line, and checklist[0] so text NEVER contradicts the final entry_zone.
+        """
+        if not isinstance(p_plan, dict):
+            return p_plan
+        setup = p_plan.get("primary_setup")
+        if not isinstance(setup, dict):
+            return p_plan
+
+        reanchored = bool(setup.pop("_reanchored", False))
+        ez = str(setup.get("entry_zone") or "").strip()
+        bias = str(setup.get("bias") or "LONG").upper()
+        is_short = "SHORT" in bias or "SELL" in bias
+        targets = setup.get("targets") or []
+        sl = setup.get("stop_loss")
+
+        if reanchored and ez:
+            ez_parts = [x.strip() for x in ez.split("-")]
+            anchor_edge = ez_parts[0] if len(ez_parts) >= 1 else ez
+            if is_short:
+                setup["trigger_confirmation"] = f"M5 upper wick rejection >= 2x body inside {ez} Supply + bearish engulfing close below {anchor_edge}"
+            else:
+                setup["trigger_confirmation"] = f"M5 lower wick rejection >= 2x body inside {ez} Demand + bullish engulfing close above {anchor_edge}"
+            drv = (p_plan.get("macro_catalyst") or {}).get("primary_driver", "Macro Structure")
+            setup["entry_reason"] = (
+                f"{bias} re-anchored by institutional supply/demand gate to {ez} (spot {round(spot, digits)}, SL {sl}). "
+                f"Avoids chasing into opposing Decision Zone. Driver: {drv}."
+            )
+            tgt_lbl = targets[1] if len(targets) > 1 else (targets[0] if targets else "opposing liquidity")
+            p_plan["executive_bottom_line"] = (
+                f"{bias} favored on pullback into {ez} {'Supply' if is_short else 'Demand'} (SL {sl}). Primary objective: {tgt_lbl}."
+            )
+            tc = p_plan.get("traps_and_checklist")
+            if isinstance(tc, dict) and isinstance(tc.get("checklist"), list) and len(tc["checklist"]) > 0:
+                if "entry zone" in str(tc["checklist"][0]).lower() or "alert" in str(tc["checklist"][0]).lower():
+                    tc["checklist"][0] = f"Set alert at entry zone boundary: {anchor_edge}"
+
+        # Sanitize optional conditional counter-trend scalp R:R if present
+        cont = p_plan.get("contingency_plan")
+        if isinstance(cont, dict) and isinstance(cont.get("scalp_setup"), dict):
+            sc = cont["scalp_setup"]
+            sc_bias = str(sc.get("bias") or "").upper()
+            sc_match = re.search(r'([0-9]+\.?[0-9]*)\s*-\s*([0-9]+\.?[0-9]*)', str(sc.get("zone") or ""))
+            try:
+                sc_sl = float(sc.get("stop_loss")) if sc.get("stop_loss") is not None else None
+            except (TypeError, ValueError):
+                sc_sl = None
+            if sc_match and sc_sl is not None:
+                z_lo, z_hi = sorted([float(sc_match.group(1)), float(sc_match.group(2))])
+                sc["zone"] = f"{round(z_lo, digits)} - {round(z_hi, digits)}"
+                sc_is_long = "LONG" in sc_bias or "BUY" in sc_bias
+                atr = float(p_data.get("h1_atr") or (spot * 0.003 if spot else 1.0)) or 1.0
+                if sc_is_long and sc_sl >= z_lo:
+                    sc_sl = round(z_lo - 0.7 * atr, digits)
+                    sc["stop_loss"] = sc_sl
+                elif (not sc_is_long) and sc_sl <= z_hi:
+                    sc_sl = round(z_hi + 0.7 * atr, digits)
+                    sc["stop_loss"] = sc_sl
+                sc_risk = max(abs((z_hi if sc_is_long else z_lo) - sc_sl), 0.4 * atr)
+                raw_sc_tgts = sc.get("targets") or []
+                clean_sc_tgts = []
+                for t in (raw_sc_tgts if isinstance(raw_sc_tgts, list) else [raw_sc_tgts]):
+                    tm = re.search(r'([0-9]+\.?[0-9]*)', str(t))
+                    if tm:
+                        v = float(tm.group(1))
+                        if sc_is_long and v >= z_hi + 0.6 * sc_risk:
+                            clean_sc_tgts.append(round(v, digits))
+                        elif (not sc_is_long) and v <= z_lo - 0.6 * sc_risk:
+                            clean_sc_tgts.append(round(v, digits))
+                if not clean_sc_tgts:
+                    if sc_is_long:
+                        clean_sc_tgts = [round(z_hi + 1.0 * sc_risk, digits), round(z_hi + 1.8 * sc_risk, digits)]
+                    else:
+                        clean_sc_tgts = [round(z_lo - 1.0 * sc_risk, digits), round(z_lo - 1.8 * sc_risk, digits)]
+                sc["targets"] = sorted(list(set(clean_sc_tgts)), reverse=(not sc_is_long))[:3]
+
+        return p_plan
+
+    @staticmethod
+    def _apply_trap_conflict_gate(p_plan: Dict, trap_info: Optional[Dict]) -> Dict:
+        """
+        Prevents self-contradictory outputs where TrapRadar fires a CRITICAL opposing trap
+        (e.g., CRITICAL BEAR TRAP / 'DO NOT SELL') while primary_setup displays high-confidence SHORT.
+        """
+        if not isinstance(p_plan, dict) or not isinstance(trap_info, dict):
+            return p_plan
+        setup = p_plan.get("primary_setup")
+        if not isinstance(setup, dict):
+            return p_plan
+
+        trap_state = str(trap_info.get("trap_state") or "NONE").upper()
+        severity = str(trap_info.get("severity") or "").upper()
+        if trap_state == "NONE" or severity not in ("CRITICAL", "HIGH"):
+            return p_plan
+
+        bias = str(setup.get("bias") or "").upper()
+        is_short = "SHORT" in bias or "SELL" in bias
+        is_long = "LONG" in bias or "BUY" in bias
+
+        # BEAR_TRAP / SELL-SIDE LIQUIDITY PURGE opposes SHORT; BULL_TRAP / BUY-SIDE SWEEP opposes LONG
+        trap_title = str(trap_info.get("trap_title") or trap_state).upper()
+        bear_trap_conflict = is_short and ("BEAR_TRAP" in trap_state or "BEAR TRAP" in trap_title or "SELL-SIDE" in trap_title or "SELL_SIDE" in trap_state)
+        bull_trap_conflict = is_long and ("BULL_TRAP" in trap_state or "BULL TRAP" in trap_title or "BUY-SIDE" in trap_title or "BUY_SIDE" in trap_state)
+
+        if bear_trap_conflict or bull_trap_conflict:
+            conflict_msg = (
+                f"TRAP CONFLICT ({severity} {trap_info.get('trap_title', trap_state)}): "
+                f"Active liquidity absorption opposes immediate {bias} entries. Wait strictly for price to reach upper/lower entry corridor and print fresh M5 rejection — do NOT chase at spot."
+            )
+            setup["trap_conflict_warning"] = conflict_msg
+            # Downgrade displayed probability so trader sees reduced edge
+            try:
+                m = re.search(r'(\d+)', str(setup.get("probability", "60")))
+                orig_p = int(m.group(1)) if m else 60
+                setup["probability"] = f"{max(40, min(orig_p - 15, 50))}%"
+            except Exception:
+                setup["probability"] = "45%"
+            if conflict_msg not in str(setup.get("entry_reason", "")):
+                setup["entry_reason"] = f"{setup.get('entry_reason', '').strip()} [⚠ {conflict_msg}]".strip()
+
+        return p_plan
+
+    def _generate_rule_based_briefing(
+        self,
+        telemetry: Dict,
+        fallback_reason: Optional[str] = None,
+        grounded_macro_brief: str = "",
+    ) -> Dict:
         """
         Deterministic, zero-API-cost institutional trade briefing generator.
-        Synthesizes live spot prices, key technical pivot levels, macro posture (DXY/Yields),
-        and quantitative MacroScenarioEngine If-Then branches.
+        Synthesizes live 6-pillar multi-day macro regime, MT5 broker Decision Zones, session landmarks,
+        D1/H4 multi-day regime, TrapRadar diagnostics, WorldNews headlines, and MacroScenarioEngine branches.
         """
         session_title = telemetry.get("session", "Active Session")
         time_utc = telemetry.get("timestamp_utc", "")
+        discipline_hint = telemetry.get("session_discipline_hint", "")
+        is_friday_ny = bool(telemetry.get("is_friday_ny", False))
         macro = telemetry.get("macro_telemetry", {})
         dxy = macro.get("dxy", {})
-        dxy_trend = dxy.get("trend", "FLAT")
         us10y = macro.get("us10y", {})
+        vix = macro.get("vix", {})
+        oil = macro.get("oil", {})
+        dxy_price = dxy.get("price")
+        dxy_macro_trend = dxy.get("macro_trend") or dxy.get("trend", "FLAT")
+        dxy_5d = dxy.get("change_5d_pct")
+        us10y_price = us10y.get("price")
+        us10y_bps = us10y.get("change_bps")
+        vix_price = vix.get("price")
+        macro_regime = macro.get("regime", "BALANCED // CONSOLIDATION REGIME")
+        regime_thesis = macro.get("regime_thesis", "")
+        world_headlines = telemetry.get("world_news_headlines") or []
 
-        executive_thesis = (
-            f"Macro liquidity is shaped by DXY trending {dxy_trend} ({dxy.get('price', 'N/A')}) "
-            f"with US 10-Year Treasury Yields at {us10y.get('price', 'N/A')}%. "
-            f"Order flow favors disciplined execution around session opening ranges and pre-calculated catalyst thresholds."
-        )
+        if regime_thesis:
+            executive_thesis = regime_thesis
+        else:
+            dxy_str = f"{dxy_price:.2f} (5D {dxy_5d:+.2f}%)" if (dxy_price is not None and dxy_5d is not None) else str(dxy_price or "N/A")
+            y10_str = f"{us10y_price:.2f}% ({us10y_bps:+.1f} bps)" if (us10y_price is not None and us10y_bps is not None) else str(us10y_price or "N/A")
+            executive_thesis = (
+                f"[{macro_regime}] DXY {dxy_macro_trend.replace('_', ' ')} at {dxy_str}, "
+                f"US 10Y at {y10_str}, VIX at {vix_price if vix_price is not None else 'N/A'}. "
+                f"Execute strictly from Decision Zones with M5 confirmation."
+            )
+
+        # Build structured "What Happened & Why" macro narrative bullets from live pillars + Grounded Brief + WorldNewsEngine
+        macro_narrative_summary = [
+            f"Macro Regime: {macro_regime} — DXY {dxy_price if dxy_price is not None else 'N/A'} ({dxy_macro_trend.replace('_',' ')}, 5D {f'{dxy_5d:+.2f}%' if dxy_5d is not None else 'N/A'}), US10Y {f'{us10y_price:.2f}%' if us10y_price is not None else 'N/A'}, VIX {f'{vix_price:.1f}' if vix_price is not None else 'N/A'}, WTI ${oil.get('price', 'N/A')}.",
+        ]
+        if grounded_macro_brief:
+            for ln in grounded_macro_brief.splitlines():
+                cleaned = re.sub(r'^[\s\-\*\•\d\.]+', '', ln).replace('**', '').strip()
+                if len(cleaned) < 25:
+                    continue
+                if re.match(r'^(here is|below is|summary of|institutional macro)', cleaned.lower()) and cleaned.endswith(':'):
+                    continue
+                macro_narrative_summary.append(cleaned)
+                if len(macro_narrative_summary) >= 6:
+                    break
+        elif macro.get("gold_impact"):
+            macro_narrative_summary.append(f"Gold & Yields: {macro['gold_impact']}")
+        for h in world_headlines[:3]:
+            if h.get("title") and len(macro_narrative_summary) < 7:
+                macro_narrative_summary.append(f"[{h.get('severity', 'NEWS')}] {h['title']} ({h.get('source', 'Wire')})")
+
+        dxy_strong_multi = dxy_macro_trend in ("UP", "STRONG_UP") or (dxy_5d is not None and dxy_5d >= 0.4)
+        dxy_weak_multi = dxy_macro_trend in ("DOWN", "STRONG_DOWN") or (dxy_5d is not None and dxy_5d <= -0.4)
 
         pairs_plan = {}
         for sym in PAIRS:
@@ -495,67 +1023,119 @@ class SessionBriefingEngine:
             digits = 3 if "JPY" in sym else (2 if sym == "XAUUSD" else 5)
             pdh = float(p_data.get("pdh") or (spot * 1.004 if spot else 0.0))
             pdl = float(p_data.get("pdl") or (spot * 0.996 if spot else 0.0))
+            prev_close = float(p_data.get("prev_close") or pivot if (pivot := float(p_data.get("pivot") or spot)) else spot)
             today_high = float(p_data.get("today_high") or spot)
             today_low = float(p_data.get("today_low") or spot)
-            pivot = float(p_data.get("pivot") or spot)
             atr = float(p_data.get("h1_atr") or (spot * 0.003 if spot else 1.0))
             if atr <= 0:
                 atr = spot * 0.003 if spot else 1.0
 
+            d1_reg = p_data.get("d1_regime") or {}
+            h4_reg = p_data.get("h4_regime") or {}
+            lm = p_data.get("session_landmarks") or {}
+            dz_m15 = (p_data.get("decision_zones") or {}).get("m15") or {}
+            dz_h1 = (p_data.get("decision_zones") or {}).get("h1") or {}
+            u1 = dz_m15.get("upper_dz_1") or dz_h1.get("upper_dz_1")
+            u2 = dz_m15.get("upper_dz_2") or dz_h1.get("upper_dz_1")
+            l1 = dz_m15.get("lower_dz_1") or dz_h1.get("lower_dz_1")
+            l2 = dz_m15.get("lower_dz_2") or dz_h1.get("lower_dz_1")
+
             scenarios = p_data.get("catalyst_scenarios", [])
 
-            # Determine baseline bias
-            if sym == "XAUUSD" or ("USD" in sym and sym.endswith("USD")):
-                is_bullish = (spot > pivot and (today_high >= pdh or dxy_trend == "DOWN")) or (spot > pdh)
-            else:
-                is_bullish = spot >= pivot
+            # Multi-timeframe & macro-aware directional bias (avoids naive single-bar spot > pivot flips)
+            d1_label = d1_reg.get("regime_label", "RANGE_CONSOLIDATION")
+            h4_dir = h4_reg.get("direction", "FLAT")
+            h4_gate = h4_reg.get("gate", "INSIDE")
+            bull_votes = 0
+            bear_votes = 0
 
-            bias = "LONG" if is_bullish else "SHORT"
-            prob = "65%" if spot != 0 else "50%"
+            if d1_label in ("CRASH_BREAKDOWN", "TRENDING_BEAR"):
+                bear_votes += 2 if d1_label == "CRASH_BREAKDOWN" else 1
+            elif d1_label in ("PARABOLIC_BREAKOUT", "TRENDING_BULL"):
+                bull_votes += 2 if d1_label == "PARABOLIC_BREAKOUT" else 1
 
-            # Calculate institutional execution corridor (avoid zero-width point)
+            if h4_dir == "DOWN":
+                bear_votes += 2 if h4_gate == "OPEN" else 1
+            elif h4_dir == "UP":
+                bull_votes += 2 if h4_gate == "OPEN" else 1
+
+            if spot < pivot:
+                bear_votes += 1
+            elif spot > pivot:
+                bull_votes += 1
+
+            if sym in ("XAUUSD", "EURUSD", "GBPUSD"):
+                if dxy_strong_multi or "LIQUIDITY CRUNCH" in macro_regime:
+                    bear_votes += 1
+                elif dxy_weak_multi:
+                    bull_votes += 1
+            elif sym == "USDJPY":
+                if dxy_strong_multi:
+                    bull_votes += 1
+                elif dxy_weak_multi:
+                    bear_votes += 1
+
+            bias = "LONG" if bull_votes > bear_votes else "SHORT"
+            edge_gap = abs(bull_votes - bear_votes)
+            prob = "70%" if edge_gap >= 3 else ("65%" if edge_gap >= 2 else "58%")
+
             min_buf = 1.50 if sym == "XAUUSD" else (0.15 if "JPY" in sym else 0.0015)
-            buffer = max(0.25 * atr, min_buf)
+            buffer = max(0.30 * atr, min_buf)
 
+            # Anchor entry corridor to live Decision Zones / intraday landmarks (NEVER blind far-away Pivot/PDH)
             if bias == "LONG":
-                # Pullback into discount / pivot support corridor
-                entry_low = round(pivot - buffer * 0.5, digits)
-                entry_high = round(pivot + buffer * 0.5, digits)
-                if spot > pivot:
-                    entry_low = round(pivot, digits)
-                    entry_high = round(min(spot, pivot + buffer), digits)
-                if entry_high <= entry_low:
-                    entry_high = round(entry_low + buffer, digits)
-
-                sl = round(min(entry_low - 1.5 * atr, today_low * 0.998, pdl * 0.998), digits)
-                risk = max(abs(entry_high - sl), 0.5 * atr)
-                tp1 = round(entry_high + 1.0 * risk, digits)
-                tp2 = round(max(pdh, entry_high + 2.0 * risk), digits)
-                tp3 = round(tp2 + 1.0 * atr, digits)
-                tgts = sorted(list(set([tp1, tp2, tp3])))
-            else:
-                # Retest of premium / pivot resistance corridor
-                entry_low = round(pivot - buffer * 0.5, digits)
-                entry_high = round(pivot + buffer * 0.5, digits)
-                if spot < pivot:
-                    entry_high = round(pivot, digits)
-                    entry_low = round(max(spot, pivot - buffer), digits)
-                if entry_low >= entry_high:
+                if l1 is not None and float(l1["high"]) <= (spot + 0.15 * atr) and (spot - float(l1["low"])) <= (3.0 * atr):
+                    entry_low = round(float(l1["low"]), digits)
+                    entry_high = round(float(l1["high"]), digits)
+                    anchor_label = "M15/H1 Lower DZ 1 Demand"
+                elif today_low > 0 and today_low <= spot and (spot - today_low) <= (2.2 * atr):
+                    entry_low = round(today_low, digits)
+                    entry_high = round(min(spot, today_low + buffer), digits)
+                    anchor_label = "Today Intraday Low Demand"
+                else:
+                    entry_high = round(spot - 0.15 * atr, digits)
                     entry_low = round(entry_high - buffer, digits)
+                    anchor_label = "Discount Pullback Corridor"
 
-                sl = round(max(entry_high + 1.5 * atr, today_high * 1.002, pdh * 1.002), digits)
-                risk = max(abs(sl - entry_low), 0.5 * atr)
-                tp1 = round(entry_low - 1.0 * risk, digits)
-                tp2 = round(min(pdl, entry_low - 2.0 * risk), digits)
-                tp3 = round(tp2 - 1.0 * atr, digits)
-                tgts = sorted(list(set([tp1, tp2, tp3])), reverse=True)
+                sl = round(entry_low - max(0.95 * atr, min_buf * 1.5), digits)
+                risk = max(abs(entry_high - sl), 0.75 * atr)
+                # Structural ascending targets
+                cand_tgts = [round(entry_high + 1.0 * risk, digits)]
+                for lvl in (lm.get("asia_high"), lm.get("london_high"), today_high, prev_close, pdh, u1["low"] if u1 else None):
+                    if lvl and float(lvl) >= (entry_high + 0.85 * risk):
+                        cand_tgts.append(round(float(lvl), digits))
+                cand_tgts.extend([round(entry_high + 2.0 * risk, digits), round(entry_high + 3.0 * risk, digits)])
+                tgts = sorted(list(set(cand_tgts)))[:4]
+            else:
+                if u1 is not None and float(u1["low"]) >= (spot - 0.15 * atr) and (float(u1["high"]) - spot) <= (3.0 * atr):
+                    entry_low = round(float(u1["low"]), digits)
+                    entry_high = round(float(u1["high"]), digits)
+                    anchor_label = "M15/H1 Upper DZ 1 Supply"
+                elif today_high >= spot and (today_high - spot) <= (2.2 * atr):
+                    entry_high = round(today_high, digits)
+                    entry_low = round(max(spot, today_high - buffer), digits)
+                    anchor_label = "Today High / Breakdown Retest"
+                else:
+                    entry_low = round(spot + 0.15 * atr, digits)
+                    entry_high = round(entry_low + buffer, digits)
+                    anchor_label = "Premium Pullback Corridor"
+
+                sl = round(entry_high + max(0.95 * atr, min_buf * 1.5), digits)
+                risk = max(abs(sl - entry_low), 0.75 * atr)
+                # Structural descending targets
+                cand_tgts = [round(entry_low - 1.0 * risk, digits)]
+                for lvl in (lm.get("asia_low"), lm.get("london_low"), today_low, pdl, l1["high"] if l1 else None):
+                    if lvl and float(lvl) <= (entry_low - 0.85 * risk):
+                        cand_tgts.append(round(float(lvl), digits))
+                cand_tgts.extend([round(entry_low - 2.0 * risk, digits), round(entry_low - 3.0 * risk, digits)])
+                tgts = sorted(list(set(cand_tgts)), reverse=True)[:4]
 
             # Pull catalyst branches
             branches = []
-            primary_driver = "General Market Liquidity & Technical Structure"
+            primary_driver = f"{macro_regime} (DXY {dxy_price if dxy_price is not None else 'N/A'}, US10Y {f'{us10y_price:.2f}%' if us10y_price is not None else 'N/A'})"
             if scenarios:
                 top_cat = scenarios[0]
-                primary_driver = f"{top_cat.get('event_title', '')} ({top_cat.get('currency', '')})"
+                primary_driver = f"{top_cat.get('event_title', '')} ({top_cat.get('currency', '')}) · {macro_regime}"
                 sc_map = top_cat.get("scenarios", {})
                 hot_b = sc_map.get("hot_beat", {})
                 cool_m = sc_map.get("cool_miss", {})
@@ -569,7 +1149,6 @@ class SessionBriefingEngine:
                     "IF H1 closes beyond stop boundary -> Stand down, structure invalidated"
                 ]
 
-            # Incorporate TrapRadar diagnostic if available
             trap_info = p_data.get("trap_radar", {})
             trap_state = trap_info.get("trap_state", "NONE")
             if trap_state != "NONE":
@@ -579,37 +1158,25 @@ class SessionBriefingEngine:
                 trap_warning = "Session opening spike / Judas swing often hunts pre-session stops before real expansion."
                 trap_check = "Monitor liquidity boundaries for false breakout wicks."
 
-            # Build 3-Tier Risk Hierarchy Playbook (Aggressive Continuation / Structural Retest / Premium Extreme)
+            # 3-Tier Risk Hierarchy anchored realistically to spot / entry zone / outer DZ
             if bias == "LONG":
-                # 1. Aggressive / Momentum Continuation (Shallow dip, high execution risk)
-                agg_low = round(spot - 0.4 * atr, digits)
+                agg_low = round(spot - 0.35 * atr, digits)
                 agg_high = round(spot, digits)
-                agg_sl = round(agg_low - 0.6 * atr, digits)
-
-                # 2. Structural Retest (Intermediate swing origin / pivot, medium risk)
-                med_low = round(pivot - buffer * 0.5, digits)
-                med_high = round(pivot + buffer * 0.5, digits)
-                med_sl = round(med_low - 0.8 * atr, digits)
-
-                # 3. Deep Discount / Extreme Sweep (Highest R:R, low execution risk)
-                prem_low = round(min(today_low, pdl), digits)
-                prem_high = round(min(today_low, pdl) + 0.5 * atr, digits)
-                prem_sl = round(prem_low - 0.5 * atr, digits)
+                agg_sl = round(agg_low - 0.65 * atr, digits)
+                med_low, med_high, med_sl = entry_low, entry_high, sl
+                deep_base = float(l2["low"]) if (l2 and float(l2["low"]) < entry_low) else min(today_low if today_low > 0 else entry_low, entry_low - 1.0 * atr)
+                prem_low = round(deep_base, digits)
+                prem_high = round(deep_base + 0.5 * atr, digits)
+                prem_sl = round(prem_low - 0.65 * atr, digits)
             else:
-                # 1. Aggressive / Momentum Continuation (Shallow breaker, high execution risk)
                 agg_low = round(spot, digits)
-                agg_high = round(spot + 0.4 * atr, digits)
-                agg_sl = round(agg_high + 0.6 * atr, digits)
-
-                # 2. Structural Retest (Intermediate swing origin / pivot, medium risk)
-                med_low = round(pivot - buffer * 0.5, digits)
-                med_high = round(pivot + buffer * 0.5, digits)
-                med_sl = round(med_high + 0.8 * atr, digits)
-
-                # 3. Deep Premium / Extreme Sweep (Highest R:R, low execution risk)
-                prem_high = round(max(today_high, pdh), digits)
-                prem_low = round(max(today_high, pdh) - 0.5 * atr, digits)
-                prem_sl = round(prem_high + 0.5 * atr, digits)
+                agg_high = round(spot + 0.35 * atr, digits)
+                agg_sl = round(agg_high + 0.65 * atr, digits)
+                med_low, med_high, med_sl = entry_low, entry_high, sl
+                deep_cap = float(u2["high"]) if (u2 and float(u2["high"]) > entry_high) else max(today_high if today_high > 0 else entry_high, entry_high + 1.0 * atr)
+                prem_high = round(deep_cap, digits)
+                prem_low = round(deep_cap - 0.5 * atr, digits)
+                prem_sl = round(prem_high + 0.65 * atr, digits)
 
             risk_playbook = {
                 "aggressive_continuation": {
@@ -626,7 +1193,7 @@ class SessionBriefingEngine:
                     "zone": f"{med_low} - {med_high}",
                     "stop_loss": med_sl,
                     "position_sizing": "1.0x Risk (Standard Lot)",
-                    "note": "Value retest at session pivot / breaker shelf. Wait for M5 engulfing/rejection confirmation before committing."
+                    "note": f"Primary value retest at {anchor_label}. Wait for M5 engulfing/rejection confirmation before committing."
                 },
                 "premium_extreme": {
                     "tier": "LOW_RISK",
@@ -634,15 +1201,61 @@ class SessionBriefingEngine:
                     "zone": f"{prem_low} - {prem_high}",
                     "stop_loss": prem_sl,
                     "position_sizing": "1.0x - 1.25x Risk (Max Edge)",
-                    "note": "Origin of the session impulse. Defended by extreme highs/lows with maximum mathematical R:R."
+                    "note": "Outer structural extreme. Maximum mathematical R:R if liquidity sweep extends past primary zone."
                 }
             }
 
+            # Top-down multi-timeframe narrative from real MT5 data
+            d1_summary = (
+                f"{d1_label.replace('_', ' ')} (1D {d1_reg.get('change_1d_pct', 0):+.2f}%, 5D {d1_reg.get('change_5d_pct', 0):+.2f}%, "
+                f"20D {d1_reg.get('change_20d_pct', 0):+.2f}%, {d1_reg.get('streak', 'n/a')}). "
+                f"H4 {h4_dir} (Gate {h4_gate}, ADX {h4_reg.get('adx', 'n/a')})."
+            )
+            h1_summary = (
+                f"Spot {round(spot, digits)} vs H1 EMA21 {round(float(p_data.get('h1_ema21') or spot), digits)} "
+                f"(RSI {round(float(p_data.get('h1_rsi') or 50), 1)}, ATR {round(atr, digits + 1)}). "
+                f"Today H/L: {round(today_high, digits)} / {round(today_low, digits)}; Asia L/H: {lm.get('asia_low', '—')} / {lm.get('asia_high', '—')}."
+            )
+            m15_summary = f"Primary corridor anchored at {entry_low} - {entry_high} ({anchor_label}); await M5 rejection wick + engulfing confirmation."
+
+            # Conditional counter-trend scalp setup (strictly guarded R:R)
+            if bias == "SHORT":
+                sc_lo = round(float(l1["low"]) if l1 else (today_low if today_low > 0 else spot - 1.0 * atr), digits)
+                sc_hi = round(float(l1["high"]) if l1 else (sc_lo + 0.45 * atr), digits)
+                sc_sl = round(sc_lo - 0.7 * atr, digits)
+                sc_r = max(abs(sc_hi - sc_sl), 0.5 * atr)
+                scalp_setup = {
+                    "bias": "LONG",
+                    "zone": f"{sc_lo} - {sc_hi}",
+                    "condition": "ONLY IF price sweeps demand with M5 >=2x lower wick + DXY softens intraday",
+                    "trigger": f"M5 lower wick rejection inside {sc_lo}-{sc_hi} + bullish close above {sc_hi}",
+                    "stop_loss": sc_sl,
+                    "targets": [round(sc_hi + 1.0 * sc_r, digits), round(sc_hi + 1.8 * sc_r, digits)],
+                    "note": "Counter-trend scalp only (0.5x size); bank 50% at TP1." + (" Do NOT hold overnight Fri." if is_friday_ny else ""),
+                }
+            else:
+                sc_lo = round(float(u1["low"]) if u1 else (today_high - 0.45 * atr if today_high > 0 else spot + 0.6 * atr), digits)
+                sc_hi = round(float(u1["high"]) if u1 else (today_high if today_high > 0 else sc_lo + 0.45 * atr), digits)
+                sc_sl = round(sc_hi + 0.7 * atr, digits)
+                sc_r = max(abs(sc_sl - sc_lo), 0.5 * atr)
+                scalp_setup = {
+                    "bias": "SHORT",
+                    "zone": f"{sc_lo} - {sc_hi}",
+                    "condition": "ONLY IF price sweeps supply with M5 >=2x upper wick + DXY firms intraday",
+                    "trigger": f"M5 upper wick rejection inside {sc_lo}-{sc_hi} + bearish close below {sc_lo}",
+                    "stop_loss": sc_sl,
+                    "targets": [round(sc_lo - 1.0 * sc_r, digits), round(sc_lo - 1.8 * sc_r, digits)],
+                    "note": "Counter-trend scalp only (0.5x size); bank 50% at TP1." + (" Do NOT hold overnight Fri." if is_friday_ny else ""),
+                }
+
+            pair_discipline = discipline_hint
+            if d1_label == "CRASH_BREAKDOWN":
+                pair_discipline = f"CRASH/BREAKDOWN REGIME ({d1_reg.get('change_5d_pct', 0):+.2f}% 5D): Small size, no blind dip-buying. {discipline_hint}"
+
             entry_reason = (
-                f"{bias} reaction zone anchored at {entry_low}-{entry_high} around session pivot {pivot} "
-                f"(spot {spot}, H1 ATR {round(atr, digits + 1)}, PDH {pdh} / PDL {pdl}). "
+                f"{bias} anchored at {entry_low}-{entry_high} ({anchor_label}; spot {round(spot, digits)}, "
+                f"H1 ATR {round(atr, digits + 1)}, D1 {d1_label.replace('_',' ')}, H4 {h4_dir}). "
                 f"Macro driver: {primary_driver}."
-                + (f" Trap context: {trap_info.get('trap_title')}." if trap_state != "NONE" else "")
             )
 
             setup_dict = {
@@ -650,49 +1263,74 @@ class SessionBriefingEngine:
                 "probability": prob,
                 "entry_zone": f"{entry_low} - {entry_high}",
                 "entry_reason": entry_reason,
-                "trigger_confirmation": f"M5 rejection wick >= 2x candle body at {pivot} + bullish engulfing close" if bias == "LONG" else f"M5 upper wick rejection at {pivot} + bearish engulfing close",
+                "trigger_confirmation": (
+                    f"M5 lower wick rejection >= 2x body inside {entry_low}-{entry_high} + bullish engulfing close"
+                    if bias == "LONG"
+                    else f"M5 upper wick rejection >= 2x body inside {entry_low}-{entry_high} + bearish engulfing close"
+                ),
                 "stop_loss": sl,
                 "targets": tgts,
-                "trade_management": "Bank 50% risk off at TP1; trail stop to Breakeven. Avoid holding through unmanaged red folders.",
-                "risk_playbook": risk_playbook
+                "trade_management": (
+                    "Bank 50% at TP1 & trail to BE; close all intraday exposure before Friday 21:00 UTC close."
+                    if is_friday_ny
+                    else "Bank 50% risk off at TP1; trail stop to Breakeven. Avoid holding through unmanaged red folders."
+                ),
+                "risk_playbook": risk_playbook,
             }
-            # Enforce institutional validation gate (including Decision-Zone anti-collision)
+
             sanitized_setup = self._validate_and_sanitize_setup(
                 setup_dict, sym, spot, atr, digits, pdh, pdl, today_high, today_low,
                 decision_zones=p_data.get("decision_zones"),
             )
 
-            pairs_plan[sym] = {
-                "executive_bottom_line": f"{bias} bias favored while price holds {'above' if bias == 'LONG' else 'below'} pivot {pivot}. Target {sanitized_setup['targets'][1] if len(sanitized_setup['targets']) > 1 else sanitized_setup['targets'][0]}.",
+            pair_plan = {
+                "executive_bottom_line": (
+                    f"{bias} favored on retest of {sanitized_setup['entry_zone']} ({anchor_label}) in {d1_label.replace('_', ' ')} regime. "
+                    f"Target {sanitized_setup['targets'][1] if len(sanitized_setup['targets']) > 1 else sanitized_setup['targets'][0]}."
+                ),
+                "top_down_structure": {
+                    "daily_h4": d1_summary,
+                    "h1": h1_summary,
+                    "m15_m5": m15_summary,
+                },
+                "session_discipline_note": pair_discipline,
                 "primary_setup": sanitized_setup,
                 "contingency_plan": {
-                    "scenario": "Sudden macro catalyst shock driving adverse breakout through stop loss.",
-                    "probability": "35%",
-                    "counter_zone": f"{pdl} - {pdh}",
-                    "invalidation": f"Hard H1 close {'below ' + str(pdl) if bias == 'LONG' else 'above ' + str(pdh)} voids the setup."
+                    "scenario": "Sudden macro catalyst shock or DXY reversal driving breakout past structural stop loss.",
+                    "probability": "30%",
+                    "counter_zone": scalp_setup["zone"],
+                    "invalidation": f"Hard H1 close {'below ' + str(sanitized_setup['stop_loss']) if bias == 'LONG' else 'above ' + str(sanitized_setup['stop_loss'])} voids the primary thesis.",
+                    "scalp_setup": scalp_setup,
                 },
                 "macro_catalyst": {
                     "primary_driver": primary_driver,
-                    "if_then_branches": branches
+                    "if_then_branches": branches,
                 },
                 "traps_and_checklist": {
                     "trap_warning": trap_warning,
                     "checklist": [
                         f"Set alert at entry zone boundary: {sanitized_setup['entry_zone'].split(' - ')[0]}",
                         trap_check,
-                        "Check economic calendar 15 minutes before executing"
-                    ]
+                        "Check economic calendar 15 minutes before executing" + (" · No Fri overnight holds" if is_friday_ny else ""),
+                    ],
                 },
                 "catalyst_scenarios": scenarios,
-                "trap_radar": trap_info
+                "trap_radar": trap_info,
             }
+
+            pair_plan = self._sync_plan_text_after_sanitize(pair_plan, sym, spot, digits, p_data)
+            pair_plan = self._apply_trap_conflict_gate(pair_plan, trap_info)
+            pairs_plan[sym] = pair_plan
 
         return {
             "session": session_title,
             "generated_at_utc": time_utc,
+            "macro_regime": macro_regime,
             "global_macro_executive_thesis": executive_thesis,
+            "macro_narrative_summary": macro_narrative_summary,
             "engine_mode": "SYNTHESIZED_RULE_BASED",
-            "pairs": pairs_plan
+            "fallback_reason": fallback_reason,
+            "pairs": pairs_plan,
         }
 
     def _store_briefing(self, briefing: Dict, curr_info: Dict[str, Any], telemetry: Optional[Dict] = None) -> Dict:
@@ -726,8 +1364,11 @@ class SessionBriefingEngine:
 
     def generate_briefing(self, force: bool = True) -> Dict:
         """
-        Executes a single batched prompt to Gemini 2.5 Flash for all 7 pairs.
-        Falls back to rule-based synthesis if API key is absent or network fails.
+        2-Step Institutional Pre-Session Pipeline:
+          Step 1: Google-Search-grounded live macro narrative brief (with WorldNewsEngine RSS fallback).
+          Step 2: Single batched Gemini structured JSON call across all 7 pairs anchored strictly to live MT5 telemetry.
+        Falls back cleanly to deterministic rule-based synthesis if API key is absent or network fails,
+        recording the exact fallback_reason for diagnostics.
         """
         with self._gen_lock:
             if not force and not self.is_briefing_stale():
@@ -742,51 +1383,83 @@ class SessionBriefingEngine:
                 session_title = telemetry["session"]
 
                 if not self.api_key:
-                    log.info("[SessionBriefing] No GEMINI_API_KEY configured. Utilizing deterministic MacroScenarioEngine synthesis.")
-                    briefing = self._generate_rule_based_briefing(telemetry)
+                    log.info("[SessionBriefing] No GEMINI_API_KEY configured. Utilizing deterministic synthesis.")
+                    briefing = self._generate_rule_based_briefing(telemetry, fallback_reason="GEMINI_API_KEY not configured")
                     return self._store_briefing(briefing, curr_info, telemetry=telemetry)
 
-                user_prompt = f"""You are analyzing live institutional market telemetry 30 minutes before the upcoming {session_title}.
-Generate a comprehensive, tactical 5-block battle-plan for EACH of the 7 pairs: EURUSD, GBPUSD, USDJPY, GBPJPY, EURJPY, EURGBP, XAUUSD.
+                # Step 1: Lightweight live Google Search Grounding for real-world macro narrative
+                grounded_macro_brief = self._fetch_grounded_macro_brief(telemetry, curr_info, force=force)
+                prompt_telemetry = self._build_prompt_telemetry(telemetry)
 
-TELEMETRY DATA (100% REAL-TIME LIVE DATA WITH EMBEDDED IF-THEN SCENARIOS):
-{json.dumps(telemetry, indent=2)}
+                grounded_block = (
+                    f"\nLIVE GOOGLE-SEARCH MACRO NARRATIVE BRIEF (LAST 24H-10D CATALYSTS — USE FOR MACRO STORY ONLY, NOT PRICES):\n"
+                    f"{grounded_macro_brief}\n"
+                    if grounded_macro_brief
+                    else "\nLIVE MACRO NEWS SOURCE: Use `world_news_headlines` and `macro_telemetry` inside the telemetry JSON below.\n"
+                )
+
+                user_prompt = f"""You are analyzing live institutional market telemetry heading into {session_title} ({telemetry['day_of_week']}, {telemetry['timestamp_utc']}).
+Generate a comprehensive, tactical institutional battle-plan for EACH of the 7 pairs: EURUSD, GBPUSD, USDJPY, GBPJPY, EURJPY, EURGBP, XAUUSD.
+{grounded_block}
+LIVE MT5 BROKER TELEMETRY & STRUCTURAL ZONES (100% AUTHORITATIVE FOR ALL PRICE LEVELS):
+{json.dumps(prompt_telemetry, separators=(",", ":"))}
 
 REQUIREMENTS:
-1. Ensure strict macroeconomic consistency across all 7 pairs. (If DXY is weak, Gold and EURUSD must align logically).
-2. STRICT DECISION-ZONE ANCHORING RULE (CRITICAL):
-   - Every pair includes `decision_zones` (`m15.upper_dz_1`, `m15.lower_dz_1`, `h1.upper_dz_1`, `h1.lower_dz_1`).
-   - For LONG setups: `entry_zone` MUST sit in discount AT OR BELOW current `spot_price` (anchored to `lower_dz_1` Demand). NEVER place a LONG entry above spot or underneath `upper_dz_1` Supply.
-   - For SHORT setups: `entry_zone` MUST sit in premium AT OR ABOVE current `spot_price` (anchored to `upper_dz_1` Supply). NEVER place a SHORT entry below spot or on top of `lower_dz_1` Demand.
-3. For every pair, provide:
-   - executive_bottom_line: 1-sentence crisp summary that a beginner trader can understand instantly.
+1. STRICT MACRO NARRATIVE & CROSS-ASSET CONSISTENCY:
+   - Synthesize the real-world macro story (Fed/FOMC rate odds, DXY multi-day trend, US10Y yields, Gold liquidation vs safe-haven flows, central banks, geopolitics) into `global_macro_executive_thesis` and `macro_narrative_summary` (3-5 crisp bullets).
+   - Ensure strict cross-asset consistency across all 7 pairs (DXY, Yields, XAUUSD, EURUSD, GBPUSD, JPY crosses).
+   - Respect `macro_telemetry.regime` and `d1_regime.regime_label` (e.g., in `CRASH_BREAKDOWN` or `LIQUIDITY CRUNCH`, NEVER recommend blind dip buys; frame trend-aligned setups with reduced sizing and put any counter-trend bounce strictly in `contingency_plan.scalp_setup`).
+2. STRICT MT5 PRICE & DECISION-ZONE ANCHORING RULE (CRITICAL):
+   - EVERY price level MUST come strictly from the MT5 telemetry above (`spot_price`, `decision_zones`, `session_landmarks`, `h1_atr`). NEVER invent prices or copy scraped web prices.
+   - For LONG setups: `entry_zone` MUST sit in discount AT OR BELOW `spot_price` (anchored to `lower_dz_1` Demand or intraday low). NEVER place a LONG above spot or into `upper_dz_1` Supply.
+   - For SHORT setups: `entry_zone` MUST sit in premium AT OR ABOVE `spot_price` (anchored to `upper_dz_1` Supply or intraday high/prev_close). NEVER place a SHORT below spot or into `lower_dz_1` Demand.
+   - Keep `stop_loss` structurally realistic (roughly 0.8 to 2.0 x `h1_atr` past the entry zone — NEVER blindly park SL 3.5+ ATR away at yesterday's PDH/PDL on trend-collapse days).
+   - Ensure `targets` are strictly ascending (LONG) or descending (SHORT) with TP1 >= 0.8R from entry edge.
+3. RESPECT TRAP RADAR & SESSION DISCIPLINE:
+   - If `trap_radar.severity` is `CRITICAL` or `HIGH` and opposes a directional entry at spot (e.g. Bear Trap vs SHORT), reflect that explicitly in probability, trigger discipline, and warnings.
+   - Respect `session_discipline_hint` (especially Friday NY: small size, no overnight weekend holds).
+4. For every pair, provide:
+   - executive_bottom_line: 1-sentence crisp institutional summary.
+   - top_down_structure:
+     - daily_h4: multi-day regime (1D/5D/20D %, streak, H4 direction/ADX)
+     - h1: intraday structure & key landmarks (Asia/London H/L, today H/L, prev_close, H1 EMA21)
+     - m15_m5: immediate execution context & trigger zone
+   - session_discipline_note: 1-sentence sizing & session discipline rule (e.g. crash mode / Friday close).
    - primary_setup:
      - bias: "LONG" | "SHORT" | "RANGE_FADE" | "WAIT"
      - probability: e.g. "65%"
-     - entry_zone: exact price range formatted as "$low - $high" or "low - high"
-     - entry_reason: MANDATORY 1-2 sentences explaining WHY this exact entry zone and direction were chosen (cite structural level/anchor, liquidity or EMA21/pivot confluence, and macro driver — used for weekend performance tuning)
-     - trigger_confirmation: mechanical trigger rule (e.g. "M5 lower wick rejection >= 2x body at [level] + bullish engulf close")
-     - stop_loss: exact price level (beneath structural invalidation)
-     - targets: array of 3 to 5 realistic target prices (TP1, TP2, TP3, TP4)
-     - trade_management: exact de-risking instructions (e.g. move to BE at TP1, reduce risk 15m before news)
-     - risk_playbook: object with 3 risk profiles: aggressive_continuation (HIGH RISK, shallow entry), structural_retest (MED RISK, value pivot), premium_extreme (LOW RISK, origin sweep)
+     - entry_zone: exact MT5 price range formatted as "low - high"
+     - entry_reason: MANDATORY 1-2 sentences citing exact structural anchor (DZ/landmark), multi-day regime, and real macro driver
+     - trigger_confirmation: mechanical M5 trigger rule strictly matching `entry_zone`
+     - stop_loss: exact price level (numeric)
+     - targets: array of 3 to 4 realistic structural target prices (numeric)
+     - trade_management: exact de-risking & BE instructions
+     - risk_playbook: object with 3 risk profiles: aggressive_continuation, structural_retest, premium_extreme (each with badge, zone, stop_loss, position_sizing, note)
    - contingency_plan:
      - scenario: what catalyst shock would break this trade
-     - probability: e.g. "35%"
-     - counter_zone: counter-trend entry price zone
+     - probability: e.g. "30%"
+     - counter_zone: counter-trend price zone
      - invalidation: hard H1 close condition that voids the primary thesis
+     - scalp_setup: optional conditional counter-trend scalp object (`bias`, `zone`, `condition`, `trigger`, `stop_loss`, `targets` [2-3 numbers], `note`) with valid R:R
    - macro_catalyst:
-     - primary_driver: the dominant macro transmission channel
-     - if_then_branches: array of 2 actionable IF/THEN scenario statements for upcoming news
+     - primary_driver: the true dominant macro driver (e.g., Fed hike repricing + DXY squeeze, not just a low/medium calendar item)
+     - if_then_branches: array of 2 actionable IF/THEN scenario statements
    - traps_and_checklist:
-     - trap_warning: session liquidity traps (e.g. London Judas swing, spread spikes)
-     - checklist: array of 3 actionable items (alerts to set, time to de-risk)
+     - trap_warning: liquidity trap & sweep warning
+     - checklist: array of 3 concise actionable items (max 3 alerts, not alert spam)
 
 RESPOND ONLY WITH VALID JSON matching this exact structure:
 {{
   "session": "{session_title}",
   "generated_at_utc": "{telemetry['timestamp_utc']}",
-  "global_macro_executive_thesis": "2-3 sentences summarizing the cross-asset institutional capital flow across DXY, Yields, Equities and Commodities for this session.",
+  "macro_regime": "{(telemetry.get('macro_telemetry') or {}).get('regime', 'BALANCED // CONSOLIDATION REGIME')}",
+  "global_macro_executive_thesis": "2-3 sentences summarizing cross-asset capital flow, Fed/yields narrative, and crash/risk regime.",
+  "macro_narrative_summary": [
+    "Bullet 1: Fed/FOMC & Rates driver",
+    "Bullet 2: DXY & Treasury yields narrative",
+    "Bullet 3: Gold/Metals & FX cross-asset flow",
+    "Bullet 4: Geopolitics / Energy / Risk sentiment"
+  ],
   "pairs": {{
     "XAUUSD": {{ ... }},
     "EURUSD": {{ ... }},
@@ -799,25 +1472,37 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
 }}"""
 
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+                gen_cfg: Dict[str, Any] = {
+                    "responseMimeType": "application/json",
+                    "maxOutputTokens": 24576,
+                }
+                if "2.5" in str(self.model):
+                    # Cap internal thinking budget so batched 7-pair JSON synthesis finishes fast without timing out
+                    gen_cfg["thinkingConfig"] = {"thinkingBudget": 0}
                 body = json.dumps({
                     "contents": [{"parts": [{"text": f"{SYSTEM_PROMPT}\n\n{user_prompt}"}]}],
-                    "generationConfig": {"responseMimeType": "application/json"}
+                    "generationConfig": gen_cfg,
                 }).encode("utf-8")
 
                 req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
                 t0 = time.time()
                 try:
-                    log.info("[SessionBriefing] Dispatching single batched call to Gemini (%s)...", self.model)
-                    with urllib.request.urlopen(req, timeout=60.0) as resp:
+                    log.info("[SessionBriefing] Step 2: Dispatching batched 7-pair Battle-Plan call to Gemini (%s)...", self.model)
+                    with urllib.request.urlopen(req, timeout=90.0) as resp:
                         raw_resp = json.loads(resp.read().decode("utf-8"))
                         text_content = raw_resp["candidates"][0]["content"]["parts"][0]["text"]
                         parsed_data = json.loads(text_content)
                         if isinstance(parsed_data, list) and len(parsed_data) > 0:
                             parsed_data = parsed_data[0]
                         elapsed = round(time.time() - t0, 2)
-                        log.info("[SessionBriefing] Successfully generated institutional briefing in %ss!", elapsed)
+                        mode_tag = "GEMINI_GROUNDED_AI" if grounded_macro_brief else "GEMINI_AI"
+                        parsed_data["engine_mode"] = mode_tag
+                        parsed_data["fallback_reason"] = None
+                        if not parsed_data.get("macro_regime"):
+                            parsed_data["macro_regime"] = (telemetry.get("macro_telemetry") or {}).get("regime")
+                        log.info("[SessionBriefing] Successfully generated %s briefing in %ss!", mode_tag, elapsed)
 
-                        # Institutional Assertion Gate: Sanitize every pair from Gemini
+                        # Institutional Assertion Gate: Sanitize & sync every pair from Gemini
                         for sym, p_plan in parsed_data.get("pairs", {}).items():
                             p_data = telemetry.get("pairs", {}).get(sym, {})
                             spot = float(p_data.get("spot_price") or 0.0)
@@ -841,11 +1526,22 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
                                         f"{eb} {('Driver: ' + drv) if drv else ''}".strip()
                                         or f"{p_plan['primary_setup'].get('bias', 'SETUP')} anchored at {p_plan['primary_setup'].get('entry_zone', '')}."
                                     )
+                                # Sync text if sanitizer re-anchored + check TrapRadar conflict
+                                self._sync_plan_text_after_sanitize(p_plan, sym, spot, digits, p_data)
+                                self._apply_trap_conflict_gate(p_plan, p_data.get("trap_radar"))
+                                # Attach full live catalyst_scenarios & trap_radar for UI tabs
+                                if "catalyst_scenarios" not in p_plan and p_data.get("catalyst_scenarios"):
+                                    p_plan["catalyst_scenarios"] = p_data.get("catalyst_scenarios", [])
+                                if "trap_radar" not in p_plan and p_data.get("trap_radar"):
+                                    p_plan["trap_radar"] = p_data.get("trap_radar", {})
 
                         return self._store_briefing(parsed_data, curr_info, telemetry=telemetry)
                 except Exception as e:
-                    log.warning("[SessionBriefing] Gemini API call error: %s. Falling back to rule-based synthesis.", e)
-                    briefing = self._generate_rule_based_briefing(telemetry)
+                    err_str = f"{type(e).__name__}: {e}"
+                    log.warning("[SessionBriefing] Gemini API call error (%s). Falling back to rule-based synthesis.", err_str)
+                    briefing = self._generate_rule_based_briefing(
+                        telemetry, fallback_reason=err_str, grounded_macro_brief=grounded_macro_brief
+                    )
                     return self._store_briefing(briefing, curr_info, telemetry=telemetry)
             finally:
                 self._is_generating = False
@@ -922,8 +1618,11 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
                     **meta,
                     "session": self.latest_briefing.get("session"),
                     "generated_at_utc": self.latest_briefing.get("generated_at_utc"),
+                    "macro_regime": self.latest_briefing.get("macro_regime"),
                     "global_macro_executive_thesis": self.latest_briefing.get("global_macro_executive_thesis"),
+                    "macro_narrative_summary": self.latest_briefing.get("macro_narrative_summary", []),
                     "engine_mode": self.latest_briefing.get("engine_mode", "GEMINI_AI"),
+                    "fallback_reason": self.latest_briefing.get("fallback_reason"),
                     "plan": pair_plan,
                 }
             res = dict(self.latest_briefing)

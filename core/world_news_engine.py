@@ -73,6 +73,21 @@ RSS_FEEDS = [
         "category": "policy",
         "url": "https://news.google.com/rss/search?q=%22Truth+Social%22+AND+(Trump+OR+tariff+OR+sanctions+OR+dollar+OR+Fed)&hl=en-US&gl=US&ceid=US:en",
     },
+    {
+        "name": "Fed, FOMC & Treasury Yields (Google News)",
+        "category": "macro_rates",
+        "url": "https://news.google.com/rss/search?q=(FOMC+OR+%22Federal+Reserve%22+OR+%22rate+hike%22+OR+%22rate+cut%22+OR+%22Treasury+yield%22+OR+%2210-year+yield%22)+when:2d&hl=en-US&gl=US&ceid=US:en",
+    },
+    {
+        "name": "Gold, Metals & Dollar Index (Google News)",
+        "category": "metals_fx",
+        "url": "https://news.google.com/rss/search?q=(%22gold+price%22+OR+%22spot+gold%22+OR+XAUUSD+OR+%22dollar+index%22+OR+DXY)+when:2d&hl=en-US&gl=US&ceid=US:en",
+    },
+    {
+        "name": "Major FX & Central Banks (Google News)",
+        "category": "metals_fx",
+        "url": "https://news.google.com/rss/search?q=(EURUSD+OR+USDJPY+OR+GBPUSD+OR+%22ECB+rate%22+OR+%22Bank+of+Japan%22+OR+%22Bank+of+England%22)+when:2d&hl=en-US&gl=US&ceid=US:en",
+    },
 ]
 
 # Tracked pair universe
@@ -101,11 +116,16 @@ HIGH_KEYWORDS = [
     "oil pipeline", "gas pipeline", "pipeline sabotage", "debt ceiling", "emergency meeting", "embargo",
     "export ban", "mobilization", "retaliatory", "unilateral",
     "warning on yen", "market intervention", "taiwan strait", "south china sea",
-    "retaliatory tariff"
+    "retaliatory tariff",
+    "fomc minutes", "rate hike", "rate increase", "hawkish", "gold plunges", "gold tumbles",
+    "gold falls", "gold drops", "gold crashes", "gold slides", "gold surges", "dollar surges",
+    "dollar rallies", "10-year yield", "treasury yield", "yields surge", "yields spike"
 ]
 
 MEDIUM_KEYWORDS = [
     "central bank", "interest rate", "fed chair", "warsh", "powell", "bessent", "lagarde", "ueda",
+    "goolsbee", "waller", "williams", "fomc", "federal reserve", "spot gold", "gold price", "xauusd",
+    "dollar index", "dxy", "rate cut", "eurusd", "usdjpy", "gbpusd",
     "summit", "bilateral talks", "g7", "g20", "treaty", "legislation",
     "fiscal deficit", "bond yields", "inflation report", "treasury", "budget deficit",
     "presidential race", "white house policy"
@@ -546,6 +566,10 @@ class WorldNewsEngine:
         category = "Geopolitics"
         if any(w in text for w in ["speech", "remarks", "press conference", "testimony", "addresses", "fomc presser"]):
             category = "Speeches"
+        elif any(w in text for w in ["fomc", "federal reserve", "rate hike", "rate cut", "treasury yield", "10-year yield", "bond yields", "ecb rate", "bank of japan", "bank of england"]):
+            category = "Rates & Central Banks"
+        elif any(w in text for w in ["spot gold", "gold price", "xauusd", "bullion", "dollar index", "dxy", "eurusd", "usdjpy", "gbpusd"]):
+            category = "Metals & FX"
         elif any(w in text for w in ["tariff", "trade war", "sanction", "export ban", "import duty", "trade deal"]):
             category = "Trade & Policy"
         elif any(w in text for w in ["crude", "oil", "opec", "energy", "pipeline", "gas", "tanker"]):
@@ -595,6 +619,15 @@ class WorldNewsEngine:
                     implications.append("GBPUSD: BOE Rate Cut Easing")
                 elif any(w in text for w in ["sticky inflation", "hike", "wage growth"]):
                     implications.append("GBPUSD: Sticky UK Inflation (Rate Support)")
+
+        # Gold / Metals & USD / Fed Rates catalyst watch
+        if any(w in text for w in ["spot gold", "gold price", "xauusd", "bullion", "gold falls", "gold drops", "gold plunges", "gold tumbles", "gold slides", "gold surges", "gold rallies"]):
+            if "XAUUSD" not in impacted_pairs:
+                impacted_pairs.append("XAUUSD")
+        if any(w in text for w in ["fomc", "federal reserve", "fed ", "rate hike", "rate cut", "treasury yield", "10-year yield", "dollar index", "dxy", "u.s. dollar", "us dollar"]):
+            for p in ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY"]:
+                if p not in impacted_pairs:
+                    impacted_pairs.append(p)
 
         # USD / Federal Reserve: Distinguish Active Policy vs Former Officials
         is_about_powell = ("powell" in text or "jerome powell" in text) and not any(w in text for w in ["warsh", "kevin warsh"])
@@ -735,6 +768,51 @@ class WorldNewsEngine:
                 and it.get("timestamp", 0) >= cutoff_ts
             ]
         return shocks
+
+    def get_macro_brief_headlines(self, max_hours: int = 36, limit: int = 15) -> List[Dict[str, Any]]:
+        """
+        Retrieve compact, deduplicated macro/FX/metals/geopolitical headlines from the last `max_hours`
+        sorted by severity priority then recency — designed for Pre-Session Briefing context.
+        """
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        cutoff_ts = now_ts - (max_hours * 3600)
+        sev_rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "MONITOR": 3}
+        cat_boost = {"Rates & Central Banks": 0, "Metals & FX": 0, "Speeches": 1, "Energy & Commodities": 1, "Trade & Policy": 1, "Geopolitics & Defense": 2}
+
+        with self._lock:
+            candidates = [it for it in self.items if it.get("timestamp", 0) >= cutoff_ts]
+
+        # Prioritize high-signal macro/market items over generic MONITOR noise
+        candidates.sort(
+            key=lambda x: (
+                sev_rank.get(x.get("severity", "MONITOR"), 3),
+                cat_boost.get(x.get("category", ""), 3),
+                -int(x.get("timestamp", 0)),
+            )
+        )
+
+        seen_norms = set()
+        brief_items: List[Dict[str, Any]] = []
+        for it in candidates:
+            title = str(it.get("title") or "").strip()
+            if not title:
+                continue
+            norm = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()[:60]
+            if norm in seen_norms:
+                continue
+            seen_norms.add(norm)
+            brief_items.append({
+                "title": title,
+                "source": it.get("source", ""),
+                "published_at": it.get("published_at", ""),
+                "severity": it.get("severity", "MONITOR"),
+                "category": it.get("category", ""),
+                "sentiment": it.get("sentiment", "neutral"),
+                "impacted_pairs": it.get("impacted_pairs", ["GLOBAL"]),
+            })
+            if len(brief_items) >= limit:
+                break
+        return brief_items
 
 
 # Singleton instance helper

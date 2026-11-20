@@ -14,12 +14,13 @@ _cache = {
 }
 
 _FALLBACK_MATRIX = {
-    "DXY": {"price": 103.20, "change_pct": 0.0, "trend": "FLAT"},
-    "US10Y": {"price": 4.30, "change_pct": 0.0, "trend": "FLAT"},
-    "TIPS_ETF": {"price": 104.50, "change_pct": 0.0, "trend": "FLAT"},
-    "OIL": {"price": 78.00, "change_pct": 0.0, "trend": "FLAT"},
-    "SPX": {"price": 5600.0, "change_pct": 0.0, "trend": "FLAT"},
-    "VIX": {"price": 18.0, "change_pct": 0.0, "trend": "FLAT"},
+    "DXY": {"price": 103.20, "change_pct": 0.0, "change_abs": 0.0, "change_5d_pct": 0.0, "change_20d_pct": 0.0, "trend": "FLAT", "macro_trend": "FLAT"},
+    "US10Y": {"price": 4.30, "change_pct": 0.0, "change_abs": 0.0, "change_bps": 0.0, "change_5d_pct": 0.0, "change_20d_pct": 0.0, "trend": "FLAT", "macro_trend": "FLAT"},
+    "TIPS_ETF": {"price": 104.50, "change_pct": 0.0, "change_abs": 0.0, "change_5d_pct": 0.0, "change_20d_pct": 0.0, "trend": "FLAT", "macro_trend": "FLAT"},
+    "OIL": {"price": 78.00, "change_pct": 0.0, "change_abs": 0.0, "change_5d_pct": 0.0, "change_20d_pct": 0.0, "trend": "FLAT", "macro_trend": "FLAT"},
+    "SPX": {"price": 5600.0, "change_pct": 0.0, "change_abs": 0.0, "change_5d_pct": 0.0, "change_20d_pct": 0.0, "trend": "FLAT", "macro_trend": "FLAT"},
+    "VIX": {"price": 18.0, "change_pct": 0.0, "change_abs": 0.0, "change_5d_pct": 0.0, "change_20d_pct": 0.0, "trend": "FLAT", "macro_trend": "FLAT"},
+    "GOLD_FUT": {"price": 2650.0, "change_pct": 0.0, "change_abs": 0.0, "change_5d_pct": 0.0, "change_20d_pct": 0.0, "trend": "FLAT", "macro_trend": "FLAT"},
 }
 
 def _safe_float(v, default=0.0):
@@ -47,6 +48,7 @@ class MacroIntelligenceEngine:
             "OIL": "CL=F",
             "SPX": "^GSPC",
             "VIX": "^VIX",
+            "GOLD_FUT": "GC=F",
         }
 
     def get_fred_10y_real_yield(self):
@@ -87,19 +89,57 @@ class MacroIntelligenceEngine:
 
         try:
             t = yf.Ticker(ticker)
-            df = t.history(period="2d")
+            df = t.history(period="1mo")
             if len(df) >= 2:
-                last = _safe_float(df["Close"].iloc[-1])
-                prev = _safe_float(df["Close"].iloc[-2])
-                chg = _safe_pct_change(last, prev)
-                res = {
-                    "price": last,
-                    "change_pct": chg,
-                    "trend": "UP" if chg > 0 else "DOWN" if chg < 0 else "FLAT",
-                    "ts": now
-                }
-                _cache["yf_data"][ticker] = res
-                return {k: v for k, v in res.items() if k != "ts"}
+                closes = df["Close"].dropna()
+                if len(closes) >= 2:
+                    last = _safe_float(closes.iloc[-1])
+                    prev = _safe_float(closes.iloc[-2])
+                    chg = _safe_pct_change(last, prev)
+                    chg_abs = round(last - prev, 4)
+
+                    # Multi-day macro trend (5D and ~20D / 1-month window)
+                    idx_5d = max(0, len(closes) - 6)
+                    base_5d = _safe_float(closes.iloc[idx_5d], prev)
+                    chg_5d = _safe_pct_change(last, base_5d)
+
+                    base_20d = _safe_float(closes.iloc[0], prev)
+                    chg_20d = _safe_pct_change(last, base_20d)
+
+                    high_20d = round(_safe_float(df["High"].dropna().max(), last), 4) if "High" in df else round(float(closes.max()), 4)
+                    low_20d = round(_safe_float(df["Low"].dropna().min(), last), 4) if "Low" in df else round(float(closes.min()), 4)
+
+                    # Composite multi-day macro trend (avoids 1-day pullback noise masking a multi-week trend)
+                    if chg_5d >= 0.75 and chg_20d >= 1.25:
+                        macro_trend = "STRONG_UP"
+                    elif chg_5d <= -0.75 and chg_20d <= -1.25:
+                        macro_trend = "STRONG_DOWN"
+                    elif chg_5d >= 0.35 or chg_20d >= 1.0:
+                        macro_trend = "UP"
+                    elif chg_5d <= -0.35 or chg_20d <= -1.0:
+                        macro_trend = "DOWN"
+                    else:
+                        macro_trend = "FLAT"
+
+                    res = {
+                        "price": round(last, 4),
+                        "prev_close": round(prev, 4),
+                        "change_abs": chg_abs,
+                        "change_pct": chg,
+                        "change_5d_pct": chg_5d,
+                        "change_20d_pct": chg_20d,
+                        "high_20d": high_20d,
+                        "low_20d": low_20d,
+                        "trend": "UP" if chg > 0 else "DOWN" if chg < 0 else "FLAT",
+                        "macro_trend": macro_trend,
+                        "ts": now,
+                    }
+                    if ticker == "^TNX":
+                        # ^TNX quotes in percentage points (e.g., 4.98 = 4.98%), so 0.01 = 1 bp
+                        res["change_bps"] = round((last - prev) * 100.0, 1)
+                        res["change_5d_bps"] = round((last - base_5d) * 100.0, 1)
+                    _cache["yf_data"][ticker] = res
+                    return {k: v for k, v in res.items() if k != "ts"}
         except Exception:
             pass
 
@@ -259,7 +299,8 @@ class MacroIntelligenceEngine:
     def synthesize_macro_insight(self, matrix):
         """
         Synthesizes macro metrics into deterministic, professional decision-support context.
-        Directly connects detected market regime to actionable human trading guidance.
+        Directly connects detected market regime (including multi-day trend & liquidity-crunch crash mode)
+        to actionable human trading guidance.
         """
         dxy = matrix.get("DXY", {})
         spx = matrix.get("SPX", {})
@@ -267,29 +308,48 @@ class MacroIntelligenceEngine:
         us10y = matrix.get("US10Y", {})
         tips = matrix.get("TIPS_HYBRID", {})
         oil = matrix.get("OIL", {})
+        gold_fut = matrix.get("GOLD_FUT", {})
 
         vix_p = vix.get("price", 18.0)
         vix_chg = vix.get("change_pct", 0.0)
         spx_chg = spx.get("change_pct", 0.0)
+        spx_5d = spx.get("change_5d_pct", 0.0)
+        dxy_p = dxy.get("price", 103.0)
         dxy_chg = dxy.get("change_pct", 0.0)
+        dxy_5d = dxy.get("change_5d_pct", 0.0)
+        dxy_20d = dxy.get("change_20d_pct", 0.0)
+        dxy_macro_trend = dxy.get("macro_trend", "FLAT")
+        us10y_p = us10y.get("price", 4.30)
         us10y_chg = us10y.get("change_pct", 0.0)
+        us10y_bps = us10y.get("change_bps", round(us10y_chg * 0.045 * 100, 1))
         yield_press = tips.get("yield_pressure", "STEADY")
         real_yield = tips.get("real_yield_pct", 2.88)
         oil_chg = oil.get("change_pct", 0.0)
+        gold_5d = gold_fut.get("change_5d_pct", 0.0)
+        gold_20d = gold_fut.get("change_20d_pct", 0.0)
+
+        # Detect whether Gold is liquidating alongside risk assets (hawkish-rates / dollar-squeeze crash)
+        dxy_multi_firm = dxy_macro_trend in ("UP", "STRONG_UP") or dxy_5d >= 0.45 or dxy_20d >= 1.2
+        gold_liquidating = (gold_5d <= -2.0) or (gold_20d <= -4.5)
+        high_vol_stress = (vix_p > 22.0) or (vix_chg > 4.0 and spx_chg < -0.5)
 
         # 1. Determine Broad Market Regime
-        if vix_p > 22.0 or (vix_chg > 4.0 and spx_chg < -0.5):
-            regime = "RISK-OFF // ELEVATED VOLATILITY"
+        if high_vol_stress and (gold_liquidating or (dxy_multi_firm and us10y_p >= 4.50)):
+            regime = "LIQUIDITY CRUNCH // DOLLAR SQUEEZE (CRASH MODE)"
             regime_class = "bear"
             color = "#FF4D4D"
-        elif vix_p < 16.5 and spx_chg >= 0 and dxy_chg <= 0.15:
-            regime = "RISK-ON // LIQUIDITY EXPANSION"
-            regime_class = "bull"
-            color = "#00FF88"
-        elif dxy_chg > 0.35 and us10y_chg > 0.5:
+        elif high_vol_stress:
+            regime = "RISK-OFF // SAFE-HAVEN FLIGHT"
+            regime_class = "bear"
+            color = "#FF4D4D"
+        elif dxy_multi_firm and (us10y_p >= 4.50 or us10y_chg > 0.5 or dxy_chg > 0.35):
             regime = "DOLLAR DOMINANCE // RATES PRESSURE"
             regime_class = "neut"
             color = "#FFB800"
+        elif vix_p < 16.5 and spx_chg >= 0 and dxy_chg <= 0.15 and not dxy_multi_firm:
+            regime = "RISK-ON // LIQUIDITY EXPANSION"
+            regime_class = "bull"
+            color = "#00FF88"
         elif oil_chg > 2.0 and us10y_chg > 0.3:
             regime = "INFLATION SQUEEZE // ENERGY WATCH"
             regime_class = "neut"
@@ -299,15 +359,23 @@ class MacroIntelligenceEngine:
             regime_class = "neut"
             color = "#00E5FF"
 
-        # 2. Intermarket Cross Impacts
-        if yield_press == "RISING":
-            gold_impact = "Headwinds for Gold (XAUUSD) as real yields climb."
-            usd_impact = "Supports USD upside on widening real yield spreads."
+        # 2. Intermarket Cross Impacts (multi-day aware)
+        if gold_liquidating:
+            gold_impact = f"Severe liquidation pressure on Gold (5D: {gold_5d:+.2f}%, 20D: {gold_20d:+.2f}%) under strong USD ({dxy_p:.2f}) & high yields ({us10y_p:.2f}%)."
+        elif yield_press == "RISING" or dxy_multi_firm:
+            gold_impact = f"Macro headwinds for Gold (XAUUSD) as DXY holds {dxy_macro_trend.replace('_', ' ')} ({dxy_5d:+.2f}% 5D) and real yields sit at {real_yield:.2f}%."
         elif yield_press == "FALLING":
             gold_impact = "Tailwinds for Gold (XAUUSD) as real yield costs soften."
-            usd_impact = "Softens aggressive USD bids; favors non-dollar liquidity."
         else:
             gold_impact = "Real yields neutral; Gold following structural levels."
+
+        if dxy_multi_firm:
+            usd_impact = f"Multi-day USD uptrend intact (DXY {dxy_p:.2f}, 5D {dxy_5d:+.2f}%, 20D {dxy_20d:+.2f}%)."
+        elif yield_press == "RISING":
+            usd_impact = "Supports USD upside on widening real yield spreads."
+        elif yield_press == "FALLING":
+            usd_impact = "Softens aggressive USD bids; favors non-dollar liquidity."
+        else:
             usd_impact = "USD driven by equity correlations and session flow."
 
         if oil_chg > 1.5:
@@ -325,7 +393,25 @@ class MacroIntelligenceEngine:
 
         vix_status = "ELEVATED" if (vix_p >= 20.0 or vix_chg > 4.0) else "LOW" if vix_p < 15.0 else "NORMAL"
 
-        if "RISK-OFF" in regime:
+        if "LIQUIDITY CRUNCH" in regime:
+            playbook = "CRASH/LIQUIDATION MODE: Respect USD strength & Gold breakdown. Sell relief rallies into supply; avoid blind hero longs and use reduced position sizing."
+            asset_biases = [
+                {"asset": "USD", "bias": "BULL", "reason": f"Dollar squeeze (DXY {dxy_p:.2f}, 5D {dxy_5d:+.2f}%) & high rates ({us10y_p:.2f}%)"},
+                {"asset": "XAUUSD", "bias": "BEAR", "reason": f"Liquidation & rates headwind (5D {gold_5d:+.2f}%) — do NOT buy dips blindly"},
+                {"asset": "EUR / GBP", "bias": "BEAR", "reason": "High-beta FX pressured by VIX stress & USD strength"},
+                {"asset": "JPY", "bias": "NEUT", "reason": "Tug-of-war between VIX flight-to-safety and high US yields"},
+            ]
+            driver_bullets = [
+                {"label": "VIX Volatility", "val": f"{vix_p:.1f} ({vix_chg:+.1f}%)", "tone": "stress"},
+                {"label": "Dollar Squeeze", "val": f"DXY {dxy_p:.2f} (5D {dxy_5d:+.2f}%)", "tone": "stress"},
+                {"label": "Gold 5D Flow", "val": f"{gold_5d:+.2f}% · US10Y {us10y_p:.2f}% ({us10y_bps:+.0f}bp)", "tone": "stress"},
+            ]
+            regime_thesis = (
+                f"Hawkish liquidity-crunch / dollar-squeeze regime active under elevated VIX ({vix_p:.1f}), high US 10Y yields ({us10y_p:.2f}%), "
+                f"and sustained DXY strength ({dxy_p:.2f}, 5D {dxy_5d:+.2f}%). Gold is liquidating (5D {gold_5d:+.2f}%) rather than catching a clean safe-haven bid. "
+                f"Equities under stress (S&P 500 5D {spx_5d:+.2f}%); favor defensive sizing and selling failed rallies into overhead supply."
+            )
+        elif "RISK-OFF" in regime:
             playbook = "Buy Gold pullbacks; avoid chasing breakout momentum on high-beta EUR & GBP."
             asset_biases = [
                 {"asset": "XAUUSD", "bias": "BULL", "reason": "Safe-haven resilience & yield softening"},
@@ -450,36 +536,44 @@ class MacroIntelligenceEngine:
         tips = matrix.get("TIPS_HYBRID", {})
         us10y = matrix.get("US10Y", {})
         vix = matrix.get("VIX", {})
+        gold_fut = matrix.get("GOLD_FUT", {})
         regime = insight.get("regime", "")
         yield_press = tips.get("yield_pressure", "STEADY")
+        dxy_macro_trend = dxy.get("macro_trend", "FLAT")
+        dxy_5d = dxy.get("change_5d_pct", 0.0)
+        gold_5d = gold_fut.get("change_5d_pct", 0.0)
 
         sym = symbol.upper()
 
         if "XAU" in sym or "GOLD" in sym:
-            # Gold strongly driven by Real Yields & USD
-            if yield_press == "FALLING" and dxy.get("change_pct", 0) <= 0.1:
+            # Gold strongly driven by Real Yields, multi-day USD trend & liquidation regime
+            if "LIQUIDITY CRUNCH" in regime or gold_5d <= -2.0 or (dxy_macro_trend in ("UP", "STRONG_UP") and us10y.get("price", 0) >= 4.5):
+                status = "BEARISH HEADWIND"
+                cls = "bear"
+                rationale = f"Liquidation / strong-USD headwind (DXY {dxy_macro_trend.replace('_',' ')} 5D {dxy_5d:+.2f}%, Gold 5D {gold_5d:+.2f}%, US10Y {us10y.get('price', 0):.2f}%)."
+            elif yield_press == "FALLING" and dxy.get("change_pct", 0) <= 0.1 and dxy_macro_trend not in ("UP", "STRONG_UP"):
                 status = "FAVORABLE LONGS"
                 cls = "bull"
                 rationale = "Softening real yields (TIPS pressure FALLING) + soft DXY provides macro tailwind for Gold upside."
-            elif yield_press == "RISING" and dxy.get("change_pct", 0) > 0:
+            elif yield_press == "RISING" and (dxy.get("change_pct", 0) > 0 or dxy_macro_trend in ("UP", "STRONG_UP")):
                 status = "BEARISH HEADWIND"
                 cls = "bear"
                 rationale = "Rising real yields + stronger USD create strong macro friction against long positioning."
             else:
                 status = "MIXED MACRO"
                 cls = "neut"
-                rationale = f"Real yield pressure {yield_press}; prioritize technical liquidity levels over macro momentum."
+                rationale = f"Real yield pressure {yield_press}; DXY 5D {dxy_5d:+.2f}%; prioritize technical liquidity levels."
 
         elif sym in ("EURUSD", "GBPUSD"):
             dxy_chg = dxy.get("change_pct", 0)
-            if dxy_chg < -0.15 and "RISK-ON" in regime:
+            if dxy_chg < -0.15 and dxy_macro_trend not in ("UP", "STRONG_UP") and "RISK-ON" in regime:
                 status = "FAVORABLE LONGS"
                 cls = "bull"
                 rationale = "DXY downward momentum coupled with Risk-On sentiment supports pro-cyclical currency appreciation."
-            elif dxy_chg > 0.25 or "RISK-OFF" in regime:
+            elif dxy_chg > 0.25 or dxy_macro_trend in ("UP", "STRONG_UP") or "RISK-OFF" in regime or "LIQUIDITY CRUNCH" in regime:
                 status = "BEARISH HEADWIND"
                 cls = "bear"
-                rationale = f"DXY upside momentum and defensive risk tone pose headwinds for {sym} longs."
+                rationale = f"Sustained DXY strength (5D {dxy_5d:+.2f}%) and defensive risk tone pose headwinds for {sym} longs."
             else:
                 status = "BALANCED"
                 cls = "neut"
@@ -529,6 +623,14 @@ class MacroIntelligenceEngine:
             "yield_pressure": yield_press,
             "regime": regime
         }
+
+    def get_snapshot(self):
+        """Backwards-compatible alias returning the live macro pillar matrix."""
+        return self.get_macro_matrix()
+
+    def get_tips_real_yield(self):
+        """Backwards-compatible alias returning the hybrid 10Y TIPS real yield telemetry."""
+        return self.get_macro_matrix().get("TIPS_HYBRID", {})
 
     def get_full_intelligence(self):
         matrix = self.get_macro_matrix()
