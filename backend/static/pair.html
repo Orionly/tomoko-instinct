@@ -512,8 +512,93 @@
     width:100%; height:550px; background:#070B12; position:relative; overflow:hidden;
   }
   .dz-quick-hud{
-    display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:'JetBrains Mono',monospace;
-    font-size:10px; padding:6px 14px; background:rgba(7,11,18,0.95); border-bottom:1px solid rgba(255,255,255,0.06);
+    display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; font-family:'JetBrains Mono',monospace;
+    font-size:10px; padding:7px 14px; background:rgba(7,11,18,0.95); border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  .dz-hud-left{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:1; min-width:260px;
+  }
+  .dna-snap-dock{
+    display:none; align-items:center; gap:6px; flex-wrap:wrap;
+    background:rgba(14,20,34,0.88); border:1px solid rgba(0,229,255,0.22);
+    border-radius:8px; padding:4px 7px;
+  }
+  .dna-mode-seg{
+    display:inline-flex; background:rgba(5,7,10,0.75); border:1px solid rgba(255,255,255,0.09);
+    border-radius:5px; overflow:hidden;
+  }
+  .dna-mode-btn{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:700;
+    color:#94A3B8; background:transparent; border:0; padding:4px 8px; cursor:pointer;
+    transition:all 0.15s;
+  }
+  .dna-mode-btn:hover{ color:#E2E8F0; }
+  .dna-mode-btn.active{ background:rgba(0,229,255,0.18); color:var(--cyan); }
+  .dna-mode-btn.trade.active{ background:rgba(255,184,0,0.2); color:var(--gold); }
+  .dna-snap-btn{
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800;
+    color:#05070A; background:linear-gradient(135deg, #00E5FF, #38BDF8);
+    border:1px solid rgba(0,229,255,0.7); border-radius:6px; padding:4px 10px;
+    cursor:pointer; display:inline-flex; align-items:center; gap:5px;
+    transition:all 0.15s ease; box-shadow:0 0 12px rgba(0,229,255,0.22);
+  }
+  .dna-snap-btn:hover{ filter:brightness(1.1); transform:translateY(-1px); box-shadow:0 0 16px rgba(0,229,255,0.38); }
+  .dna-snap-btn:disabled{ opacity:0.6; cursor:wait; transform:none; }
+  .dna-dock-pill{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:700;
+    color:#CBD5E1; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12);
+    border-radius:6px; padding:4px 8px; cursor:pointer; display:inline-flex; align-items:center; gap:5px;
+    transition:all 0.15s;
+  }
+  .dna-dock-pill:hover{ border-color:rgba(0,229,255,0.4); color:#FFFFFF; background:rgba(0,229,255,0.08); }
+  .dna-dock-pill.has-items{ border-color:rgba(0,255,136,0.45); color:#00FF88; background:rgba(0,255,136,0.1); }
+  .dna-dock-pill.locked{ border-color:rgba(255,184,0,0.55); color:#FFB800; background:rgba(255,184,0,0.12); }
+  .tv-snap-flash{ animation:tvSnapFlash 0.45s ease-out; }
+  @keyframes tvSnapFlash{
+    0%{ box-shadow:inset 0 0 0 3px #00E5FF, 0 0 24px rgba(0,229,255,0.55); }
+    100%{ box-shadow:none; }
+  }
+  #dna-queue-popover{
+    display:none; position:fixed; z-index:9999; width:340px; max-width:92vw;
+    background:#0B111E; border:1px solid rgba(0,229,255,0.35); border-radius:10px;
+    box-shadow:0 16px 42px rgba(0,0,0,0.75); padding:10px 12px;
+    font-family:'JetBrains Mono',monospace; color:#E2E8F0;
+  }
+  .dna-pop-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding-bottom:7px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.08);
+    font-size:10.5px; font-weight:800; color:var(--cyan);
+  }
+  .dna-pop-list{
+    max-height:240px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
+  }
+  .dna-pop-row{
+    display:flex; align-items:center; gap:8px; padding:5px 7px;
+    background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);
+    border-radius:6px; font-size:9.5px;
+  }
+  .dna-pop-thumb{
+    width:52px; height:32px; object-fit:cover; border-radius:4px;
+    border:1px solid rgba(255,255,255,0.15); cursor:pointer; flex-shrink:0;
+  }
+  .dna-pop-info{ flex:1; min-width:0; overflow:hidden; }
+  .dna-pop-name{ color:#F1F5F9; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dna-pop-meta{ color:#94A3B8; font-size:8.5px; margin-top:2px; }
+  .dna-pop-del{
+    background:rgba(255,77,77,0.12); border:1px solid rgba(255,77,77,0.35); color:#FF5A79;
+    border-radius:4px; padding:2px 6px; font-size:10px; cursor:pointer; font-weight:700;
+  }
+  .dna-pop-del:hover{ background:rgba(255,77,77,0.28); }
+  .dna-pop-foot{
+    margin-top:8px; padding-top:7px; border-top:1px solid rgba(255,255,255,0.08);
+    font-size:9px; color:#94A3B8; display:flex; flex-direction:column; gap:4px;
+  }
+  #dna-toast{
+    position:fixed; bottom:20px; right:20px; z-index:10000; display:none;
+    max-width:400px; padding:10px 14px; border-radius:9px;
+    background:rgba(11,17,30,0.96); border:1px solid rgba(0,229,255,0.45);
+    box-shadow:0 12px 32px rgba(0,0,0,0.65); font-family:'JetBrains Mono',monospace;
+    font-size:11px; color:#E2E8F0; line-height:1.45;
   }
   .hud-badge{
     display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:4px;
@@ -1339,12 +1424,23 @@
           </div>
         </div>
 
-        <!-- Quick Institutional Level HUD Banner (Always visible above chart) -->
+        <!-- Quick Institutional Level HUD Banner + Private Trader DNA Snapshot Dock -->
         <div id="dz-quick-hud" class="dz-quick-hud">
-          <span style="color:#64748B;font-weight:700;">LEVELS HUD:</span>
-          <span id="hud-upper-dz" class="hud-badge upper">Upper DZ 1: Calculating…</span>
-          <span id="hud-lower-dz" class="hud-badge lower">Lower DZ 1: Calculating…</span>
-          <span id="hud-plan" class="hud-badge plan">Battle-Plan: Standby</span>
+          <div class="dz-hud-left">
+            <span style="color:#64748B;font-weight:700;">LEVELS HUD:</span>
+            <span id="hud-upper-dz" class="hud-badge upper">Upper DZ 1: Calculating…</span>
+            <span id="hud-lower-dz" class="hud-badge lower">Lower DZ 1: Calculating…</span>
+            <span id="hud-plan" class="hud-badge plan">Battle-Plan: Standby</span>
+          </div>
+          <div id="dna-snap-dock" class="dna-snap-dock" title="Private Trader DNA Snapshot Dropoff (Saves PNG + Live MT5 Context for /dna & LLM Vault)">
+            <div class="dna-mode-seg" role="group" aria-label="Snapshot Type">
+              <button id="dna-mode-zones" class="dna-mode-btn active" onclick="setDnaSnapMode('ZONES')" title="Tag snapshot as Pre-Session Zone Markup">Zones</button>
+              <button id="dna-mode-trade" class="dna-mode-btn trade" onclick="setDnaSnapMode('TRADE')" title="Tag snapshot as Trade Entry Execution Review">Trade</button>
+            </div>
+            <button id="btn-dna-snap" class="dna-snap-btn" onclick="captureDnaSnapshot()" title="Capture chart viewport directly into trader_dna/dropoff/ (Ctrl+V clipboard paste also supported)">📸 Snap → DNA</button>
+            <button id="btn-dna-queue" class="dna-dock-pill" onclick="toggleDnaQueuePopover(event)" title="View pending snapshots queued for /dna ingestion">📂 0 queued ▾</button>
+            <button id="btn-tv-lock" class="dna-dock-pill" onclick="toggleTvCanvasLock()" title="Lock TradingView iframe so switching Tomoko M15/H1/H4 tabs won't wipe your drawings">🔓 TV Sync</button>
+          </div>
         </div>
 
         <!-- TradingView Embedded Terminal Viewport -->
@@ -2684,8 +2780,12 @@ function setDecisionZoneTF(tf){
     btn.classList.toggle('active', btn.dataset.tf === tf);
   });
   if(currentChartMode === 'tradingview'){
-    currentTvInterval = null; // force reload TV widget with new timeframe
-    initTradingViewWidget(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.symbol : 'XAUUSD', ACTIVE_DZ_TF);
+    if(!window._tvCanvasLocked){
+      currentTvInterval = null; // reload TV widget with new timeframe when unlocked
+      initTradingViewWidget(CURRENT_SCAN_DATA ? CURRENT_SCAN_DATA.symbol : 'XAUUSD', ACTIVE_DZ_TF);
+    } else if(typeof showDnaToast === 'function'){
+      showDnaToast(`🔒 TV Canvas Locked — Tomoko telemetry switched to ${tf.toUpperCase()} without wiping your TV drawings.`, 'info', 2600);
+    }
   } else {
     if(CURRENT_SCAN_DATA) {
       fetchAndRenderDzCandles(CURRENT_SCAN_DATA.symbol, ACTIVE_DZ_TF, CURRENT_SCAN_DATA.price, true);
@@ -3822,6 +3922,395 @@ loadPairBattleRecord(false);
 setInterval(()=>loadPairBattleRecord(false), 60000);
 setInterval(tick, 1000);
 tick();
+
+// =========================================================================
+// PRIVATE TRADER DNA SNAPSHOT DOCK (Zero API Quota · Saves PNG + Context)
+// =========================================================================
+let dnaSnapMode = localStorage.getItem('tomoko_dna_snap_mode') || 'ZONES';
+let dnaCaptureStream = null;
+let dnaCaptureCropped = false;
+let dnaPendingState = { count: 0, items: [], vault_dataset: {} };
+let dnaToastTimer = null;
+window._tvCanvasLocked = localStorage.getItem('tomoko_tv_canvas_locked') === '1';
+
+function _ensureDnaOverlayEls(){
+  if(!$('dna-queue-popover')){
+    const pop = document.createElement('div');
+    pop.id = 'dna-queue-popover';
+    document.body.appendChild(pop);
+  }
+  if(!$('dna-toast')){
+    const toast = document.createElement('div');
+    toast.id = 'dna-toast';
+    document.body.appendChild(toast);
+  }
+}
+
+function showDnaToast(msg, kind='ok', ms=4200){
+  _ensureDnaOverlayEls();
+  const el = $('dna-toast');
+  if(!el) return;
+  const borderCol = kind === 'err' ? 'rgba(255,77,77,0.65)' : (kind === 'info' ? 'rgba(255,184,0,0.55)' : 'rgba(0,255,136,0.55)');
+  el.style.borderColor = borderCol;
+  el.textContent = msg;
+  el.style.display = 'block';
+  if(dnaToastTimer) clearTimeout(dnaToastTimer);
+  dnaToastTimer = setTimeout(()=>{ el.style.display = 'none'; }, ms);
+}
+
+function setDnaSnapMode(mode){
+  dnaSnapMode = (mode === 'TRADE') ? 'TRADE' : 'ZONES';
+  localStorage.setItem('tomoko_dna_snap_mode', dnaSnapMode);
+  const zBtn = $('dna-mode-zones');
+  const tBtn = $('dna-mode-trade');
+  if(zBtn) zBtn.classList.toggle('active', dnaSnapMode === 'ZONES');
+  if(tBtn) tBtn.classList.toggle('active', dnaSnapMode === 'TRADE');
+}
+
+function _renderTvLockBtn(){
+  const btn = $('btn-tv-lock');
+  if(!btn) return;
+  const locked = !!window._tvCanvasLocked;
+  btn.classList.toggle('locked', locked);
+  btn.textContent = locked ? '🔒 TV Locked' : '🔓 TV Sync';
+}
+
+function toggleTvCanvasLock(){
+  window._tvCanvasLocked = !window._tvCanvasLocked;
+  localStorage.setItem('tomoko_tv_canvas_locked', window._tvCanvasLocked ? '1' : '0');
+  _renderTvLockBtn();
+  showDnaToast(
+    window._tvCanvasLocked
+      ? '🔒 TV Canvas Locked — your TradingView drawings stay safe while switching Tomoko TF tabs.'
+      : '🔓 TV Sync Enabled — Tomoko TF tabs will sync the TradingView widget.',
+    'info', 2800
+  );
+}
+
+async function refreshDnaPending(){
+  try{
+    const r = await fetch('/api/dna/pending');
+    if(!r.ok) return false;
+    const j = await r.json();
+    if(!j || !j.enabled) return false;
+    dnaPendingState = j;
+    const dock = $('dna-snap-dock');
+    if(dock) dock.style.display = 'inline-flex';
+    const qBtn = $('btn-dna-queue');
+    if(qBtn){
+      const n = j.count || 0;
+      qBtn.textContent = `📂 ${n} queued ▾`;
+      qBtn.classList.toggle('has-items', n > 0);
+    }
+    const pop = $('dna-queue-popover');
+    if(pop && pop.style.display === 'block') renderDnaQueuePopover();
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+function renderDnaQueuePopover(){
+  _ensureDnaOverlayEls();
+  const pop = $('dna-queue-popover');
+  if(!pop) return;
+  const items = dnaPendingState.items || [];
+  const vs = dnaPendingState.vault_dataset || {};
+  const listHtml = items.length ? items.map(it => `
+    <div class="dna-pop-row">
+      <img class="dna-pop-thumb" src="${esc(it.preview_url)}" alt="${esc(it.filename)}" onclick="window.open('${esc(it.preview_url)}','_blank')" title="Click to inspect full snapshot" />
+      <div class="dna-pop-info">
+        <div class="dna-pop-name" title="${esc(it.filename)}">${esc(it.filename)}</div>
+        <div class="dna-pop-meta">${esc(it.created_at)} · ${it.size_kb} KB ${it.has_context ? '· <span style="color:#00E5FF;">+CTX</span>' : ''}</div>
+      </div>
+      <button class="dna-pop-del" onclick="deleteDnaPending('${esc(it.filename)}')" title="Remove snapshot">✕</button>
+    </div>
+  `).join('') : `<div style="font-size:10px;color:#64748B;padding:10px 4px;text-align:center;">Dropoff is clean. Click <b>📸 Snap → DNA</b> (or paste with <b>Ctrl+V</b>) to queue a chart.</div>`;
+
+  pop.innerHTML = `
+    <div class="dna-pop-head">
+      <span>🧬 TRADER DNA DROPOFF (${items.length})</span>
+      <button onclick="$('dna-queue-popover').style.display='none'" style="background:none;border:0;color:#94A3B8;cursor:pointer;font-size:12px;">✕</button>
+    </div>
+    <div class="dna-pop-list">${listHtml}</div>
+    <div class="dna-pop-foot">
+      <div>💬 Next step: type <b style="color:#00E5FF;">/dna</b> in Antigravity chat (0 Gemini API quota)</div>
+      <div style="color:#64748B;">D: Vault Dataset → <b>${vs.llm_rows ?? 0}</b> LLM rows · <b>${vs.vlm_rows ?? 0}</b> VLM rows · <b>${vs.images ?? 0}</b> imgs</div>
+    </div>
+  `;
+}
+
+function toggleDnaQueuePopover(ev){
+  if(ev) ev.stopPropagation();
+  _ensureDnaOverlayEls();
+  const pop = $('dna-queue-popover');
+  const btn = $('btn-dna-queue');
+  if(!pop || !btn) return;
+  if(pop.style.display === 'block'){
+    pop.style.display = 'none';
+    return;
+  }
+  refreshDnaPending().then(()=>{
+    renderDnaQueuePopover();
+    const rect = btn.getBoundingClientRect();
+    pop.style.display = 'block';
+    const popW = pop.offsetWidth || 340;
+    const left = Math.max(10, Math.min(window.innerWidth - popW - 10, rect.right - popW));
+    const top = Math.min(window.innerHeight - 120, rect.bottom + 8);
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+  });
+}
+
+async function deleteDnaPending(filename){
+  try{
+    const r = await fetch(`/api/dna/pending/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    if(r.ok){
+      await refreshDnaPending();
+      renderDnaQueuePopover();
+      showDnaToast(`🗑️ Removed ${filename} from dropoff.`, 'info', 2500);
+    }
+  }catch(e){
+    showDnaToast(`Failed to delete ${filename}: ${e.message}`, 'err');
+  }
+}
+
+function _buildClientMarketContext(){
+  const scan = CURRENT_SCAN_DATA || {};
+  const tfKey = (ACTIVE_DZ_TF || 'm15').toLowerCase();
+  const dz = (scan.decision_zones || {})[tfKey] || {};
+  const bp = CURRENT_BATTLE_PLAN && CURRENT_BATTLE_PLAN.primary_setup ? {
+    bias: CURRENT_BATTLE_PLAN.primary_setup.bias,
+    entry_zone: CURRENT_BATTLE_PLAN.primary_setup.entry_zone,
+    stop_loss: CURRENT_BATTLE_PLAN.primary_setup.stop_loss,
+    targets: CURRENT_BATTLE_PLAN.primary_setup.targets,
+  } : null;
+  return {
+    chart_mode: currentChartMode,
+    ui_tf_tab: (ACTIVE_DZ_TF || 'm15').toUpperCase(),
+    tv_locked: !!window._tvCanvasLocked,
+    spot_price_ui: scan.price ?? null,
+    upper_dz_1: dz.upper_dz_1 ? { low: dz.upper_dz_1.low, high: dz.upper_dz_1.high, midline: dz.upper_dz_1.midline } : null,
+    lower_dz_1: dz.lower_dz_1 ? { low: dz.lower_dz_1.low, high: dz.lower_dz_1.high, midline: dz.lower_dz_1.midline } : null,
+    active_battle_plan: bp,
+  };
+}
+
+async function _uploadDnaPngDataUrl(dataUrl, sourceTag='capture'){
+  const sym = (CURRENT_SCAN_DATA && CURRENT_SCAN_DATA.symbol) ? CURRENT_SCAN_DATA.symbol : (typeof SYMBOL !== 'undefined' ? SYMBOL : 'XAUUSD');
+  const tf = (ACTIVE_DZ_TF || 'm15').toUpperCase();
+  const resp = await fetch('/api/dna/snapshot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      image_b64: dataUrl,
+      symbol: sym,
+      timeframe: tf,
+      mode: dnaSnapMode,
+      notes: sourceTag === 'paste' ? 'Captured via clipboard paste on pair terminal' : '',
+      market_context: _buildClientMarketContext(),
+    }),
+  });
+  const j = await resp.json();
+  if(!resp.ok || !j.success){
+    throw new Error(j.detail || j.error || 'Upload failed');
+  }
+  await refreshDnaPending();
+  const vp = currentChartMode === 'tradingview' ? $('tv-chart-viewport') : $('dz-chart-viewport');
+  if(vp){
+    vp.classList.remove('tv-snap-flash');
+    void vp.offsetWidth;
+    vp.classList.add('tv-snap-flash');
+  }
+  showDnaToast(`✅ Saved ${j.filename} (${j.size_kb} KB + MT5 CTX) → trader_dna/dropoff/ (${j.pending_count} queued). Run /dna in chat.`, 'ok', 4600);
+  return j;
+}
+
+async function _captureRawMt5CanvasPng(){
+  if(!dzChart || typeof dzChart.takeScreenshot !== 'function'){
+    throw new Error('Raw MT5 chart not initialized yet');
+  }
+  const baseCanvas = dzChart.takeScreenshot();
+  const out = document.createElement('canvas');
+  out.width = baseCanvas.width;
+  out.height = baseCanvas.height;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(baseCanvas, 0, 0);
+
+  // Composite SVG zone overlay if present
+  const svg = $('dz-chart-overlay');
+  if(svg && svg.innerHTML.trim()){
+    const w = svg.clientWidth || baseCanvas.width;
+    const h = svg.clientHeight || baseCanvas.height;
+    const xml = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${svg.innerHTML}</svg>`;
+    const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    try{
+      await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => { ctx.drawImage(img, 0, 0, out.width, out.height); resolve(); };
+        img.onerror = reject;
+        img.src = url;
+      });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+  return out.toDataURL('image/png');
+}
+
+async function _ensureTabCaptureStream(){
+  const existingTrack = dnaCaptureStream && dnaCaptureStream.getVideoTracks()[0];
+  if(existingTrack && existingTrack.readyState === 'live'){
+    return existingTrack;
+  }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+    throw new Error('Browser screen capture is not supported here. Tip: use Win+Shift+S then Ctrl+V on this page.');
+  }
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: { displaySurface: 'browser', frameRate: 15 },
+    audio: false,
+    preferCurrentTab: true,
+    selfBrowserSurface: 'include',
+  });
+  const track = stream.getVideoTracks()[0];
+  const settings = (typeof track.getSettings === 'function') ? track.getSettings() : {};
+  if(settings.displaySurface && settings.displaySurface !== 'browser'){
+    track.stop();
+    throw new Error('Please choose "This Tab" in the browser prompt so Tomoko can auto-crop strictly to the TradingView terminal.');
+  }
+  dnaCaptureStream = stream;
+  track.onended = () => {
+    dnaCaptureStream = null;
+  };
+  return track;
+}
+
+async function _captureTvViewportPng(){
+  const targetEl = $('tv-chart-viewport');
+  if(!targetEl) throw new Error('TradingView viewport not found');
+
+  await _ensureTabCaptureStream();
+
+  // Center the TradingView terminal cleanly inside the browser viewport before capturing
+  targetEl.scrollIntoView({ behavior: 'instant', block: 'center' });
+
+  const video = document.createElement('video');
+  video.srcObject = dnaCaptureStream;
+  video.muted = true;
+  video.playsInline = true;
+  await video.play();
+
+  // Wait for Chrome's tab capture compositor to flush the scrolled frame
+  await new Promise(r => setTimeout(r, 180));
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if(!vw || !vh){
+    video.pause();
+    video.srcObject = null;
+    throw new Error('Empty video frame captured');
+  }
+
+  // Strictly crop ONLY the #tv-chart-viewport bounding rectangle from the tab frame
+  const rect = targetEl.getBoundingClientRect();
+  const winW = Math.max(window.innerWidth, 1);
+  const winH = Math.max(window.innerHeight, 1);
+  const scaleX = vw / winW;
+  const scaleY = vh / winH;
+
+  const visLeft = Math.max(0, rect.left);
+  const visTop = Math.max(0, rect.top);
+  const visRight = Math.min(winW, rect.right);
+  const visBottom = Math.min(winH, rect.bottom);
+
+  const sx = Math.round(visLeft * scaleX);
+  const sy = Math.round(visTop * scaleY);
+  const sw = Math.max(20, Math.min(vw - sx, Math.round((visRight - visLeft) * scaleX)));
+  const sh = Math.max(20, Math.min(vh - sy, Math.round((visBottom - visTop) * scaleY)));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = sw;
+  canvas.height = sh;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+
+  video.pause();
+  video.srcObject = null;
+  return { dataUrl: canvas.toDataURL('image/png'), width: sw, height: sh };
+}
+
+async function captureDnaSnapshot(){
+  const btn = $('btn-dna-snap');
+  if(btn){
+    btn.disabled = true;
+    btn.textContent = '⏳ Snapping…';
+  }
+  try{
+    let dataUrl;
+    if(currentChartMode === 'lightweight'){
+      dataUrl = await _captureRawMt5CanvasPng();
+    } else {
+      const cap = await _captureTvViewportPng();
+      dataUrl = cap.dataUrl;
+    }
+    await _uploadDnaPngDataUrl(dataUrl, 'capture');
+  }catch(err){
+    const msg = (err && err.name === 'NotAllowedError')
+      ? 'Capture cancelled. Tip: allow "This Tab" once per session, or press Ctrl+V to paste any snipped chart.'
+      : `Snapshot failed: ${err && err.message ? err.message : err}`;
+    showDnaToast(msg, 'err', 4800);
+  }finally{
+    if(btn){
+      btn.disabled = false;
+      btn.textContent = '📸 Snap → DNA';
+    }
+  }
+}
+
+// Secondary ultra-fast path: Ctrl+V clipboard PNG paste anywhere on the pair page
+window.addEventListener('paste', async (ev) => {
+  const dock = $('dna-snap-dock');
+  if(!dock || dock.style.display === 'none') return;
+  const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+  if(tag === 'input' || tag === 'textarea') return;
+  const items = ev.clipboardData && ev.clipboardData.items;
+  if(!items) return;
+  for(const item of items){
+    if(item.type && item.type.startsWith('image/')){
+      const blob = item.getAsFile();
+      if(!blob) continue;
+      ev.preventDefault();
+      try{
+        const bmp = await createImageBitmap(blob);
+        const c = document.createElement('canvas');
+        c.width = bmp.width;
+        c.height = bmp.height;
+        c.getContext('2d').drawImage(bmp, 0, 0);
+        await _uploadDnaPngDataUrl(c.toDataURL('image/png'), 'paste');
+      }catch(e){
+        showDnaToast(`Clipboard paste failed: ${e.message}`, 'err');
+      }
+      break;
+    }
+  }
+});
+
+// Close popover when clicking outside
+document.addEventListener('click', (ev) => {
+  const pop = $('dna-queue-popover');
+  const btn = $('btn-dna-queue');
+  if(pop && pop.style.display === 'block' && !pop.contains(ev.target) && (!btn || !btn.contains(ev.target))){
+    pop.style.display = 'none';
+  }
+});
+
+(function initDnaSnapDock(){
+  setDnaSnapMode(dnaSnapMode);
+  _renderTvLockBtn();
+  refreshDnaPending();
+})();
 
 // Auto-activate Chart Replay Overlay if navigated from BattleRecord with ?battle_id=...
 (function checkUrlBattleOverlay(){

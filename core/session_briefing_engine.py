@@ -29,6 +29,103 @@ log = logging.getLogger(__name__)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRIEFING_CACHE_FILE = os.path.join(ROOT, "logs", "session_briefings.json")
+TUNED_ENTRY_DNA_PATH = os.path.join(ROOT, "data", "tuned_entry_dna.json")
+
+DEFAULT_ENTRY_PARAMS: Dict[str, Any] = {
+    "default_sl_buf_atr": 0.85,
+    "max_sl_dist_atr": 2.20,
+    "min_tp1_rr": 0.80,
+    "tp1_rr": 1.00,
+    "tp2_rr": 2.00,
+    "wick_rejection_ratio": 0.55,
+    "require_displacement": True,
+}
+_ENTRY_DNA_CACHE: Dict[str, Any] = {"mtime": None, "data": None}
+
+
+def load_tuned_entry_dna() -> Optional[Dict[str, Any]]:
+    """Load weekend-calibrated Entry Execution DNA from data/tuned_entry_dna.json (mtime-cached)."""
+    try:
+        if not os.path.isfile(TUNED_ENTRY_DNA_PATH):
+            _ENTRY_DNA_CACHE["mtime"] = None
+            _ENTRY_DNA_CACHE["data"] = None
+            return None
+        mtime = os.path.getmtime(TUNED_ENTRY_DNA_PATH)
+        if _ENTRY_DNA_CACHE["mtime"] != mtime:
+            with open(TUNED_ENTRY_DNA_PATH, "r", encoding="utf-8") as f:
+                _ENTRY_DNA_CACHE["data"] = json.load(f)
+            _ENTRY_DNA_CACHE["mtime"] = mtime
+        return _ENTRY_DNA_CACHE["data"]
+    except Exception:
+        return None
+
+
+def get_effective_entry_params(symbol: str = "XAUUSD") -> Dict[str, Any]:
+    """Return effective SL/TP/trigger parameters, merging weekend-calibrated overrides when available."""
+    eff = dict(DEFAULT_ENTRY_PARAMS)
+    tuned = load_tuned_entry_dna()
+    if not isinstance(tuned, dict) or int(tuned.get("trades_total", 0) or 0) <= 0:
+        return eff
+    global_p = tuned.get("effective_params") or {}
+    if isinstance(global_p, dict):
+        for k in eff:
+            if k in global_p and global_p[k] is not None:
+                eff[k] = global_p[k]
+    per_sym = (tuned.get("per_symbol_params") or {}).get(str(symbol).upper())
+    if isinstance(per_sym, dict):
+        for k in eff:
+            if k in per_sym and per_sym[k] is not None:
+                eff[k] = per_sym[k]
+    return eff
+
+
+def get_entry_dna_badge() -> str:
+    tuned = load_tuned_entry_dna()
+    if not isinstance(tuned, dict) or int(tuned.get("trades_total", 0) or 0) <= 0:
+        return "FACTORY_DEFAULT"
+    stage = tuned.get("calibration_stage", "STAGE_1_PLAYBOOK_ONLY")
+    n = int(tuned.get("trades_total", 0))
+    return f"{stage} ({n} trade{'s' if n != 1 else ''})"
+
+
+def build_entry_dna_prompt_block() -> str:
+    """Build a compact weekend-calibrated Trader Execution DNA block for the Gemini Battle-Plan prompt."""
+    tuned = load_tuned_entry_dna()
+    if not isinstance(tuned, dict) or int(tuned.get("trades_total", 0) or 0) <= 0:
+        return ""
+    pb = tuned.get("playbook") or {}
+    ep = tuned.get("effective_params") or DEFAULT_ENTRY_PARAMS
+    es = tuned.get("empirical_stats") or {}
+
+    lines = [
+        f"\nTRADER EXECUTION DNA PLAYBOOK (WEEKEND-CALIBRATED · {get_entry_dna_badge()}):",
+        "- Align `entry_reason`, `trigger_confirmation`, `stop_loss` invalidation style, and Safety `targets` to the trader's calibrated execution rules below (while keeping ALL prices 100% anchored to live MT5 telemetry).",
+    ]
+    pats = pb.get("dominant_patterns") or []
+    if pats:
+        pat_txt = ", ".join(f"{p.get('pattern')} ({p.get('share_pct')}%)" for p in pats[:4])
+        lines.append(f"- Preferred Setup Patterns: {pat_txt}")
+    wick_pct = int(round(float(ep.get("wick_rejection_ratio", 0.55)) * 100))
+    disp_txt = " + displacement close confirmed" if ep.get("require_displacement", True) else ""
+    lines.append(f"- Trigger Candle DNA: Rejection wick >= {wick_pct}% of candle range{disp_txt}")
+    if es.get("median_rr") is not None:
+        lines.append(f"- Empirical Median Target R:R: {es['median_rr']}R (Safety TP1 >= {ep.get('tp1_rr', 1.0)}R, TP2 ~ {ep.get('tp2_rr', 2.0)}R at opposing structural shelf)")
+    inv_rules = pb.get("invalidation_rules") or []
+    if inv_rules:
+        lines.append(f"- Stop-Loss Invalidation Style: {' | '.join(inv_rules[:3])}")
+    tp_rules = pb.get("tp_rules") or []
+    if tp_rules:
+        lines.append(f"- Safety Take-Profit Style: {' | '.join(tp_rules[:3])}")
+    examples = pb.get("example_setups") or []
+    if examples:
+        lines.append("- Distilled Real Execution Style Examples:")
+        for ex in examples[:3]:
+            ex_line = (
+                f"  * [{ex.get('symbol')} {ex.get('timeframe')} {ex.get('direction')} · {ex.get('pattern')} · R:R {ex.get('risk_reward')}] "
+                f"Why: {ex.get('why_entered') or '—'} | SL: {ex.get('invalidation_logic') or '—'} | TP: {ex.get('tp_logic') or '—'}"
+            )
+            lines.append(ex_line)
+    return "\n".join(lines) + "\n"
 
 PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "EURGBP", "XAUUSD"]
 
@@ -770,10 +867,17 @@ class SessionBriefingEngine:
             except Exception:
                 pass
 
+        ep = get_effective_entry_params(sym)
+        max_sl_atr = float(ep.get("max_sl_dist_atr", 2.20))
+        def_sl_atr = float(ep.get("default_sl_buf_atr", 0.85))
+        min_tp1_rr = float(ep.get("min_tp1_rr", 0.80))
+        tp1_rr = float(ep.get("tp1_rr", 1.00))
+        tp2_rr = float(ep.get("tp2_rr", 2.00))
+
         if is_short:
             # STOP LOSS MUST BE > entry_high AND capped within realistic structural ATR bounds
-            max_sl_dist = max(2.2 * atr, min_buf * 3.0)
-            default_sl_buf = max(0.85 * atr, min_buf * 1.5)
+            max_sl_dist = max(max_sl_atr * atr, min_buf * 3.0)
+            default_sl_buf = max(def_sl_atr * atr, min_buf * 1.5)
             if reanchored or sl <= e_high or (sl - e_high) > max_sl_dist:
                 # Prefer intraday high if it sits cleanly just above e_high within cap, else zone + buffer
                 if today_high > e_high and (today_high - e_high) <= (1.4 * atr):
@@ -785,12 +889,12 @@ class SessionBriefingEngine:
             setup["stop_loss"] = sl
             risk = max(abs(sl - e_low), 0.75 * atr)
 
-            # TARGETS MUST BE < entry_low, strictly descending, with TP1 >= 0.8R
-            min_tp1 = e_low - 0.8 * risk
+            # TARGETS MUST BE < entry_low, strictly descending, with TP1 >= min_tp1_rr
+            min_tp1 = e_low - min_tp1_rr * risk
             sanitized_targets = [t for t in valid_targets if t <= min_tp1] if not reanchored else []
             if len(sanitized_targets) < 3:
-                tp1 = round(e_low - 1.0 * risk, digits)
-                tp2 = round(min(pdl if (pdl > 0 and pdl < tp1 - 0.3 * atr) else (e_low - 2.0 * risk), e_low - 1.8 * risk), digits)
+                tp1 = round(e_low - tp1_rr * risk, digits)
+                tp2 = round(min(pdl if (pdl > 0 and pdl < tp1 - 0.3 * atr) else (e_low - tp2_rr * risk), e_low - max(1.6, tp2_rr - 0.2) * risk), digits)
                 tp3 = round(tp2 - 1.0 * atr, digits)
                 sanitized_targets = sorted(list(set(sanitized_targets + [tp1, tp2, tp3])), reverse=True)
             else:
@@ -799,8 +903,8 @@ class SessionBriefingEngine:
             setup["targets"] = sanitized_targets[:4]
         else:
             # STOP LOSS MUST BE < entry_low AND capped within realistic structural ATR bounds
-            max_sl_dist = max(2.2 * atr, min_buf * 3.0)
-            default_sl_buf = max(0.85 * atr, min_buf * 1.5)
+            max_sl_dist = max(max_sl_atr * atr, min_buf * 3.0)
+            default_sl_buf = max(def_sl_atr * atr, min_buf * 1.5)
             if reanchored or sl >= e_low or sl <= 0 or (e_low - sl) > max_sl_dist:
                 if today_low > 0 and today_low < e_low and (e_low - today_low) <= (1.4 * atr):
                     sl = round(today_low - max(0.35 * atr, min_buf), digits)
@@ -811,12 +915,12 @@ class SessionBriefingEngine:
             setup["stop_loss"] = sl
             risk = max(abs(e_high - sl), 0.75 * atr)
 
-            # TARGETS MUST BE > entry_high, strictly ascending, with TP1 >= 0.8R
-            min_tp1 = e_high + 0.8 * risk
+            # TARGETS MUST BE > entry_high, strictly ascending, with TP1 >= min_tp1_rr
+            min_tp1 = e_high + min_tp1_rr * risk
             sanitized_targets = [t for t in valid_targets if t >= min_tp1] if not reanchored else []
             if len(sanitized_targets) < 3:
-                tp1 = round(e_high + 1.0 * risk, digits)
-                tp2 = round(max(pdh if pdh > (tp1 + 0.3 * atr) else (e_high + 2.0 * risk), e_high + 1.8 * risk), digits)
+                tp1 = round(e_high + tp1_rr * risk, digits)
+                tp2 = round(max(pdh if pdh > (tp1 + 0.3 * atr) else (e_high + tp2_rr * risk), e_high + max(1.6, tp2_rr - 0.2) * risk), digits)
                 tp3 = round(tp2 + 1.0 * atr, digits)
                 sanitized_targets = sorted(list(set(sanitized_targets + [tp1, tp2, tp3])))
             else:
@@ -1258,15 +1362,19 @@ class SessionBriefingEngine:
                 f"Macro driver: {primary_driver}."
             )
 
+            ep_rule = get_effective_entry_params(sym)
+            wick_pct_rule = int(round(float(ep_rule.get("wick_rejection_ratio", 0.55)) * 100))
+            disp_rule = " + displacement engulfing close" if ep_rule.get("require_displacement", True) else " + rejection close"
+
             setup_dict = {
                 "bias": bias,
                 "probability": prob,
                 "entry_zone": f"{entry_low} - {entry_high}",
                 "entry_reason": entry_reason,
                 "trigger_confirmation": (
-                    f"M5 lower wick rejection >= 2x body inside {entry_low}-{entry_high} + bullish engulfing close"
+                    f"M5 lower wick rejection >= {wick_pct_rule}% range inside {entry_low}-{entry_high}{disp_rule}"
                     if bias == "LONG"
-                    else f"M5 upper wick rejection >= 2x body inside {entry_low}-{entry_high} + bearish engulfing close"
+                    else f"M5 upper wick rejection >= {wick_pct_rule}% range inside {entry_low}-{entry_high}{disp_rule}"
                 ),
                 "stop_loss": sl,
                 "targets": tgts,
@@ -1398,9 +1506,10 @@ class SessionBriefingEngine:
                     else "\nLIVE MACRO NEWS SOURCE: Use `world_news_headlines` and `macro_telemetry` inside the telemetry JSON below.\n"
                 )
 
+                entry_dna_block = build_entry_dna_prompt_block()
                 user_prompt = f"""You are analyzing live institutional market telemetry heading into {session_title} ({telemetry['day_of_week']}, {telemetry['timestamp_utc']}).
 Generate a comprehensive, tactical institutional battle-plan for EACH of the 7 pairs: EURUSD, GBPUSD, USDJPY, GBPJPY, EURJPY, EURGBP, XAUUSD.
-{grounded_block}
+{grounded_block}{entry_dna_block}
 LIVE MT5 BROKER TELEMETRY & STRUCTURAL ZONES (100% AUTHORITATIVE FOR ALL PRICE LEVELS):
 {json.dumps(prompt_telemetry, separators=(",", ":"))}
 
@@ -1607,6 +1716,7 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
             "is_weekend": curr_info["is_weekend"],
             "is_stale": stale,
             "is_updating": bool(self._is_generating),
+            "entry_dna_stage": get_entry_dna_badge(),
         }
 
         with self._lock:

@@ -27,7 +27,6 @@ from core.decision_zones import (
 )
 from core.trader_dna_engine import (
     DNA_PROFILE_FILE,
-    LEGACY_PROFILE_FILE,
     load_trader_dna_profile,
 )
 from core.zone_engine import (
@@ -45,6 +44,25 @@ MYT = timezone(timedelta(hours=8))
 
 STAGE_1_THRESHOLD_LOGREG = 30
 STAGE_2_THRESHOLD_LGBM = 80
+
+# Entry Execution DNA Calibration (Battle-Plan Entry Logic)
+TUNED_ENTRY_DNA_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "tuned_entry_dna.json",
+)
+ENTRY_STAGE_BLENDED_MIN = 5
+ENTRY_STAGE_FULL_MIN = 15
+
+DEFAULT_ENTRY_PARAMS: Dict[str, Any] = {
+    "default_sl_buf_atr": 0.85,
+    "max_sl_dist_atr": 2.20,
+    "min_tp1_rr": 0.80,
+    "tp1_rr": 1.00,
+    "tp2_rr": 2.00,
+    "wick_rejection_ratio": 0.55,
+    "require_displacement": True,
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -86,12 +104,11 @@ def _read_json_safe(path: str) -> Dict[str, Any]:
 
 def load_unified_snapshots(symbol: str = "XAUUSD") -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    Merge and deduplicate all benchmark zone snapshots and executed trades across
-    both `data/trader_profile.json` (/ingest) and `trader_dna/data/trader_dna_profile.json` (/dna).
+    Load and deduplicate all benchmark zone snapshots and executed trades from
+    `trader_dna/data/trader_dna_profile.json` (/dna).
     """
     sym_up = symbol.upper()
     sources = [
-        _read_json_safe(LEGACY_PROFILE_FILE),
         _read_json_safe(DNA_PROFILE_FILE),
         load_trader_dna_profile(),
     ]
@@ -648,10 +665,294 @@ def run_ml_calibration(
     return payload
 
 
+def load_all_executed_trades(symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Load and deduplicate all ingested Trade Execution reviews from `trader_dna/data/trader_dna_profile.json`.
+    If `symbol` is None or 'ALL', returns trades across all symbols.
+    """
+    sym_filter = None if (not symbol or str(symbol).upper() == "ALL") else str(symbol).upper()
+    prof = load_trader_dna_profile()
+    raw: List[Dict[str, Any]] = []
+    if isinstance(prof, dict):
+        for tr in prof.get("executed_trades", []) or []:
+            if isinstance(tr, dict):
+                raw.append(tr)
+        for entry in prof.get("history", []) or []:
+            if isinstance(entry, dict) and (
+                entry.get("mode") == "TRADE_EXECUTION"
+                or ("entry_price" in entry and not entry.get("zones"))
+            ):
+                raw.append(entry)
+
+    seen = set()
+    dedup: List[Dict[str, Any]] = []
+    for tr in raw:
+        sym = str(tr.get("symbol", "XAUUSD")).upper()
+        if sym_filter and sym != sym_filter:
+            continue
+        sig = (
+            sym,
+            str(tr.get("direction", "")).upper(),
+            round(float(tr.get("entry_price") or 0.0), 4),
+            str(tr.get("chart_date") or tr.get("file_timestamp") or ""),
+        )
+        if sig in seen:
+            continue
+        seen.add(sig)
+        copy_tr = dict(tr)
+        copy_tr["symbol"] = sym
+        dedup.append(copy_tr)
+
+    dedup.sort(key=lambda x: str(x.get("file_timestamp") or x.get("chart_date") or ""))
+    return dedup
+
+
+def _clamp(val: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, float(val)))
+
+
+def _compute_h1_atr_at(df_h1: Optional[pd.DataFrame], ts_utc: Optional[pd.Timestamp]) -> Optional[float]:
+    if df_h1 is None or df_h1.empty or ts_utc is None:
+        return None
+    try:
+        sub = slice_candles_at_timestamp(df_h1, ts_utc)
+        if sub is None or len(sub) < 15:
+            return None
+        hi = sub["high"].astype(float)
+        lo = sub["low"].astype(float)
+        cl = sub["close"].astype(float).shift(1)
+        tr = pd.concat([(hi - lo), (hi - cl).abs(), (lo - cl).abs()], axis=1).max(axis=1)
+        atr = float(tr.tail(14).mean())
+        return atr if np.isfinite(atr) and atr > 0 else None
+    except Exception:
+        return None
+
+
+def _calibrate_numeric_entry_params(
+    trades: List[Dict[str, Any]],
+    alpha: float,
+    df_h1_by_symbol: Optional[Dict[str, pd.DataFrame]] = None,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Compute blended numeric entry/SL/TP/trigger params + empirical summary stats."""
+    base = dict(DEFAULT_ENTRY_PARAMS)
+    rr_vals: List[float] = []
+    sl_atr_vals: List[float] = []
+    wick_vals: List[float] = []
+    disp_flags: List[bool] = []
+
+    for tr in trades:
+        rr = tr.get("risk_reward")
+        if rr is not None:
+            try:
+                rr_f = float(rr)
+                if 0.5 <= rr_f <= 12.0:
+                    rr_vals.append(rr_f)
+            except (TypeError, ValueError):
+                pass
+
+        tc = tr.get("trigger_candle") or {}
+        if isinstance(tc, dict):
+            wr = tc.get("wick_rejection_ratio")
+            if wr is not None:
+                try:
+                    wr_f = float(wr)
+                    if 0.15 <= wr_f <= 0.95:
+                        wick_vals.append(wr_f)
+                except (TypeError, ValueError):
+                    pass
+            if "displacement_confirmed" in tc:
+                disp_flags.append(bool(tc["displacement_confirmed"]))
+
+        # Estimate empirical SL distance in H1 ATR units when candle cache covers trade date
+        ep = tr.get("entry_price")
+        sl = tr.get("stop_loss")
+        sym = str(tr.get("symbol", "XAUUSD")).upper()
+        df_h1 = (df_h1_by_symbol or {}).get(sym)
+        if ep is not None and sl is not None and df_h1 is not None:
+            try:
+                risk_dist = abs(float(ep) - float(sl))
+                atr = _compute_h1_atr_at(df_h1, parse_snapshot_utc(tr))
+                if atr and risk_dist > 0:
+                    ratio = risk_dist / atr
+                    if 0.25 <= ratio <= 4.0:
+                        sl_atr_vals.append(ratio)
+            except (TypeError, ValueError):
+                pass
+
+    emp_rr = round(float(np.median(rr_vals)), 2) if rr_vals else None
+    emp_sl_atr = round(float(np.median(sl_atr_vals)), 3) if sl_atr_vals else None
+    emp_wick = round(float(np.median(wick_vals)), 2) if wick_vals else None
+    emp_disp_rate = round(sum(disp_flags) / len(disp_flags), 2) if disp_flags else None
+
+    effective = dict(base)
+    if alpha > 0.0:
+        if emp_sl_atr is not None:
+            blended_sl = (1.0 - alpha) * base["default_sl_buf_atr"] + alpha * _clamp(emp_sl_atr, 0.55, 1.50)
+            effective["default_sl_buf_atr"] = round(_clamp(blended_sl, 0.60, 1.40), 3)
+            effective["max_sl_dist_atr"] = round(_clamp(max(2.0, effective["default_sl_buf_atr"] * 2.15), 1.70, 2.80), 3)
+        if emp_rr is not None:
+            # Safety TP1 stays practical (45%-55% of full target R:R), TP2 tracks median R:R safely
+            target_tp1 = _clamp(emp_rr * 0.45, 0.90, 1.80)
+            target_tp2 = _clamp(emp_rr * 0.85, 1.60, 3.50)
+            effective["tp1_rr"] = round((1.0 - alpha) * base["tp1_rr"] + alpha * target_tp1, 2)
+            effective["tp2_rr"] = round(max(effective["tp1_rr"] + 0.65, (1.0 - alpha) * base["tp2_rr"] + alpha * target_tp2), 2)
+            effective["min_tp1_rr"] = round(_clamp(effective["tp1_rr"] * 0.8, 0.75, 1.30), 2)
+        if emp_wick is not None:
+            effective["wick_rejection_ratio"] = round(
+                _clamp((1.0 - alpha) * base["wick_rejection_ratio"] + alpha * emp_wick, 0.40, 0.75), 2
+            )
+        if emp_disp_rate is not None:
+            effective["require_displacement"] = emp_disp_rate >= 0.55
+
+    stats = {
+        "median_rr": emp_rr,
+        "median_sl_atr": emp_sl_atr,
+        "median_wick_ratio": emp_wick,
+        "displacement_rate": emp_disp_rate,
+        "sl_atr_samples": len(sl_atr_vals),
+    }
+    return effective, stats
+
+
+def calibrate_entry_dna(
+    trades: Optional[List[Dict[str, Any]]] = None,
+    df_h1_by_symbol: Optional[Dict[str, pd.DataFrame]] = None,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """
+    Offline weekend calibrator for Trader Entry Execution DNA -> `data/tuned_entry_dna.json`.
+    Mirrors Zone ML calibration with safe sample-size scaling:
+      * 0 trades    : STAGE_0_NONE (factory defaults)
+      * 1-4 trades  : STAGE_1_PLAYBOOK_ONLY (AI Battle-Plan prompt Playbook active; factory SL/TP math)
+      * 5-14 trades : STAGE_2_BLENDED (Playbook + shrunk empirical SL-ATR / TP-R:R / wick trigger math)
+      * 15+ trades  : STAGE_3_EMPIRICAL (full empirical calibration + per-symbol overrides)
+    """
+    from collections import Counter
+
+    all_trades = trades if trades is not None else load_all_executed_trades(symbol="ALL")
+    n = len(all_trades)
+
+    if n == 0:
+        return {
+            "version": "1.0",
+            "tuned_at": datetime.now(MYT).isoformat(),
+            "trades_total": 0,
+            "calibration_stage": "STAGE_0_NONE",
+            "blend_alpha": 0.0,
+            "status_note": f"0/{ENTRY_STAGE_BLENDED_MIN} trades toward Stage 2 (Blended Math). Snap Trade reviews & run /dna.",
+            "effective_params": dict(DEFAULT_ENTRY_PARAMS),
+            "per_symbol_params": {},
+            "empirical_stats": {},
+            "playbook": {
+                "dominant_patterns": [],
+                "invalidation_rules": [],
+                "tp_rules": [],
+                "example_setups": [],
+            },
+        }
+
+    if n < ENTRY_STAGE_BLENDED_MIN:
+        stage = "STAGE_1_PLAYBOOK_ONLY"
+        alpha = 0.0
+        note = (
+            f"Playbook prompt active ({n} trade{'s' if n != 1 else ''}); "
+            f"{n}/{ENTRY_STAGE_BLENDED_MIN} toward Stage 2 (Blended SL/TP Math), "
+            f"{n}/{ENTRY_STAGE_FULL_MIN} toward Stage 3 (Full Empirical)."
+        )
+    elif n < ENTRY_STAGE_FULL_MIN:
+        stage = "STAGE_2_BLENDED"
+        alpha = round(min(0.75, (n - (ENTRY_STAGE_BLENDED_MIN - 1)) / 10.0), 2)
+        note = (
+            f"Blended Entry Math active (alpha={alpha:.2f}, {n} trades); "
+            f"{n}/{ENTRY_STAGE_FULL_MIN} toward Stage 3 (Full Empirical)."
+        )
+    else:
+        stage = "STAGE_3_EMPIRICAL"
+        alpha = 0.85
+        note = f"Full Empirical Entry Calibration active (alpha={alpha:.2f}, {n} trades)."
+
+    effective_params, emp_stats = _calibrate_numeric_entry_params(all_trades, alpha=alpha, df_h1_by_symbol=df_h1_by_symbol)
+
+    # Per-symbol calibration overrides at Stage 3 when a pair has >= 5 trades
+    per_symbol_params: Dict[str, Dict[str, Any]] = {}
+    if stage == "STAGE_3_EMPIRICAL":
+        by_sym: Dict[str, List[Dict[str, Any]]] = {}
+        for tr in all_trades:
+            by_sym.setdefault(str(tr.get("symbol", "XAUUSD")).upper(), []).append(tr)
+        for s_key, s_trades in by_sym.items():
+            if len(s_trades) >= ENTRY_STAGE_BLENDED_MIN:
+                s_eff, _ = _calibrate_numeric_entry_params(s_trades, alpha=0.80, df_h1_by_symbol=df_h1_by_symbol)
+                per_symbol_params[s_key] = s_eff
+
+    # Distill qualitative playbook rules & top concise examples for Gemini Battle-Plan prompt
+    pat_counter = Counter(str(tr.get("pattern_type") or "UNCLASSIFIED").upper() for tr in all_trades)
+    dir_counter = Counter(str(tr.get("direction") or "UNKNOWN").upper() for tr in all_trades)
+    tf_counter = Counter(str(tr.get("timeframe") or "M15").upper() for tr in all_trades)
+
+    dominant_patterns = [
+        {"pattern": p, "count": c, "share_pct": round(c / n * 100.0, 1)}
+        for p, c in pat_counter.most_common(5)
+    ]
+
+    inv_rules: List[str] = []
+    tp_rules: List[str] = []
+    for tr in reversed(all_trades):
+        inv = str(tr.get("invalidation_logic") or "").strip()
+        if inv and inv not in inv_rules and len(inv_rules) < 4:
+            inv_rules.append(inv)
+        tpl = str(tr.get("tp_logic") or "").strip()
+        if tpl and tpl not in tp_rules and len(tp_rules) < 4:
+            tp_rules.append(tpl)
+
+    # Select up to 4 most recent / clean examples
+    example_setups: List[Dict[str, Any]] = []
+    for tr in list(reversed(all_trades))[:4]:
+        tc = tr.get("trigger_candle") or {}
+        example_setups.append({
+            "symbol": str(tr.get("symbol", "XAUUSD")).upper(),
+            "timeframe": str(tr.get("timeframe", "M15")).upper(),
+            "direction": str(tr.get("direction", "")).upper(),
+            "pattern": str(tr.get("pattern_type", "")),
+            "risk_reward": tr.get("risk_reward"),
+            "wick_rejection_type": tc.get("wick_rejection_type") if isinstance(tc, dict) else None,
+            "wick_rejection_ratio": tc.get("wick_rejection_ratio") if isinstance(tc, dict) else None,
+            "invalidation_logic": tr.get("invalidation_logic"),
+            "tp_logic": tr.get("tp_logic"),
+            "why_entered": tr.get("why_entered") or tr.get("setup_description"),
+        })
+
+    payload = {
+        "version": "1.0",
+        "tuned_at": datetime.now(MYT).isoformat(),
+        "trades_total": n,
+        "calibration_stage": stage,
+        "blend_alpha": alpha,
+        "status_note": note,
+        "direction_counts": dict(dir_counter),
+        "timeframe_counts": dict(tf_counter),
+        "effective_params": effective_params,
+        "per_symbol_params": per_symbol_params,
+        "empirical_stats": emp_stats,
+        "playbook": {
+            "dominant_patterns": dominant_patterns,
+            "invalidation_rules": inv_rules,
+            "tp_rules": tp_rules,
+            "example_setups": example_setups,
+        },
+    }
+
+    if not dry_run:
+        os.makedirs(os.path.dirname(TUNED_ENTRY_DNA_PATH), exist_ok=True)
+        with open(TUNED_ENTRY_DNA_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+
+    return payload
+
+
 def reset_tuned_params() -> bool:
-    """Remove persisted tuned config and scorer model to revert to factory defaults."""
+    """Remove persisted tuned zone & entry DNA configs and scorer model to revert to factory defaults."""
     removed = False
-    for p in (TUNED_PARAMS_PATH, SCORER_MODEL_PATH):
+    for p in (TUNED_PARAMS_PATH, SCORER_MODEL_PATH, TUNED_ENTRY_DNA_PATH):
         if os.path.isfile(p):
             os.remove(p)
             removed = True

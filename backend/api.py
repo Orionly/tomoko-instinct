@@ -712,7 +712,7 @@ def serve_lightweight_charts_js():
 def get_pair_candles(symbol: str, tf: str = "H1", limit: int = 1000):
     """
     Returns sanitized OHLC candlestick data formatted for TradingView Lightweight Charts,
-    along with marked zones from trader_profile.json and active decision zones.
+    along with active autonomous decision zones.
     """
     symbol = symbol.upper()
     tf_upper = tf.upper()

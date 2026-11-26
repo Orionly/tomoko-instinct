@@ -1,8 +1,8 @@
 """
 Tomoko Instinct — Weekend Comparison & ML Fine-Tuning CLI
 --------------------------------------------------------
-Compares the human trader's hand-drawn TradingView markups stored across
-`data/trader_profile.json` (/ingest) and `trader_dna/data/trader_dna_profile.json` (/dna)
+Compares the human trader's hand-drawn TradingView markups stored in
+`trader_dna/data/trader_dna_profile.json` (/dna)
 against Tomoko's autonomous zone engine (`core.zone_engine` and `core.decision_zones`).
 
 Usage:
@@ -31,7 +31,10 @@ from core.zone_engine import (
 from core.decision_zones import DEFAULT_HTF_PARAMS, calculate_tf_decision_zones
 from core.trader_dna_engine import purge_weekly_archive
 from core.dna_ml_tuner import (
+    TUNED_ENTRY_DNA_PATH,
+    calibrate_entry_dna,
     compute_overlap,
+    load_all_executed_trades,
     load_unified_snapshots,
     reset_tuned_params,
     run_ml_calibration,
@@ -153,7 +156,7 @@ def run_weekend_comparison(
     snapshots, executed_trades = load_unified_snapshots(symbol)
     if not snapshots and not executed_trades:
         print(f"[i] No ingested trader markups found for {symbol}.")
-        print("    Ingest chart snapshots using `/ingest` or `/dna` during the week to build training data.")
+        print("    Snap charts in Tomoko's TradingView Terminal and run `/dna` during the week to build training data.")
         print_battle_record_diagnostics(symbol="ALL")
         return
 
@@ -385,11 +388,48 @@ def run_weekend_comparison(
         if dry_run:
             print("\n  [DRY RUN] No files written. Re-run without `--dry-run` to apply calibration.")
         else:
-            print(f"\n  [SAVED] Calibrated weights persisted to `{TUNED_PARAMS_PATH}`.")
+            print(f"\n  [SAVED] Calibrated zone weights persisted to `{TUNED_PARAMS_PATH}`.")
             print("          Daily live scans will load these tuned parameters automatically.")
 
-    print("\n  [i] Ingested numerical markups remain safely stored offline.")
-    print("      Live Tomoko trading engines continue operating 100% autonomously.")
+        # -------------------------------------------------------------
+        # Entry Execution DNA Calibration -> data/tuned_entry_dna.json
+        # -------------------------------------------------------------
+        all_trades = load_all_executed_trades(symbol="ALL")
+        h1_map = {
+            s_k.upper(): s_v.get("H1")
+            for s_k, s_v in (candles_data or {}).items()
+            if isinstance(s_v, dict) and s_v.get("H1") is not None
+        }
+        entry_cal = calibrate_entry_dna(all_trades, df_h1_by_symbol=h1_map, dry_run=dry_run)
+        print("\n" + "=" * 76)
+        print(f"  ENTRY EXECUTION DNA CALIBRATION (Battle-Plan Logic){' [DRY RUN]' if dry_run else ''}")
+        print("=" * 76)
+        print(f"  * Logged Executions : {entry_cal['trades_total']}")
+        print(f"  * Calibration Stage : {entry_cal['calibration_stage']} (alpha={entry_cal['blend_alpha']})")
+        print(f"  * Progression       : {entry_cal['status_note']}")
+        ep = entry_cal.get("effective_params", {})
+        es = entry_cal.get("empirical_stats", {})
+        print(
+            f"  * Effective Params  : SL_buf={ep.get('default_sl_buf_atr')} ATR | "
+            f"SL_max={ep.get('max_sl_dist_atr')} ATR | TP1={ep.get('tp1_rr')}R | "
+            f"TP2={ep.get('tp2_rr')}R | Wick>={ep.get('wick_rejection_ratio')}"
+        )
+        if es.get("median_rr") is not None:
+            print(
+                f"  * Empirical Medians : R:R={es.get('median_rr')} | "
+                f"Wick={es.get('median_wick_ratio')} | "
+                f"SL_ATR={es.get('median_sl_atr') if es.get('median_sl_atr') is not None else 'N/A'}"
+            )
+        pats = (entry_cal.get("playbook") or {}).get("dominant_patterns") or []
+        if pats:
+            pat_str = ", ".join(f"{p['pattern']} ({p['count']}x)" for p in pats[:4])
+            print(f"  * Dominant Patterns : {pat_str}")
+        if not dry_run and entry_cal["trades_total"] > 0:
+            print(f"  [SAVED] Calibrated Entry DNA persisted to `{TUNED_ENTRY_DNA_PATH}`.")
+            print("          Battle-Plan engine will load this weekend-calibrated logic automatically.")
+
+    print("\n  [i] Ingested numerical markups & trade executions remain safely stored offline.")
+    print("      Live Tomoko engines only consume weekend-calibrated configs (`tuned_zone_params.json`, `tuned_entry_dna.json`).")
 
     # Weekend BattleRecord Tuning Diagnostics (across all archived & ledger battles)
     print_battle_record_diagnostics(symbol="ALL")
@@ -402,8 +442,9 @@ def run_weekend_comparison(
         print("  WEEKLY ARCHIVE PURGE EXECUTED")
         print("=" * 76)
         purged = purge_weekly_archive()
-        print(f"  Successfully purged {purged} weekly screenshot files from archive.")
-        print("  `markups/` and `markups/archive/` are clean for the upcoming trading week.")
+        print(f"  Successfully purged {purged} weekly screenshot files from temporary C: archive.")
+        print("  `trader_dna/dropoff/` and `trader_dna/archive/current_week/` are clean for the upcoming week.")
+        print("  Permanent LLM/VLM dataset in `D:/Tomoko_Trader_Vault/dataset/` remains untouched.")
 
 
 if __name__ == "__main__":

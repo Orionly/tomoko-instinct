@@ -1,6 +1,6 @@
 # Tomoko Instinct - M15 Zone Validation Script
 # Compares algorithmic zones from core.zone_engine against hand-drawn trader markups
-# saved in data/trader_profile.json.
+# saved in trader_dna/data/trader_dna_profile.json.
 
 import os
 import sys
