@@ -36,6 +36,7 @@ from core.dna_ml_tuner import (
     compute_overlap,
     load_all_executed_trades,
     load_unified_snapshots,
+    parse_snapshot_utc,
     reset_tuned_params,
     run_ml_calibration,
     slice_candles_at_timestamp,
@@ -285,12 +286,17 @@ def run_weekend_comparison(
                 print("    -> [CALIBRATION TARGET]: No overlapping Tomoko zone detected above 35% threshold.")
 
     # -------------------------------------------------------------
-    # Executed Trade Replay & Entry Style Alignment
+    # Executed Trade Replay & Entry Style Alignment (Point-in-Time)
     # -------------------------------------------------------------
     if executed_trades:
         print("\n" + "=" * 76)
         print(f"  EXECUTED TRADE REPLAY & ENTRY STYLE ALIGNMENT ({len(executed_trades)} trade(s))")
         print("=" * 76)
+        confluent_trades = 0
+        in_window_trades = 0
+        tp_hits = 0
+        be_hits = 0
+        sl_hits = 0
         for t_idx, trade in enumerate(executed_trades, 1):
             t_dir = trade.get("direction", "LONG")
             t_entry = float(trade.get("entry_price", 0.0))
@@ -299,8 +305,21 @@ def run_weekend_comparison(
             t_rr = trade.get("risk_reward", 0.0)
             t_pat = trade.get("pattern_type", "N/A")
             t_why = trade.get("why_entered") or trade.get("invalidation_logic", "")
+            t_out = trade.get("eod_outcome", "")
+            if t_out == "TP_HIT":
+                tp_hits += 1
+            elif t_out == "BREAKEVEN":
+                be_hits += 1
+            elif t_out == "SL_HIT":
+                sl_hits += 1
 
-            res_m15 = build_zones(df_m15, timeframe="M15", symbol=symbol)
+            t_utc = parse_snapshot_utc(trade)
+            t_df_m15, t_ok = slice_candles_at_timestamp(df_m15, t_utc)
+            if not t_ok or t_df_m15 is None:
+                continue
+            in_window_trades += 1
+
+            res_m15 = build_zones(t_df_m15, timeframe="M15", symbol=symbol)
             all_m15_zones = res_m15.get("zones", [])
             best_entry_zone = None
             min_entry_dist = float("inf")
@@ -310,15 +329,28 @@ def run_weekend_comparison(
                     min_entry_dist = dist
                     best_entry_zone = mz
 
-            match_status = "[CONFLUENT]" if min_entry_dist <= 4.0 else "[CALIBRATION TARGET]"
-            print(f"\n  {match_status} Trade #{t_idx}: {symbol} {t_dir} at {t_entry:.2f} (SL: {t_sl:.2f}, TP: {t_tp:.2f}, R:R {t_rr})")
-            print(f"      Setup Model: {t_pat}")
-            if t_why:
-                print(f"      Execution Rationale: {t_why}")
-            if best_entry_zone and min_entry_dist <= 4.0:
-                print(f"      -> Confluent Algorithmic Shelf: [{best_entry_zone.bottom:.2f} - {best_entry_zone.top:.2f}] (50% CE: {best_entry_zone.mid:.2f}, Delta: {min_entry_dist:.2f} {unit_str})")
-            else:
-                print(f"      -> Discrepancy: Closest Tomoko zone was {min_entry_dist:.2f} {unit_str} away.")
+            is_conf = min_entry_dist <= 4.5
+            if is_conf:
+                confluent_trades += 1
+
+            if verbose or len(executed_trades) <= 12:
+                match_status = "[CONFLUENT]" if is_conf else "[CALIBRATION TARGET]"
+                out_tag = f" | {t_out}" if t_out else ""
+                print(f"\n  {match_status} Trade #{t_idx}: {symbol} {t_dir} at {t_entry:.2f} (SL: {t_sl:.2f}, TP: {t_tp:.2f}, R:R {t_rr}{out_tag})")
+                print(f"      Setup Model: {t_pat}")
+                if t_why:
+                    print(f"      Execution Rationale: {t_why}")
+                if best_entry_zone and is_conf:
+                    print(f"      -> Confluent Algorithmic Shelf: [{best_entry_zone.bottom:.2f} - {best_entry_zone.top:.2f}] (50% CE: {best_entry_zone.mid:.2f}, Delta: {min_entry_dist:.2f} {unit_str})")
+                else:
+                    print(f"      -> Discrepancy: Closest Tomoko zone was {min_entry_dist:.2f} {unit_str} away.")
+
+        conf_pct = (confluent_trades / in_window_trades * 100.0) if in_window_trades else 0.0
+        print(f"\n  * Point-in-Time Trade Confluence : {confluent_trades}/{in_window_trades} ({conf_pct:.1f}%)")
+        if tp_hits or be_hits or sl_hits:
+            decided = tp_hits + sl_hits
+            wr = (tp_hits / decided * 100.0) if decided else 0.0
+            print(f"  * Audited Signal Outcome         : TP_HIT={tp_hits} | BE={be_hits} | SL_HIT={sl_hits} (Win Rate ex-BE: {wr:.1f}%)")
 
     # -------------------------------------------------------------
     # Weekend Scorecard Summary

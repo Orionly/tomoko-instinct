@@ -352,7 +352,75 @@ def _round_step(symbol: str) -> float:
     return 0.0050
 
 
-def _score(z: Zone, anchors: List[Dict[str, Any]], htf_levels: List[float], symbol: str, unit_now: float) -> None:
+_FIB_LOOKBACK_BY_TF = {
+    "M5": 60,
+    "M15": 50,
+    "H1": 70,
+    "H4": 60,
+}
+
+
+def compute_tf_fib_levels(
+    df: Optional[pd.DataFrame],
+    unit_now: float,
+    timeframe: str = "M15",
+    min_leg_atr: float = 2.5,
+) -> Optional[Dict[str, Any]]:
+    """
+    Compute per-timeframe active impulse leg (P, Z) and its direction-aware
+    38.2% (Wave 1) and 61.8% (Golden Pocket OTE) pullback confluence levels.
+    Returns None in flat chop (leg < min_leg_atr * unit_now).
+    """
+    if df is None or len(df) < 15 or unit_now <= 0:
+        return None
+    tf_up = str(timeframe or "M15").upper()
+    lookback = _FIB_LOOKBACK_BY_TF.get(tf_up, 50)
+    sub = df.iloc[-lookback:]
+    highs = sub["high"].astype(float).values
+    lows = sub["low"].astype(float).values
+    if len(highs) < 5:
+        return None
+
+    idx_hi = int(np.argmax(highs))
+    idx_lo = int(np.argmin(lows))
+    val_hi = float(highs[idx_hi])
+    val_lo = float(lows[idx_lo])
+    leg = val_hi - val_lo
+    if leg < min_leg_atr * unit_now or idx_hi == idx_lo:
+        return None
+
+    if idx_lo < idx_hi:
+        # Bullish impulse (Z -> P): pullback targets SUPPORT zones
+        return {
+            "timeframe": tf_up,
+            "direction": "BULL",
+            "target_role": "SUPPORT",
+            "swing_high": val_hi,
+            "swing_low": val_lo,
+            "fib_382": val_hi - 0.382 * leg,
+            "fib_618": val_hi - 0.618 * leg,
+        }
+    else:
+        # Bearish impulse (P -> Z): pullback targets RESISTANCE zones
+        return {
+            "timeframe": tf_up,
+            "direction": "BEAR",
+            "target_role": "RESISTANCE",
+            "swing_high": val_hi,
+            "swing_low": val_lo,
+            "fib_382": val_lo + 0.382 * leg,
+            "fib_618": val_lo + 0.618 * leg,
+        }
+
+
+def _score(
+    z: Zone,
+    anchors: List[Dict[str, Any]],
+    htf_levels: List[float],
+    symbol: str,
+    unit_now: float,
+    fib_info: Optional[Dict[str, Any]] = None,
+) -> None:
     conf: List[str] = []
     dep_pts = min(1.0, z.departure / 5.0) * 35.0
     conf.append(f"Departure {z.departure:.1f}x")
@@ -380,6 +448,16 @@ def _score(z: Zone, anchors: List[Dict[str, Any]], htf_levels: List[float], symb
         c_pts += 10.0
         conf.append("HTF swing confluence")
         c_labels.append("HTF Swing")
+    if fib_info and z.role == fib_info.get("target_role"):
+        tf_lbl = fib_info.get("timeframe", "M15")
+        if (z.bottom - pad) <= fib_info["fib_618"] <= (z.top + pad):
+            c_pts += 10.0
+            conf.append(f"{tf_lbl} Fib 61.8% OTE")
+            c_labels.append(f"{tf_lbl} Fib 61.8%")
+        elif (z.bottom - pad) <= fib_info["fib_382"] <= (z.top + pad):
+            c_pts += 6.0
+            conf.append(f"{tf_lbl} Fib 38.2%")
+            c_labels.append(f"{tf_lbl} Fib 38.2%")
     c_pts = min(25.0, c_pts)
 
     if z.volume_ratio is not None:
@@ -461,6 +539,7 @@ def build_zones(
     unit = _unit_series(df, int(p["unit_period"]))
     unit_now = float(unit[-1]) if len(unit) else 0.0
 
+    fib_info = compute_tf_fib_levels(df, unit_now, timeframe=timeframe)
     cands = _detect_candidates(df, unit, p)
     live: List[Zone] = []
     for z in cands:
@@ -468,7 +547,7 @@ def build_zones(
         _replay(z, df, unit, p, start)
         if z.status == "INVALID":
             continue
-        _score(z, anchors or [], htf_levels or [], symbol, unit_now)
+        _score(z, anchors or [], htf_levels or [], symbol, unit_now, fib_info=fib_info)
         live.append(z)
 
     # Dedupe overlapping zones with the same current role: keep the better one
@@ -479,7 +558,7 @@ def build_zones(
             continue
         kept.append(z)
 
-    return {"zones": kept, "unit": unit_now, "params": p}
+    return {"zones": kept, "unit": unit_now, "params": p, "fib_levels": fib_info}
 
 
 def extract_zone_features(

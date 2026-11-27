@@ -37,6 +37,7 @@ if mt5 is not None:
     }
 
 import config
+from core.telemetry_bus import emit_flow, STATE_LIVE, STATE_CACHED, STATE_FALLBACK, STATE_ERROR
 
 log = logging.getLogger(__name__)
 
@@ -613,6 +614,28 @@ class PriceEngine:
                                 cached.iloc[-1, cached.columns.get_loc("low")] = live_p
                 self.connected = True
 
+            mt5_cnt = sum(1 for d in updates.values() if "mt5" in str(d.get("source", "")))
+            tv_cnt = sum(1 for d in updates.values() if "tradingview" in str(d.get("source", "")))
+            fb_cnt = len(updates) - mt5_cnt - tv_cnt
+            lat_ms = (time.time() - now_sec) * 1000.0
+            if mt5_cnt > 0:
+                emit_flow("up.mt5_bridge", "eng.price_engine",
+                          STATE_LIVE if mt5_cnt == len(config.PAIRS) else STATE_FALLBACK,
+                          latency_ms=lat_ms, items=mt5_cnt,
+                          detail=f"MT5 {self.active_broker} spot tick poll ({mt5_cnt}/{len(config.PAIRS)} pairs)")
+            if tv_cnt > 0:
+                emit_flow("up.tv_oracle", "eng.price_engine", STATE_LIVE,
+                          latency_ms=lat_ms, items=tv_cnt,
+                          detail=f"TradingView Spot Oracle updated {tv_cnt} pairs")
+            if fb_cnt > 0:
+                emit_flow("up.yfinance_bars", "eng.price_engine", STATE_FALLBACK,
+                          latency_ms=lat_ms, items=fb_cnt,
+                          detail=f"Tier-3 spot fallback used for {fb_cnt} pairs")
+        else:
+            emit_flow("up.mt5_bridge", "eng.price_engine", STATE_ERROR,
+                      latency_ms=(time.time() - now_sec) * 1000.0, items=0,
+                      detail="Spot poll returned 0/7 updates across MT5, TradingView, and Tier-3 fallbacks")
+
     def _spot_oracle_loop(self):
         """Refreshes spot prices every 5 seconds continuously with MT5 health watchdog."""
         try:
@@ -843,10 +866,17 @@ class PriceEngine:
                         success_count += 1
             if success_count > 0:
                 self.connected = True
+                emit_flow("up.mt5_bridge", "eng.price_engine",
+                          STATE_LIVE if success_count >= 35 else STATE_FALLBACK,
+                          latency_ms=(time.time() - now_ts) * 1000.0, items=success_count,
+                          detail=f"MT5 {self.active_broker} OHLCV refresh: {success_count}/35 timeframe frames updated")
                 self._save_disk_cache()
                 return
 
         # 2. Tier 2: Decoupled yfinance fallback if MT5 is offline
+        emit_flow("up.mt5_bridge", "eng.price_engine", STATE_FALLBACK,
+                  latency_ms=1.0, items=0,
+                  detail="MT5 candles unavailable -> falling back to batch Yahoo Finance OHLCV download")
         tickers = list(YF_MAP.values())
 
         # 1. Download H1 (used for H1 and resampled to H4) - 60 days provides ~1,400 H1 bars and ~350 H4 bars

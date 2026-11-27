@@ -428,10 +428,28 @@ def calculate_tf_decision_zones(
         has_swing = any("SWING" in t or "OB" in t or "SUPPLY" in t or "DEMAND" in t for t in types_list)
         has_bench = any(t in ("KEY_BENCHMARK", "PDH", "PDL", "WEEKLY_OPEN", "DAILY_OPEN", "LIQ_HIGH", "LIQ_LOW") for t in types_list)
         has_round = any("ROUND" in t for t in types_list)
+
+        # Per-TF Fibonacci Golden Pocket / 38.2% confluence booster (never creates standalone zones)
+        fib_pts = 0
+        try:
+            from core.zone_engine import compute_tf_fib_levels
+            htf_fib = compute_tf_fib_levels(df, atr, timeframe=timeframe.upper())
+            zone_role = "RESISTANCE" if is_upper else "SUPPORT"
+            if htf_fib and htf_fib.get("target_role") == zone_role:
+                f_pad = 0.35 * atr
+                if (low - f_pad) <= htf_fib["fib_618"] <= (high + f_pad):
+                    fib_pts = 10
+                    confluences = list(confluences) + [f"{timeframe.upper()} Fib 61.8% OTE"]
+                elif (low - f_pad) <= htf_fib["fib_382"] <= (high + f_pad):
+                    fib_pts = 6
+                    confluences = list(confluences) + [f"{timeframe.upper()} Fib 38.2%"]
+        except Exception:
+            pass
+
         n_conf = len(confluences)
         struct_pts = 40 if item is not None else 25
         bench_pts = 25 if has_bench else (18 if has_swing else 10)
-        stack_pts = min(35, n_conf * 12 + (8 if has_round else 0))
+        stack_pts = min(35, n_conf * 12 + (8 if has_round else 0) + fib_pts)
         htf_score = int(min(100, struct_pts + bench_pts + stack_pts))
         htf_grade = "STRONG" if htf_score >= 70 else ("MEDIUM" if htf_score >= 40 else "WEAK")
         htf_bd = [

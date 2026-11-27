@@ -29,3 +29,5 @@ scripts/trader_dna*
 backend/private_routes*
 *trader_vault*
 *trader_dna*
+*.session
+*.session-journal

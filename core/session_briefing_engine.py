@@ -26,6 +26,7 @@ from core.decision_zones import calculate_all_decision_zones
 from core.regime_engine import RegimeEngine
 
 log = logging.getLogger(__name__)
+from core.telemetry_bus import emit_flow, STATE_LIVE, STATE_CACHED, STATE_FALLBACK, STATE_ERROR
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRIEFING_CACHE_FILE = os.path.join(ROOT, "logs", "session_briefings.json")
@@ -712,9 +713,15 @@ class SessionBriefingEngine:
                 if text:
                     self._grounded_macro_cache = {"session_key": s_key, "text": text, "fetched_at": now_ts}
                     log.info("[SessionBriefing] Step 1 Grounded macro brief fetched in %.2fs (%d chars).", time.time() - t0, len(text))
+                    emit_flow("up.gemini_cloud", "eng.session_briefing", STATE_LIVE,
+                              latency_ms=(time.time() - t0) * 1000.0, items=len(text),
+                              detail=f"Gemini Step-1 Google Search Grounding succeeded ({len(text)} chars)")
                     return text
         except Exception as e:
             log.warning("[SessionBriefing] Step 1 Google Search grounding skipped/failed (%s). Continuing with WorldNewsEngine headlines.", e)
+            emit_flow("up.gemini_cloud", "eng.session_briefing", STATE_FALLBACK,
+                      latency_ms=(time.time() - t0) * 1000.0, items=0,
+                      detail=f"Gemini Step-1 Search Grounding failed ({type(e).__name__}: {e}) -> falling back to WorldNewsEngine RSS")
         return ""
 
     def is_briefing_stale(self, now_utc: Optional[datetime] = None) -> bool:
@@ -1648,6 +1655,9 @@ RESPOND ONLY WITH VALID JSON matching this exact structure:
                 except Exception as e:
                     err_str = f"{type(e).__name__}: {e}"
                     log.warning("[SessionBriefing] Gemini API call error (%s). Falling back to rule-based synthesis.", err_str)
+                    emit_flow("up.gemini_cloud", "eng.session_briefing", STATE_FALLBACK,
+                              latency_ms=(time.time() - t0) * 1000.0, items=7,
+                              detail=f"Gemini Step-2 Battle-Plan failed ({err_str}) -> fallback SYNTHESIZED_RULE_BASED")
                     briefing = self._generate_rule_based_briefing(
                         telemetry, fallback_reason=err_str, grounded_macro_brief=grounded_macro_brief
                     )

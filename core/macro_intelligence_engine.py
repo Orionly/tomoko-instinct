@@ -3,6 +3,7 @@ import math
 import urllib.request
 import yfinance as yf
 from datetime import datetime, timezone
+from core.telemetry_bus import emit_flow, STATE_LIVE, STATE_CACHED, STATE_FALLBACK, STATE_ERROR
 
 # Cache settings
 _FRED_TTL = 3600 * 6  # 6 hours for daily series
@@ -59,9 +60,12 @@ class MacroIntelligenceEngine:
         now = time.time()
         cached = _cache["fred_dfii10"]
         if cached["ts"] > 0 and (now - cached["ts"]) < _FRED_TTL:
+            emit_flow("up.fred_dfii10", "eng.macro_intel", STATE_CACHED, latency_ms=0.2, items=1,
+                      detail=f"FRED DFII10 cached: {cached['val']}% ({cached['date']})")
             return cached["val"], cached["date"]
 
         url = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFII10"
+        t0 = time.time()
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Tomoko-MacroEngine/1.0"})
             with urllib.request.urlopen(req, timeout=8) as resp:
@@ -75,9 +79,14 @@ class MacroIntelligenceEngine:
                             "ts": now,
                             "date": parts[0].strip()
                         }
+                        emit_flow("up.fred_dfii10", "eng.macro_intel", STATE_LIVE,
+                                  latency_ms=(time.time() - t0) * 1000, items=1,
+                                  detail=f"FRED DFII10 fetched: {val}% (date {parts[0].strip()})")
                         return val, parts[0].strip()
-        except Exception:
-            pass
+        except Exception as e:
+            emit_flow("up.fred_dfii10", "eng.macro_intel", STATE_FALLBACK,
+                      latency_ms=(time.time() - t0) * 1000, items=0,
+                      detail=f"FRED DFII10 fetch failed ({type(e).__name__}: {e}) -> fallback {cached['val']}%")
 
         return cached["val"], cached["date"] or "Latest Fed Close"
 
@@ -87,6 +96,7 @@ class MacroIntelligenceEngine:
         if cached and (now - cached["ts"]) < _YF_TTL:
             return {k: v for k, v in cached.items() if k != "ts"}
 
+        t0 = time.time()
         try:
             t = yf.Ticker(ticker)
             df = t.history(period="1mo")
@@ -139,11 +149,19 @@ class MacroIntelligenceEngine:
                         res["change_bps"] = round((last - prev) * 100.0, 1)
                         res["change_5d_bps"] = round((last - base_5d) * 100.0, 1)
                     _cache["yf_data"][ticker] = res
+                    emit_flow("up.yfinance_macro", "eng.macro_intel", STATE_LIVE,
+                              latency_ms=(time.time() - t0) * 1000, items=len(closes),
+                              detail=f"YF {ticker} fetched: {round(last, 4)} ({chg:+.2f}%)")
                     return {k: v for k, v in res.items() if k != "ts"}
-        except Exception:
-            pass
+        except Exception as e:
+            emit_flow("up.yfinance_macro", "eng.macro_intel", STATE_ERROR,
+                      latency_ms=(time.time() - t0) * 1000, items=0,
+                      detail=f"YF {ticker} exception: {type(e).__name__}: {e}")
 
         if cached:
+            emit_flow("up.yfinance_macro", "eng.macro_intel", STATE_FALLBACK,
+                      latency_ms=(time.time() - t0) * 1000, items=1,
+                      detail=f"YF {ticker} live pull failed -> serving expired cached value {cached.get('price')}")
             return {k: v for k, v in cached.items() if k != "ts"}
         return None
 
@@ -151,12 +169,24 @@ class MacroIntelligenceEngine:
         """
         Extracts all 6 core pillars, including the Hybrid 10Y TIPS data.
         """
+        t0 = time.time()
         matrix = {}
+        fallback_keys = []
         for key, sym in self.tickers.items():
             data = self._fetch_yf_ticker(sym)
             if not data:
+                fallback_keys.append(f"{key}({sym})")
                 data = dict(_FALLBACK_MATRIX.get(key, {"price": 0.0, "change_pct": 0.0, "trend": "FLAT"}))
             matrix[key] = data
+
+        if fallback_keys:
+            emit_flow("up.yfinance_macro", "eng.macro_intel", STATE_FALLBACK,
+                      latency_ms=(time.time() - t0) * 1000, items=len(self.tickers) - len(fallback_keys),
+                      detail=f"SILENT FALLBACK (_FALLBACK_MATRIX) used for: {', '.join(fallback_keys)}")
+        else:
+            emit_flow("eng.macro_intel", "cache.macro_ttl", STATE_LIVE,
+                      latency_ms=(time.time() - t0) * 1000, items=len(self.tickers),
+                      detail="All 7 macro pillars resolved from live/TTL Yahoo Finance")
 
         fed_yield, fed_date = self.get_fred_10y_real_yield()
         tip_etf = matrix["TIPS_ETF"]

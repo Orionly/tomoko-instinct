@@ -69,3 +69,25 @@ Whenever the user enters `/dna` or `dna`:
      - Timeframe, Live price, Mode (Zone Markup vs Trade Execution)
      - Zones (price ranges, 50% CE midlines, anchor types, structural roles, "WHY") and/or Trade Execution (Entry, SL, TP, R:R, trigger candle, rationale)
      - Confirmation that permanent LLM/VLM training samples were archived to `D:\Tomoko_Trader_Vault\dataset\`.
+
+---
+
+### `/tgdna` (or `tgdna`) — Daily End-of-Day Telegram Trader DNA Ingestion
+
+Whenever the user enters `/tgdna` or `tgdna` (optionally with a day count like `/tgdna 5` or `dry-run`):
+1. Run `python scripts/trader_dna_telegram.py --days 2 --download-charts` (default 48-hour rolling sweep; deduplicates strictly by `telegram_msg_id`, content signature, and `telegram_seen_chart_ids` so replicates are always discarded).
+2. Automatically refreshes any previously saved `PENDING_RECENT` / `OPEN_OR_EXPIRED` Telegram signals against the latest `logs/candles_cache.pkl`.
+3. Traces new signals back on M15/H1 candles at exact `msg.date` (zero lookahead), audits forward `TP_HIT` / `SL_HIT` / `NO_FILL`, and records them into `trader_dna/data/trader_dna_profile.json` and `D:\Tomoko_Trader_Vault\dataset\`.
+4. If genuine chart-mapping images (`TG_*.jpg`) were downloaded into `trader_dna/dropoff/`, inspect them with Antigravity's native `read_file` vision tool (zero API quota): ingest valid charts via `/dna` or discard non-chart banners.
+5. Present a concise EOD summary table of newly ingested signals, discarded replicates/noise, and refreshed outcomes.
+
+---
+
+### `/tune` (or `tune`) — Weekend Comparison & Offline ML Calibration
+
+Whenever the user enters `/tune` or `tune` (optionally `/tune dry-run` or `/tune reset`):
+1. Run `python scripts/trader_dna_telegram.py --days 2` first to finalize any open Friday NY-session Telegram signals against closed weekly candles.
+2. Run `python scripts/weekend_comparison.py --tune --purge-archive` (or `--tune --dry-run` if previewing).
+3. Audits all `/dna` zone markups and point-in-time executed trades (promoting verified `TP_HIT` Telegram entry zones into the M15 ML dataset), executes Optuna + Stage 1.5 LogReg / Stage 2 LightGBM calibration (`data/tuned_zone_params.json`, `data/models/dna_zone_scorer.pkl`) and Entry DNA calibration (`data/tuned_entry_dna.json`), and cleans temporary `trader_dna/archive/current_week/` copies while preserving `trader_dna/data/trader_dna_profile.json` and `D:\Tomoko_Trader_Vault\dataset\`.
+4. Present a concise Weekend Scorecard with ML stage, before/after recall & IoU, trade confluence & win rate, and calibrated parameter diffs.
+

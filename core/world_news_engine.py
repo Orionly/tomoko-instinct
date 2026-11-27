@@ -22,6 +22,7 @@ from email.utils import parsedate_to_datetime
 from typing import Dict, List, Optional, Any
 
 log = logging.getLogger(__name__)
+from core.telemetry_bus import emit_flow, STATE_LIVE, STATE_CACHED, STATE_FALLBACK, STATE_ERROR
 
 # Safe import of FinBERT ONNX news classifier
 try:
@@ -429,9 +430,13 @@ class WorldNewsEngine:
                         })
             except Exception as e:
                 log.warning("[WorldNewsEngine] Failed to poll feed '%s': %s", source_name, e)
+                emit_flow("up.world_rss_truth", "eng.world_news_engine", STATE_FALLBACK,
+                          items=0, detail=f"RSS wire '{source_name}' failed: {type(e).__name__}: {e}")
 
         if not all_raw_items:
             log.info("[WorldNewsEngine] No items retrieved from feeds.")
+            emit_flow("up.world_rss_truth", "eng.world_news_engine", STATE_ERROR,
+                      items=0, detail="0 headlines retrieved across all 10 RSS wires & Truth Social")
             return
 
         # Deduplicate and enrich
@@ -519,6 +524,12 @@ class WorldNewsEngine:
             self.last_fetch_time = now
 
         self._save_cache()
+        emit_flow("up.world_rss_truth", "eng.world_news_engine",
+                  STATE_LIVE if analyze_news_item else STATE_FALLBACK,
+                  items=len(self.items),
+                  detail=f"Synced {len(self.items)} headlines & {len(self.speeches)} speeches ({'FinBERT ONNX' if analyze_news_item else 'keyword fallback'})")
+        emit_flow("eng.world_news_engine", "cache.world_news_json", STATE_LIVE,
+                  items=len(self.items), detail=f"Saved world_news_cache.json ({len(self.items)} items)")
         log.info("[WorldNewsEngine] Feed sync complete: %d items in 30-day archive, %d speech briefs.",
                  len(self.items), len(self.speeches))
 

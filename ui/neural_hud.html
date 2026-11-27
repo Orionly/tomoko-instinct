@@ -1,0 +1,2066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tomoko // Neural Cortex — Live Data-Flow & System Health HUD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #04060A;
+    --panel: #080C14;
+    --panel-alt: #0B101B;
+    --border: #162032;
+    --border-bright: #24344F;
+    --text: #E2E8F0;
+    --muted: #64748B;
+    --dim: #334155;
+    --orange: #FF6B2B;
+    --amber: #FFB800;
+    --cyan: #00E5FF;
+    --blue: #38BDF8;
+    --indigo: #818CF8;
+    --purple: #A855F7;
+    --pink: #F43F5E;
+    --green: #00FF88;
+    --red: #FF3B5C;
+  }
+
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; margin: 0; padding: 0; }
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px;
+    user-select: none;
+  }
+
+  #ambient {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(850px 550px at 50% 38%, rgba(0, 229, 255, 0.07), transparent 68%),
+      radial-gradient(650px 450px at 50% 35%, rgba(255, 107, 43, 0.055), transparent 62%),
+      radial-gradient(800px 500px at 85% 75%, rgba(168, 85, 247, 0.045), transparent 65%);
+  }
+
+  #app {
+    position: relative;
+    z-index: 2;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 6px 8px 8px;
+    gap: 6px;
+  }
+
+  /* ================= TOP COMMAND STRIP ================= */
+  header.cmd-strip {
+    height: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #070A10;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px 4px 4px;
+    gap: 12px;
+  }
+
+  .cmd-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .hero-badge {
+    background: linear-gradient(135deg, #FF6B2B, #FF8C42);
+    color: #05070B;
+    padding: 5px 12px;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.05;
+    flex-shrink: 0;
+    box-shadow: 0 0 16px rgba(255, 107, 43, 0.35);
+  }
+  .hero-badge .hb-top { font-weight: 800; font-size: 12px; letter-spacing: 0.06em; }
+  .hero-badge .hb-sub { font-weight: 700; font-size: 8.5px; letter-spacing: 0.08em; opacity: 0.85; }
+
+  .cmd-title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .cmd-title-main {
+    font-size: 11px;
+    font-weight: 700;
+    color: #F8FAFC;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cmd-title-sub {
+    font-size: 9.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cmd-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+
+  .kpi-group { display: flex; align-items: center; gap: 14px; }
+  .kpi-box { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+  .kpi-lbl { font-size: 8px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; }
+  .kpi-val { font-size: 14px; font-weight: 800; }
+  .kpi-val.live { color: var(--green); text-shadow: 0 0 10px rgba(0, 255, 136, 0.35); }
+  .kpi-val.cached { color: var(--blue); }
+  .kpi-val.fallback { color: var(--amber); text-shadow: 0 0 10px rgba(255, 184, 0, 0.35); }
+  .kpi-val.stale { color: #FB923C; }
+  .kpi-val.err { color: var(--red); text-shadow: 0 0 12px rgba(255, 59, 92, 0.5); }
+  .kpi-val.cyan { color: var(--cyan); }
+
+  .cmd-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-left: 1px solid var(--border);
+    padding-left: 10px;
+  }
+
+  .hud-btn {
+    background: rgba(0, 229, 255, 0.08);
+    border: 1px solid rgba(0, 229, 255, 0.35);
+    color: var(--cyan);
+    font-family: inherit;
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 5px 9px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .hud-btn:hover { background: rgba(0, 229, 255, 0.18); box-shadow: 0 0 12px rgba(0, 229, 255, 0.25); }
+  .hud-btn.probe-btn {
+    background: rgba(255, 107, 43, 0.12);
+    border-color: rgba(255, 107, 43, 0.45);
+    color: #FF8C42;
+  }
+  .hud-btn.probe-btn:hover { background: rgba(255, 107, 43, 0.24); box-shadow: 0 0 12px rgba(255, 107, 43, 0.3); }
+
+  .sse-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(0, 255, 136, 0.08);
+    border: 1px solid rgba(0, 255, 136, 0.3);
+    color: var(--green);
+  }
+  .sse-pill.disconnected {
+    background: rgba(255, 59, 92, 0.15);
+    border-color: var(--red);
+    color: var(--red);
+    animation: blinkFault 1s infinite;
+  }
+  .sse-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+
+  @keyframes blinkFault { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  /* ================= 3-COLUMN MISSION-CONTROL STAGE ================= */
+  /* Left Wing (24.5%) | CENTER MAIN SHOW (50%) | Right Wing (25.5%) */
+  .stage-grid {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 24.5fr 50fr 25.5fr;
+    gap: 6px;
+  }
+
+  .wing-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .center-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* Left Wing Proportions: 04 Upstream (36%) | 03 Co-Telemetry (64%) */
+  #panel-04 { flex: 36; }
+  #panel-03 { flex: 64; }
+
+  /* Center Main Stage Proportions: 01 3D Main Show (68%) | 02 Bezier Cascade (32%) */
+  #panel-01 {
+    flex: 68;
+    border-color: rgba(0, 229, 255, 0.32);
+    box-shadow: 0 0 35px rgba(0, 229, 255, 0.06), inset 0 0 30px rgba(0, 229, 255, 0.03);
+  }
+  #panel-02 { flex: 32; }
+
+  /* Right Wing Proportions: 06 OMC Wafer Matrix (54%) | 05 Watchdog Chrono (46%) */
+  #panel-06 { flex: 54; }
+  #panel-05 { flex: 46; }
+
+  /* Standard GBrain Panel Frame */
+  .g-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .g-panel.has-fault {
+    border-color: rgba(255, 59, 92, 0.6) !important;
+    box-shadow: inset 0 0 20px rgba(255, 59, 92, 0.08);
+  }
+
+  .g-header {
+    height: 24px;
+    min-height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    background: #0D131F;
+    border-bottom: 1px solid var(--border);
+    font-size: 9.5px;
+    gap: 6px;
+  }
+  .g-header-left { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .g-idx {
+    font-weight: 800;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #05070B;
+    flex-shrink: 0;
+  }
+  .g-idx.c01 { background: var(--cyan); box-shadow: 0 0 8px rgba(0,229,255,0.4); }
+  .g-idx.c02 { background: var(--amber); }
+  .g-idx.c03 { background: #3B82F6; color: #FFF; }
+  .g-idx.c04 { background: #06B6D4; }
+  .g-idx.c05 { background: #EC4899; color: #FFF; }
+  .g-idx.c06 { background: var(--purple); color: #FFF; }
+
+  .g-title {
+    color: #CBD5E1;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .g-meta {
+    color: var(--orange);
+    font-size: 9px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .g-body {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ================= PANEL 01 (CENTER MAIN SHOW): 3D CONSTELLATION ================= */
+  #canvas-3d {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+  }
+  #canvas-3d:active { cursor: grabbing; }
+
+  .constellation-legend {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 162px;
+    background: rgba(7, 11, 18, 0.86);
+    border: 1px solid var(--border-bright);
+    border-radius: 5px;
+    padding: 7px 8px;
+    backdrop-filter: blur(8px);
+    pointer-events: auto;
+    z-index: 5;
+  }
+  .cl-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2.5px 4px;
+    border-radius: 3px;
+    font-size: 9.2px;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .cl-row:hover, .cl-row.active { background: rgba(255, 255, 255, 0.08); }
+  .cl-left { display: flex; align-items: center; gap: 6px; }
+  .cl-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .cl-cnt { font-weight: 700; color: #94A3B8; }
+  .cl-footer {
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid var(--border);
+    font-size: 8px;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+
+  .state-key-bar {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(7, 11, 18, 0.86);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 8.5px;
+    z-index: 5;
+  }
+  .sk-item { display: inline-flex; align-items: center; gap: 4px; color: #CBD5E1; }
+  .sk-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  .cam-controls {
+    position: absolute;
+    bottom: 62px;
+    right: 10px;
+    display: flex;
+    gap: 4px;
+    z-index: 5;
+  }
+  .cam-btn {
+    background: rgba(9, 14, 24, 0.85);
+    border: 1px solid var(--border-bright);
+    color: #94A3B8;
+    font-family: inherit;
+    font-size: 8.5px;
+    padding: 3px 7px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .cam-btn:hover { color: #FFF; border-color: var(--cyan); }
+
+  .inspector-card {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    background: rgba(9, 14, 24, 0.92);
+    border: 1px solid rgba(0, 229, 255, 0.4);
+    border-radius: 5px;
+    padding: 7px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    backdrop-filter: blur(8px);
+    z-index: 5;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+  }
+  .inspector-card.fault { border-color: var(--red); background: rgba(28, 10, 18, 0.94); }
+  .inspector-card.fallback { border-color: var(--amber); }
+  .ic-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .ic-title { font-size: 11px; font-weight: 700; color: #F8FAFC; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ic-sub { font-size: 9px; color: var(--cyan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ic-badge { font-size: 9.5px; font-weight: 800; padding: 3px 8px; border-radius: 4px; flex-shrink: 0; }
+
+  /* ================= PANEL 02 (LOWER CENTER): BEZIER CASCADE ================= */
+  .p02-split {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 195px 1fr;
+  }
+  .wiki-sidebar {
+    border-right: 1px solid var(--border);
+    padding: 6px;
+    overflow-y: auto;
+    display: block;
+    background: #060910;
+  }
+  .wiki-sidebar::-webkit-scrollbar { width: 4px; }
+  .wiki-sidebar::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+  .wiki-sec-hdr {
+    font-size: 8.5px;
+    font-weight: 800;
+    color: var(--amber);
+    margin-top: 6px;
+    margin-bottom: 3px;
+    letter-spacing: 0.05em;
+  }
+  .wiki-sec-hdr:first-child { margin-top: 0; }
+  .wiki-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3.5px 6px;
+    margin-bottom: 2px;
+    border-radius: 3px;
+    font-size: 9px;
+    color: #94A3B8;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: all 0.12s;
+  }
+  .wiki-item:hover { background: rgba(255, 255, 255, 0.05); color: #F8FAFC; }
+  .wiki-item.active {
+    background: rgba(255, 184, 0, 0.15);
+    color: #FDE68A;
+    border-left-color: var(--amber);
+    font-weight: 700;
+  }
+  .wiki-item .wi-st { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+  .bezier-stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #070B12; }
+  #svg-bezier { width: 100%; height: 100%; display: block; }
+
+  /* ================= PANEL 03 (BOTTOM-LEFT): DUAL TERMINAL + VAULTS ================= */
+  .p03-layout {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+    gap: 6px;
+  }
+  .dual-terminals {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .term-box {
+    flex: 1;
+    background: #05080E;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 7px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+  .term-box.live-box { border-left: 2.5px solid var(--orange); }
+  .term-box.fault-box { border-left: 2.5px solid var(--red); }
+
+  .term-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    font-size: 9.2px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .term-stream {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: block; /* block prevents flex squishing lines to 1px! */
+    font-size: 8.8px;
+    line-height: 1.4;
+  }
+  .term-stream::-webkit-scrollbar { width: 3px; }
+  .term-stream::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+  .t-line {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 2px 4px;
+    margin-bottom: 2px;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .t-line:hover { background: rgba(255, 255, 255, 0.07); }
+  .t-line.LIVE { color: #A7F3D0; }
+  .t-line.CACHED { color: #93C5FD; }
+  .t-line.FALLBACK { color: #FDE047; background: rgba(255, 184, 0, 0.1); }
+  .t-line.STALE { color: #FDBA74; background: rgba(251, 146, 60, 0.1); }
+  .t-line.ERROR { color: #FDA4AF; background: rgba(255, 59, 92, 0.18); font-weight: 700; }
+
+  .term-bar-wrap {
+    margin-top: 3px;
+    padding-top: 3px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    flex-shrink: 0;
+  }
+  .term-bar-lbl { display: flex; justify-content: space-between; font-size: 8px; color: var(--muted); margin-bottom: 2px; }
+  .term-bar-track { height: 5px; background: #111827; border-radius: 3px; overflow: hidden; }
+  .term-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+
+  .vault-cards-row {
+    height: 52px;
+    min-height: 52px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .v-card {
+    background: #070B12;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 5px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: all 0.15s;
+    min-width: 0;
+  }
+  .v-card:hover, .v-card.active { border-color: var(--blue); box-shadow: 0 0 10px rgba(56, 189, 248, 0.18); }
+  .v-card.fault { border-color: var(--red); }
+  .v-card.fallback { border-color: var(--amber); }
+  .vc-name { font-size: 7.8px; font-weight: 700; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vc-lines { display: flex; flex-direction: column; gap: 2px; }
+  .vc-skel { height: 2.5px; border-radius: 2px; background: #1E293B; }
+  .vc-sub { font-size: 7.5px; color: var(--muted); display: flex; justify-content: space-between; }
+
+  /* ================= PANEL 04 (TOP-LEFT): UPSTREAM GATEWAY ================= */
+  .p04-layout {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 128px 18px 1fr;
+    padding: 6px;
+    gap: 4px;
+    align-items: stretch;
+  }
+  .up-phone-frame {
+    background: #05080E;
+    border: 1px solid var(--border-bright);
+    border-radius: 7px;
+    padding: 5px;
+    display: block;
+    overflow-y: auto;
+  }
+  .up-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3.5px 5px;
+    margin-bottom: 2.5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 8.5px;
+    cursor: pointer;
+  }
+  .up-row:hover { border-color: var(--cyan); background: rgba(0, 229, 255, 0.06); }
+  .up-arrow-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--cyan);
+    font-size: 9px;
+    gap: 3px;
+  }
+  .up-note-frame {
+    background: #05080E;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+    font-size: 8.8px;
+    line-height: 1.4;
+  }
+  .wiki-tag {
+    color: var(--cyan);
+    background: rgba(0, 229, 255, 0.1);
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-weight: 700;
+    display: inline-block;
+    margin-top: 2px;
+  }
+
+  /* ================= PANEL 05 (BOTTOM-RIGHT): WATCHDOG CHRONO ================= */
+  .p05-layout {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+    gap: 6px;
+  }
+  .p05-top {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 112px 1fr;
+    gap: 8px;
+    align-items: center;
+  }
+  .chrono-wrap { width: 108px; height: 108px; position: relative; margin: 0 auto; }
+  #canvas-chrono { width: 108px; height: 108px; display: block; }
+  .dot-matrix-list { display: flex; flex-direction: column; gap: 6px; }
+  .dm-row { display: flex; align-items: center; justify-content: space-between; font-size: 8.8px; color: #CBD5E1; }
+  .dm-dots { display: flex; gap: 3.5px; }
+  .dm-dot { width: 6.5px; height: 6.5px; border-radius: 50%; background: #1E293B; }
+  .dm-dot.on { background: #F43F5E; box-shadow: 0 0 6px #F43F5E; }
+  .dm-dot.warn { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+
+  .p05-rules {
+    height: 58px;
+    min-height: 58px;
+    background: #05080E;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 8.5px;
+    line-height: 1.4;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  /* ================= PANEL 06 (TOP-RIGHT): 44-NODE WAFER MATRIX ================= */
+  .p06-layout {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+    gap: 6px;
+  }
+  .cli-bar {
+    background: #05080D;
+    border: 1px solid rgba(0, 255, 136, 0.3);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 9px;
+    color: var(--green);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .wafer-section {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 76px;
+    gap: 8px;
+    align-items: center;
+  }
+  .wafer-grid {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 3.5px;
+  }
+  .wafer-cell {
+    height: 20px;
+    border-radius: 3px;
+    background: #1A142E;
+    border: 1px solid rgba(168, 85, 247, 0.25);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.82);
+    transition: transform 0.1s, border-color 0.15s;
+    overflow: hidden;
+  }
+  .wafer-cell:hover, .wafer-cell.selected {
+    transform: scale(1.12);
+    z-index: 3;
+    border-color: #FFF;
+  }
+  .wafer-cell.LIVE {
+    background: rgba(168, 85, 247, 0.48);
+    border-color: #C084FC;
+    box-shadow: 0 0 6px rgba(168, 85, 247, 0.35);
+  }
+  .wafer-cell.CACHED { background: rgba(56, 189, 248, 0.35); border-color: #38BDF8; }
+  .wafer-cell.FALLBACK { background: rgba(255, 184, 0, 0.48); border-color: #FFB800; color: #05070B; }
+  .wafer-cell.STALE { background: rgba(251, 146, 60, 0.45); border-color: #FB923C; }
+  .wafer-cell.ERROR {
+    background: rgba(255, 59, 92, 0.78);
+    border-color: #FF3B5C;
+    box-shadow: 0 0 10px #FF3B5C;
+    animation: blinkFault 0.9s infinite;
+  }
+
+  .agent-orbs {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    justify-items: center;
+  }
+  .agent-orb {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0, 229, 255, 0.16);
+    border: 1px solid var(--cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7.5px;
+    font-weight: 800;
+    color: var(--cyan);
+    cursor: pointer;
+  }
+  .agent-orb:hover { transform: scale(1.1); }
+  .agent-orb.FALLBACK { border-color: var(--amber); color: var(--amber); background: rgba(255,184,0,0.18); }
+  .agent-orb.ERROR { border-color: var(--red); color: var(--red); background: rgba(255,59,92,0.28); }
+
+  .p06-diag-box {
+    height: 64px;
+    min-height: 64px;
+    background: #05080E;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 8.5px;
+    line-height: 1.38;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+<div id="ambient"></div>
+
+<div id="app">
+  <!-- TOP COMMAND STRIP -->
+  <header class="cmd-strip" id="top-strip">
+    <div class="cmd-left">
+      <div class="hero-badge">
+        <span class="hb-top">TOMOKO CORTEX</span>
+        <span class="hb-sub">DATA-FLOW &amp; HEALTH HUD</span>
+      </div>
+      <div class="cmd-title-block">
+        <div class="cmd-title-main">REAL-TIME SYSTEM TELEMETRY — EVERY DATA MOVEMENT VISUALIZED</div>
+        <div class="cmd-title-sub">upstreams · 16 compute engines · TTL caches · D: dataset vault · FastAPI routes · zero silent fallbacks</div>
+      </div>
+    </div>
+
+    <div class="cmd-right">
+      <div class="kpi-group">
+        <div class="kpi-box" title="Pipes & nodes actively streaming fresh data">
+          <span class="kpi-lbl">LIVE</span>
+          <span class="kpi-val live" id="kpi-live">0</span>
+        </div>
+        <div class="kpi-box" title="Served from valid in-memory or disk TTL cache">
+          <span class="kpi-lbl">CACHED</span>
+          <span class="kpi-val cached" id="kpi-cached">0</span>
+        </div>
+        <div class="kpi-box" title="Silent fallback active (e.g. _FALLBACK_MATRIX, rule-based briefing, decoupled feed)">
+          <span class="kpi-lbl">FALLBACK</span>
+          <span class="kpi-val fallback" id="kpi-fallback">0</span>
+        </div>
+        <div class="kpi-box" title="Data age exceeded expected freshness window">
+          <span class="kpi-lbl">STALE</span>
+          <span class="kpi-val stale" id="kpi-stale">0</span>
+        </div>
+        <div class="kpi-box" title="Hard blockage, exception, missing cache, or 0-item payload">
+          <span class="kpi-lbl">ERRORS</span>
+          <span class="kpi-val err" id="kpi-error">0</span>
+        </div>
+        <div class="kpi-box" title="Rolling average data movement latency">
+          <span class="kpi-lbl">LATENCY</span>
+          <span class="kpi-val cyan" id="kpi-lat">0ms</span>
+        </div>
+      </div>
+
+      <div class="cmd-actions">
+        <span class="sse-pill" id="sse-status">
+          <span class="sse-dot"></span>
+          <span id="sse-text">SSE LIVE</span>
+        </span>
+        <button class="hud-btn probe-btn" id="btn-deep-probe" onclick="triggerDeepProbe()">⚡ DEEP PROBE</button>
+        <a class="hud-btn" href="/">← DASHBOARD</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- 3-COLUMN STAGE: LEFT WING (04, 03) | CENTER MAIN SHOW (01, 02) | RIGHT WING (06, 05) -->
+  <div class="stage-grid">
+    <!-- ==================== LEFT WING ==================== -->
+    <div class="wing-col">
+      <!-- PANEL 04: UPSTREAM GATEWAY -->
+      <section class="g-panel" id="panel-04">
+        <div class="g-header">
+          <div class="g-header-left">
+            <span class="g-idx c04">04</span>
+            <span class="g-title">UPSTREAM GATEWAY — broker + cloud feeds</span>
+          </div>
+          <span class="g-meta">8 external wires</span>
+        </div>
+        <div class="g-body">
+          <div class="p04-layout">
+            <div class="up-phone-frame" id="upstream-list"></div>
+            <div class="up-arrow-col">
+              <span>-&gt;</span>
+              <span style="writing-mode:vertical-rl;font-size:7.5px;color:var(--muted);letter-spacing:0.08em">INGESTED</span>
+            </div>
+            <div class="up-note-frame" id="upstream-dossier">
+              <div>
+                <div style="color:var(--muted);font-size:8px;margin-bottom:4px">/diagnostics/upstream_gate.md</div>
+                <div id="up-dossier-body" style="color:#E2E8F0">Probing external broker &amp; macro wires...</div>
+              </div>
+              <div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--border);font-size:8px;color:var(--muted)">
+                trace links:<br/>
+                <span class="wiki-tag" id="up-tag-1">[[up.mt5_bridge]]</span>
+                <span class="wiki-tag" id="up-tag-2">[[eng.price_engine]]</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PANEL 03: CO-TELEMETRY (LIVE STREAM + FAULT QUARANTINE + 4 VAULTS) -->
+      <section class="g-panel" id="panel-03">
+        <div class="g-header">
+          <div class="g-header-left">
+            <span class="g-idx c03">03</span>
+            <span class="g-title">CO-TELEMETRY — Live Stream + Fault Quarantine</span>
+          </div>
+          <span class="g-meta" id="p03-meta">zero failure ranking</span>
+        </div>
+        <div class="g-body">
+          <div class="p03-layout">
+            <div class="dual-terminals">
+              <!-- Top Terminal: All Live Data Movements -->
+              <div class="term-box live-box">
+                <div class="term-hdr">
+                  <span style="color:var(--orange)">&gt; Live Packet Flow</span>
+                  <span style="color:var(--muted);font-size:8px" id="term-live-cnt">0 pkts</span>
+                </div>
+                <div class="term-stream" id="stream-live"></div>
+                <div class="term-bar-wrap">
+                  <div class="term-bar-lbl">
+                    <span>healthy pipe ratio</span>
+                    <span id="bar-live-pct" style="color:var(--orange)">100%</span>
+                  </div>
+                  <div class="term-bar-track">
+                    <div class="term-bar-fill" id="bar-live-fill" style="width:100%;background:linear-gradient(90deg,#FF6B2B,#FFB800)"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bottom Terminal: Fault, Fallback & Stale Quarantine -->
+              <div class="term-box fault-box">
+                <div class="term-hdr">
+                  <span style="color:var(--red)">! Fault &amp; Fallback Quarantine</span>
+                  <span style="color:var(--muted);font-size:8px" id="term-fault-cnt">0 anomalies</span>
+                </div>
+                <div class="term-stream" id="stream-faults"></div>
+                <div class="term-bar-wrap">
+                  <div class="term-bar-lbl">
+                    <span>fallback / error load</span>
+                    <span id="bar-fault-pct" style="color:var(--blue)">0% · clean</span>
+                  </div>
+                  <div class="term-bar-track">
+                    <div class="term-bar-fill" id="bar-fault-fill" style="width:4%;background:linear-gradient(90deg,#38BDF8,#FF3B5C)"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom 4 Storage / Persistence Cards -->
+            <div class="vault-cards-row" id="vault-cards-row">
+              <div class="v-card" onclick="selectNode('cache.candles_pkl')" id="vc-candles">
+                <div class="vc-name">candles.pkl</div>
+                <div class="vc-lines"><div class="vc-skel" style="width:88%"></div><div class="vc-skel" style="width:65%"></div></div>
+                <div class="vc-sub"><span id="vc-candles-st">35/35</span><span>logs/</span></div>
+              </div>
+              <div class="v-card" onclick="selectNode('cache.session_briefing')" id="vc-briefing">
+                <div class="vc-name">briefings.json</div>
+                <div class="vc-lines"><div class="vc-skel" style="width:82%"></div><div class="vc-skel" style="width:70%"></div></div>
+                <div class="vc-sub"><span id="vc-briefing-st">7p</span><span>logs/</span></div>
+              </div>
+              <div class="v-card" onclick="selectNode('vault.trader_dna_profile')" id="vc-dna">
+                <div class="vc-name">dna_profile</div>
+                <div class="vc-lines"><div class="vc-skel" style="width:90%"></div><div class="vc-skel" style="width:60%"></div></div>
+                <div class="vc-sub"><span id="vc-dna-st">DNA</span><span>dna/</span></div>
+              </div>
+              <div class="v-card active" onclick="selectNode('vault.d_drive_dataset')" id="vc-d-vault">
+                <div class="vc-name">D:\Trader_Vault</div>
+                <div class="vc-lines"><div class="vc-skel" style="width:95%;background:#38BDF8"></div><div class="vc-skel" style="width:75%;background:#38BDF8"></div></div>
+                <div class="vc-sub"><span id="vc-dvault-st" style="color:var(--cyan)">VLM</span><span>D:\</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==================== CENTER MAIN STAGE ==================== -->
+    <div class="center-col">
+      <!-- PANEL 01: HERO 3D NEURAL CONSTELLATION (MAIN SHOW) -->
+      <section class="g-panel" id="panel-01">
+        <div class="g-header">
+          <div class="g-header-left">
+            <span class="g-idx c01">01</span>
+            <span class="g-title">TOMOKO CORTEX — 3D live data-flow constellation &amp; blockage topology</span>
+          </div>
+          <span class="g-meta" id="p01-meta">44 NODES · 60 PIPES · 0 MOVEMENTS</span>
+        </div>
+        <div class="g-body">
+          <canvas id="canvas-3d"></canvas>
+
+          <!-- Left Cluster Legend -->
+          <div class="constellation-legend" id="cluster-legend">
+            <div class="cl-row active" data-cluster="ALL" onclick="filterCluster('ALL')">
+              <span class="cl-left"><span class="cl-dot" style="background:#FF6B2B;box-shadow:0 0 6px #FF6B2B"></span><span>All System Layers</span></span>
+              <span class="cl-cnt" id="cl-cnt-ALL">44</span>
+            </div>
+            <div class="cl-row" data-cluster="UPSTREAM" onclick="filterCluster('UPSTREAM')">
+              <span class="cl-left"><span class="cl-dot" style="background:#00E5FF"></span><span>External Upstreams</span></span>
+              <span class="cl-cnt" id="cl-cnt-UPSTREAM">8</span>
+            </div>
+            <div class="cl-row" data-cluster="ENGINE" onclick="filterCluster('ENGINE')">
+              <span class="cl-left"><span class="cl-dot" style="background:#38BDF8"></span><span>Core Engines</span></span>
+              <span class="cl-cnt" id="cl-cnt-ENGINE">16</span>
+            </div>
+            <div class="cl-row" data-cluster="CACHE" onclick="filterCluster('CACHE')">
+              <span class="cl-left"><span class="cl-dot" style="background:#FFB800"></span><span>TTL Caches</span></span>
+              <span class="cl-cnt" id="cl-cnt-CACHE">6</span>
+            </div>
+            <div class="cl-row" data-cluster="VAULT" onclick="filterCluster('VAULT')">
+              <span class="cl-left"><span class="cl-dot" style="background:#A855F7"></span><span>Disk &amp; D: Vaults</span></span>
+              <span class="cl-cnt" id="cl-cnt-VAULT">5</span>
+            </div>
+            <div class="cl-row" data-cluster="API" onclick="filterCluster('API')">
+              <span class="cl-left"><span class="cl-dot" style="background:#00FF88"></span><span>FastAPI Endpoints</span></span>
+              <span class="cl-cnt" id="cl-cnt-API">8</span>
+            </div>
+            <div class="cl-footer">
+              drag to orbit · wheel zoom<br/>every packet keeps file trace
+            </div>
+          </div>
+
+          <!-- Top-Right State Key -->
+          <div class="state-key-bar">
+            <span class="sk-item"><span class="sk-dot" style="background:#00FF88"></span>LIVE</span>
+            <span class="sk-item"><span class="sk-dot" style="background:#38BDF8"></span>CACHED</span>
+            <span class="sk-item"><span class="sk-dot" style="background:#FFB800"></span>FALLBACK</span>
+            <span class="sk-item"><span class="sk-dot" style="background:#FB923C"></span>STALE</span>
+            <span class="sk-item"><span class="sk-dot" style="background:#FF3B5C"></span>ERROR</span>
+          </div>
+
+          <!-- Zoom / Orbit Reset Controls -->
+          <div class="cam-controls">
+            <button class="cam-btn" onclick="zoom3D(1.12)" title="Zoom In">+</button>
+            <button class="cam-btn" onclick="zoom3D(0.89)" title="Zoom Out">−</button>
+            <button class="cam-btn" onclick="resetCamera3D()" title="Reset View">RESET</button>
+          </div>
+
+          <!-- Bottom Live Inspector Card -->
+          <div class="inspector-card" id="p01-inspector">
+            <div class="ic-main">
+              <div class="ic-title" id="ic-title">hub.tomoko_core — TOMOKO CORTEX BUS</div>
+              <div class="ic-sub" id="ic-sub">source = backend/api.py · Click any 3D node or wafer tile to lock blast-radius trace</div>
+            </div>
+            <span class="ic-badge" id="ic-badge" style="background:rgba(0,255,136,0.16);color:#00FF88;border:1px solid #00FF88;">LIVE</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- PANEL 02: LOWER CENTER PIPELINE TRACE (MULTI-HOP BEZIER FAN-OUT) -->
+      <section class="g-panel" id="panel-02">
+        <div class="g-header">
+          <div class="g-header-left">
+            <span class="g-idx c02">02</span>
+            <span class="g-title">PIPELINE TRACE — upstream &amp; downstream blast-radius cascade</span>
+          </div>
+          <span class="g-meta" id="p02-meta">every pipe -&gt; 1 source</span>
+        </div>
+        <div class="g-body">
+          <div class="p02-split">
+            <div class="wiki-sidebar" id="wiki-node-list"></div>
+            <div class="bezier-stage">
+              <svg id="svg-bezier" viewBox="0 0 620 230" preserveAspectRatio="none"></svg>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==================== RIGHT WING ==================== -->
+    <div class="wing-col">
+      <!-- PANEL 06: 44-NODE WAFER MATRIX -->
+      <section class="g-panel" id="panel-06">
+        <div class="g-header">
+          <div class="g-header-left">
+            <span class="g-idx c06">06</span>
+            <span class="g-title">OMC MATRIX — 44 modules &amp; API gateways</span>
+          </div>
+          <span class="g-meta">click tile to trace</span>
+        </div>
+        <div class="g-body">
+          <div class="p06-layout">
+            <div class="cli-bar">
+              <span>$ tomoko telemetry --all-pipes</span>
+              <span id="cli-seq" style="color:var(--muted)">seq #0</span>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--muted);flex-shrink:0">
+              <span id="wafer-summary-lbl">44 / 44 nodes mapped</span>
+              <span>8 API gateways</span>
+            </div>
+
+            <div class="wafer-section">
+              <div class="wafer-grid" id="wafer-grid"></div>
+              <div class="agent-orbs" id="api-orbs"></div>
+            </div>
+
+            <div class="p06-diag-box" id="p06-diag-box">
+              <div style="display:flex;justify-content:space-between;color:var(--cyan);font-weight:700">
+                <span id="diag-node-id"># hub.tomoko_core</span>
+                <span id="diag-node-file" style="color:var(--muted);font-size:8px">backend/api.py</span>
+              </div>
+              <div id="diag-node-detail" style="color:#CBD5E1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                Central Data-Flow Router &amp; Scan Pipeline Coordinator
+              </div>
+              <div style="display:flex;gap:10px;font-size:8px;color:var(--muted)">
+                <span>movements: <b id="diag-node-moves" style="color:#FFF">0</b></span>
+                <span>lat: <b id="diag-node-lat" style="color:var(--cyan)">0ms</b></span>
+                <span>faults: <b id="diag-node-faults" style="color:var(--red)">0</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PANEL 05: WATCHDOG CHRONO & DOT MATRIX -->
+      <section class="g-panel" id="panel-05">
+        <div class="g-header">
+          <div class="g-header-left">
+            <span class="g-idx c05">05</span>
+            <span class="g-title">WATCHDOG PASS — daemon loops &amp; TTL health</span>
+          </div>
+          <span class="g-meta" id="p05-meta">continuous sweep</span>
+        </div>
+        <div class="g-body">
+          <div class="p05-layout">
+            <div class="p05-top">
+              <div class="chrono-wrap">
+                <canvas id="canvas-chrono" width="108" height="108"></canvas>
+              </div>
+              <div class="dot-matrix-list" id="dot-matrix-list">
+                <div class="dm-row"><span>spot / mt5 feed</span><div class="dm-dots" id="dm-spot"></div></div>
+                <div class="dm-row"><span>35/35 ohlcv bars</span><div class="dm-dots" id="dm-bars"></div></div>
+                <div class="dm-row"><span>macro 6-pillar yf</span><div class="dm-dots" id="dm-macro"></div></div>
+                <div class="dm-row"><span>calendar &amp; rss</span><div class="dm-dots" id="dm-news"></div></div>
+                <div class="dm-row"><span>vaults &amp; disk i/o</span><div class="dm-dots" id="dm-vault"></div></div>
+              </div>
+            </div>
+            <div class="p05-rules" id="p05-rules-box">
+              <div style="color:#F43F5E;font-weight:700;margin-bottom:2px">rules.md — active troubleshooting hint</div>
+              <div id="p05-rule-line1" style="color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">+ all data pipes monitored in real-time via SSE</div>
+              <div id="p05-rule-line2" style="color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">- click any amber/red node to inspect exact file &amp; line</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================================
+// TOMOKO NEURAL CORTEX — CENTER MAIN SHOW 3D & CASCADE ENGINE
+// ============================================================================
+const STATE_COLORS = {
+  LIVE:     "#00FF88",
+  CACHED:   "#38BDF8",
+  FALLBACK: "#FFB800",
+  STALE:    "#FB923C",
+  ERROR:    "#FF3B5C",
+  IDLE:     "#475569"
+};
+
+const CLUSTER_COLORS = {
+  HUB:      "#FF6B2B",
+  UPSTREAM: "#00E5FF",
+  ENGINE:   "#38BDF8",
+  CACHE:    "#FFB800",
+  VAULT:    "#A855F7",
+  API:      "#00FF88"
+};
+
+let SNAPSHOT = { nodes: [], edges: [], events: [], faults: [], seq: 0 };
+let NODES_MAP = {};
+let EDGES_MAP = {};
+let SELECTED_NODE_ID = "eng.price_engine";
+let ACTIVE_CLUSTER_FILTER = "ALL";
+let TOTAL_PACKETS_SEEN = 0;
+
+// 3D Coordinates, Dense Sub-Synapse Micro-Nodes & Photon Particles
+let NODE_3D = {};
+let SATELLITES_3D = []; // Dense neural sub-mesh around clusters like GBrain video
+let PHOTONS = [];
+let rotY = 0.42;
+let rotX = 0.16;
+let camZoom = 1.08;
+let isDragging3D = false;
+let dragLastX = 0, dragLastY = 0;
+let autoRotate3D = true;
+let hoveredNodeId = null;
+
+function zoom3D(factor) {
+  camZoom = Math.max(0.65, Math.min(2.1, camZoom * factor));
+}
+function resetCamera3D() {
+  rotY = 0.42;
+  rotX = 0.16;
+  camZoom = 1.08;
+  autoRotate3D = true;
+}
+
+// Deterministic 3D spatial layout + Neural Satellite Cloud
+function assign3DCoordinates(nodes) {
+  const byCluster = { HUB: [], UPSTREAM: [], ENGINE: [], CACHE: [], VAULT: [], API: [] };
+  nodes.forEach(n => {
+    if (!byCluster[n.cluster]) byCluster[n.cluster] = [];
+    byCluster[n.cluster].push(n);
+  });
+
+  const centers = {
+    HUB:      { x: 0,    y: -10,  z: 0,    r: 0 },
+    UPSTREAM: { x: -185, y: -55,  z: -65,  r: 92 },
+    ENGINE:   { x: 8,    y: -25,  z: 50,   r: 138 },
+    CACHE:    { x: -65,  y: 105,  z: 70,   r: 76 },
+    VAULT:    { x: 155,  y: 100,  z: -60,  r: 76 },
+    API:      { x: 195,  y: -45,  z: 25,   r: 95 }
+  };
+
+  SATELLITES_3D = [];
+
+  Object.keys(byCluster).forEach(cl => {
+    const list = byCluster[cl];
+    const c = centers[cl] || { x: 0, y: 0, z: 0, r: 80 };
+    list.forEach((n, i) => {
+      if (cl === "HUB") {
+        NODE_3D[n.id] = { x: 0, y: -10, z: 0 };
+        return;
+      }
+      const N = list.length;
+      const phi = Math.acos(1 - 2 * (i + 0.5) / Math.max(N, 1));
+      const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 1);
+      const rad = c.r * (0.65 + 0.35 * ((i % 3) / 2));
+      const pos = {
+        x: c.x + rad * Math.sin(phi) * Math.cos(theta),
+        y: c.y + rad * Math.cos(phi) * 0.72,
+        z: c.z + rad * Math.sin(phi) * Math.sin(theta)
+      };
+      NODE_3D[n.id] = pos;
+
+      // Spawn 3 neural micro-satellite synapse points tethered to each primary node
+      // to recreate the dense, intricate neural mesh look from the GBrain video
+      for (let s = 0; s < 3; s++) {
+        const sAng1 = (i * 2.1) + (s * 2.09);
+        const sAng2 = (i * 1.3) - (s * 1.57);
+        const sDist = 18 + (s * 9);
+        SATELLITES_3D.push({
+          parentId: n.id,
+          cluster: cl,
+          x: pos.x + Math.cos(sAng1) * Math.sin(sAng2) * sDist,
+          y: pos.y + Math.sin(sAng1) * sDist * 0.7,
+          z: pos.z + Math.cos(sAng2) * sDist
+        });
+      }
+    });
+  });
+}
+
+function spawnPhoton(src, dst, state, burst = 1) {
+  if (!NODE_3D[src] || !NODE_3D[dst]) return;
+  const col = STATE_COLORS[state] || STATE_COLORS.LIVE;
+  const spd = state === "ERROR" ? 0.008 : (state === "FALLBACK" ? 0.014 : 0.022);
+  for (let i = 0; i < burst; i++) {
+    if (PHOTONS.length > 220) PHOTONS.shift();
+    PHOTONS.push({
+      src,
+      dst,
+      t: (i * 0.18) % 1,
+      speed: spd + Math.random() * 0.006,
+      color: col,
+      state
+    });
+  }
+}
+
+// ============================================================================
+// PANEL 01: 60FPS 3D CONSTELLATION RENDERER (MAIN SHOW)
+// ============================================================================
+const canvas3d = document.getElementById("canvas-3d");
+const ctx3d = canvas3d.getContext("2d");
+let projectedScreenNodes = [];
+
+function resize3DCanvas() {
+  const rect = canvas3d.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas3d.width = Math.max(300, Math.floor(rect.width * dpr));
+  canvas3d.height = Math.max(200, Math.floor(rect.height * dpr));
+  ctx3d.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", resize3DCanvas);
+
+canvas3d.addEventListener("wheel", e => {
+  e.preventDefault();
+  zoom3D(e.deltaY < 0 ? 1.08 : 0.92);
+}, { passive: false });
+
+canvas3d.addEventListener("mousedown", e => {
+  isDragging3D = true;
+  autoRotate3D = false;
+  dragLastX = e.clientX;
+  dragLastY = e.clientY;
+});
+window.addEventListener("mouseup", () => {
+  if (isDragging3D) {
+    isDragging3D = false;
+    setTimeout(() => { autoRotate3D = true; }, 4000);
+  }
+});
+window.addEventListener("mousemove", e => {
+  const rect = canvas3d.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  if (isDragging3D) {
+    rotY += (e.clientX - dragLastX) * 0.007;
+    rotX = Math.max(-0.75, Math.min(0.75, rotX + (e.clientY - dragLastY) * 0.006));
+    dragLastX = e.clientX;
+    dragLastY = e.clientY;
+    return;
+  }
+
+  if (mx >= 0 && my >= 0 && mx <= rect.width && my <= rect.height) {
+    let best = null;
+    let bestDist = 16;
+    for (const pn of projectedScreenNodes) {
+      const d = Math.hypot(mx - pn.sx, my - pn.sy);
+      if (d < bestDist) {
+        bestDist = d;
+        best = pn.id;
+      }
+    }
+    hoveredNodeId = best;
+    canvas3d.style.cursor = best ? "pointer" : "grab";
+  }
+});
+
+canvas3d.addEventListener("click", () => {
+  if (hoveredNodeId) {
+    selectNode(hoveredNodeId);
+  }
+});
+
+function project3D(pt, w, h) {
+  const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+  const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+
+  const x1 = pt.x * cosY - pt.z * sinY;
+  const z1 = pt.z * cosY + pt.x * sinY;
+  const y2 = pt.y * cosX - z1 * sinX;
+  const z2 = z1 * cosX + pt.y * sinX;
+
+  const fov = 560;
+  const scale = (fov / Math.max(120, fov + z2 + 80)) * camZoom;
+  return {
+    sx: w * 0.53 + x1 * scale,
+    sy: h * 0.45 + y2 * scale,
+    z: z2,
+    scale
+  };
+}
+
+function render3DLoop() {
+  const rect = canvas3d.parentElement.getBoundingClientRect();
+  const w = rect.width;
+  const h = rect.height;
+  ctx3d.clearRect(0, 0, w, h);
+
+  if (autoRotate3D && !hoveredNodeId) {
+    rotY += 0.0026;
+  }
+
+  // Subtle background tactical grid
+  ctx3d.strokeStyle = "rgba(30, 41, 59, 0.22)";
+  ctx3d.lineWidth = 1;
+  const step = 46;
+  for (let gx = 0; gx < w; gx += step) {
+    ctx3d.beginPath(); ctx3d.moveTo(gx, 0); ctx3d.lineTo(gx, h); ctx3d.stroke();
+  }
+  for (let gy = 0; gy < h; gy += step) {
+    ctx3d.beginPath(); ctx3d.moveTo(0, gy); ctx3d.lineTo(w, gy); ctx3d.stroke();
+  }
+
+  const projMap = {};
+  const projList = [];
+  for (const n of SNAPSHOT.nodes) {
+    const p3 = NODE_3D[n.id];
+    if (!p3) continue;
+    const pr = project3D(p3, w, h);
+    projMap[n.id] = pr;
+    projList.push({ ...pr, id: n.id, node: n });
+  }
+
+  // 0. Draw Neural Sub-Mesh Satellites (gives GBrain constellation density)
+  for (let i = 0; i < SATELLITES_3D.length; i++) {
+    const sat = SATELLITES_3D[i];
+    const inCluster = ACTIVE_CLUSTER_FILTER === "ALL" || sat.cluster === ACTIVE_CLUSTER_FILTER;
+    if (!inCluster) continue;
+    const pParent = projMap[sat.parentId];
+    if (!pParent) continue;
+    const pSat = project3D(sat, w, h);
+    const clCol = CLUSTER_COLORS[sat.cluster] || "#38BDF8";
+
+    ctx3d.beginPath();
+    ctx3d.moveTo(pParent.sx, pParent.sy);
+    ctx3d.lineTo(pSat.sx, pSat.sy);
+    ctx3d.strokeStyle = clCol + "24";
+    ctx3d.lineWidth = 0.65;
+    ctx3d.stroke();
+
+    // Cross-link adjacent satellites in same cluster
+    if (i > 0 && SATELLITES_3D[i - 1].cluster === sat.cluster && (i % 2 === 0)) {
+      const pPrev = project3D(SATELLITES_3D[i - 1], w, h);
+      ctx3d.beginPath();
+      ctx3d.moveTo(pPrev.sx, pPrev.sy);
+      ctx3d.lineTo(pSat.sx, pSat.sy);
+      ctx3d.strokeStyle = clCol + "18";
+      ctx3d.lineWidth = 0.5;
+      ctx3d.stroke();
+    }
+
+    ctx3d.beginPath();
+    ctx3d.arc(pSat.sx, pSat.sy, Math.max(1.2, 1.8 * pSat.scale), 0, Math.PI * 2);
+    ctx3d.fillStyle = clCol + "66";
+    ctx3d.fill();
+  }
+
+  // 1. Draw Primary Directed Synaptic Pipes
+  for (const e of SNAPSHOT.edges) {
+    const pA = projMap[e.src];
+    const pB = projMap[e.dst];
+    if (!pA || !pB) continue;
+
+    const srcNode = NODES_MAP[e.src];
+    const dstNode = NODES_MAP[e.dst];
+    const inCluster = ACTIVE_CLUSTER_FILTER === "ALL" ||
+      (srcNode && srcNode.cluster === ACTIVE_CLUSTER_FILTER) ||
+      (dstNode && dstNode.cluster === ACTIVE_CLUSTER_FILTER);
+
+    const isSelectedEdge = (e.src === SELECTED_NODE_ID || e.dst === SELECTED_NODE_ID);
+
+    ctx3d.beginPath();
+    ctx3d.moveTo(pA.sx, pA.sy);
+    ctx3d.lineTo(pB.sx, pB.sy);
+
+    if (e.state === "ERROR") {
+      ctx3d.strokeStyle = "rgba(255, 59, 92, 0.9)";
+      ctx3d.lineWidth = 2.1;
+    } else if (e.state === "FALLBACK" || e.state === "STALE") {
+      ctx3d.strokeStyle = "rgba(255, 184, 0, 0.78)";
+      ctx3d.lineWidth = 1.5;
+    } else if (isSelectedEdge) {
+      ctx3d.strokeStyle = "rgba(0, 229, 255, 0.85)";
+      ctx3d.lineWidth = 1.7;
+    } else if (!inCluster) {
+      ctx3d.strokeStyle = "rgba(51, 65, 85, 0.10)";
+      ctx3d.lineWidth = 0.6;
+    } else {
+      const cCol = CLUSTER_COLORS[srcNode ? srcNode.cluster : "ENGINE"] || "#38BDF8";
+      ctx3d.strokeStyle = cCol + "42";
+      ctx3d.lineWidth = 1.0;
+    }
+    ctx3d.stroke();
+  }
+
+  // 2. Update & Draw Traveling Photon Packets
+  for (let i = PHOTONS.length - 1; i >= 0; i--) {
+    const ph = PHOTONS[i];
+    ph.t += ph.speed;
+    if (ph.t >= 1) {
+      PHOTONS.splice(i, 1);
+      continue;
+    }
+    const pA = projMap[ph.src];
+    const pB = projMap[ph.dst];
+    if (!pA || !pB) continue;
+
+    const px = pA.sx + (pB.sx - pA.sx) * ph.t;
+    const py = pA.sy + (pB.sy - pA.sy) * ph.t;
+
+    ctx3d.beginPath();
+    ctx3d.arc(px, py, 2.8, 0, Math.PI * 2);
+    ctx3d.fillStyle = ph.color;
+    ctx3d.shadowColor = ph.color;
+    ctx3d.shadowBlur = 10;
+    ctx3d.fill();
+    ctx3d.shadowBlur = 0;
+  }
+
+  // Continuous ambient flow pulses across active pipes
+  if (Math.random() < 0.35 && SNAPSHOT.edges.length > 0) {
+    const activeEdges = SNAPSHOT.edges.filter(e => e.state !== "IDLE");
+    const pick = activeEdges.length > 0
+      ? activeEdges[Math.floor(Math.random() * activeEdges.length)]
+      : SNAPSHOT.edges[Math.floor(Math.random() * SNAPSHOT.edges.length)];
+    if (pick) spawnPhoton(pick.src, pick.dst, pick.state === "IDLE" ? "LIVE" : pick.state, 1);
+  }
+
+  // 3. Sort Primary Nodes Back-to-Front & Render
+  projList.sort((a, b) => b.z - a.z);
+  projectedScreenNodes = projList;
+
+  const nowMs = performance.now();
+  for (const item of projList) {
+    const n = item.node;
+    const isHub = n.cluster === "HUB";
+    const isSel = n.id === SELECTED_NODE_ID || n.id === hoveredNodeId;
+    const inCluster = ACTIVE_CLUSTER_FILTER === "ALL" || n.cluster === ACTIVE_CLUSTER_FILTER || isHub;
+    const stCol = STATE_COLORS[n.state] || STATE_COLORS.IDLE;
+    const clCol = CLUSTER_COLORS[n.cluster] || "#38BDF8";
+
+    const baseR = isHub ? 15 : (isSel ? 8.2 : 5.0);
+    const r = Math.max(2.8, baseR * item.scale);
+
+    // Fault / Selection pulsing outer ring
+    if (n.state === "ERROR" || n.state === "FALLBACK" || n.state === "STALE" || isSel) {
+      const pulseR = r + 4.5 + Math.sin(nowMs * 0.008) * 2.5;
+      ctx3d.beginPath();
+      ctx3d.arc(item.sx, item.sy, pulseR, 0, Math.PI * 2);
+      ctx3d.strokeStyle = isSel ? "#00E5FF" : stCol;
+      ctx3d.lineWidth = isSel ? 1.8 : 1.3;
+      ctx3d.stroke();
+    }
+
+    // Core Node Sphere
+    ctx3d.beginPath();
+    ctx3d.arc(item.sx, item.sy, r, 0, Math.PI * 2);
+    ctx3d.fillStyle = isHub ? "#FF6B2B" : (n.state === "ERROR" || n.state === "FALLBACK" ? stCol : clCol);
+    ctx3d.globalAlpha = inCluster ? 0.96 : 0.22;
+    ctx3d.shadowColor = ctx3d.fillStyle;
+    ctx3d.shadowBlur = isHub ? 22 : (isSel ? 14 : 7);
+    ctx3d.fill();
+    ctx3d.shadowBlur = 0;
+    ctx3d.globalAlpha = 1.0;
+
+    // Hub letter 'T' + subtitle like 'gbrain - one memory'
+    if (isHub) {
+      ctx3d.fillStyle = "#05070B";
+      ctx3d.font = "800 12px 'JetBrains Mono', monospace";
+      ctx3d.textAlign = "center";
+      ctx3d.textBaseline = "middle";
+      ctx3d.fillText("T", item.sx, item.sy + 0.5);
+
+      ctx3d.fillStyle = "#CBD5E1";
+      ctx3d.font = "700 9px 'JetBrains Mono', monospace";
+      ctx3d.fillText("tomoko - one cortex", item.sx, item.sy + r + 12);
+    }
+
+    // Floating Billboard Pill Label
+    const showPill = !isHub && (isSel || n.state === "ERROR" || n.state === "FALLBACK" ||
+      ["up.mt5_bridge", "up.yfinance_macro", "up.gemini_cloud", "eng.price_engine", "eng.macro_intel", "eng.session_briefing", "eng.trap_radar", "vault.d_drive_dataset", "api.scan_all"].includes(n.id));
+
+    if (showPill && inCluster) {
+      const txt = n.short || n.id.split(".").pop();
+      ctx3d.font = "700 8.5px 'JetBrains Mono', monospace";
+      const tw = ctx3d.measureText(txt).width + 12;
+      const px = item.sx - tw / 2;
+      const py = item.sy - r - 16;
+
+      ctx3d.fillStyle = "rgba(8, 12, 20, 0.90)";
+      ctx3d.strokeStyle = (n.state === "ERROR" || n.state === "FALLBACK") ? stCol : (isSel ? "#00E5FF" : clCol + "99");
+      ctx3d.lineWidth = 1;
+      ctx3d.beginPath();
+      ctx3d.roundRect(px, py, tw, 14, 7);
+      ctx3d.fill();
+      ctx3d.stroke();
+
+      ctx3d.fillStyle = (n.state === "ERROR" || n.state === "FALLBACK") ? stCol : "#E2E8F0";
+      ctx3d.textAlign = "center";
+      ctx3d.textBaseline = "middle";
+      ctx3d.fillText(txt, item.sx, py + 7);
+    }
+  }
+
+  requestAnimationFrame(render3DLoop);
+}
+
+// ============================================================================
+// PANEL 02: MULTI-HOP BEZIER BLAST-RADIUS CASCADE
+// ============================================================================
+function renderPanel02() {
+  const sidebar = document.getElementById("wiki-node-list");
+  if (!sidebar) return;
+
+  const groups = [
+    { title: "# active_anomalies", list: SNAPSHOT.nodes.filter(n => ["ERROR", "FALLBACK", "STALE"].includes(n.state)) },
+    { title: "# upstreams", list: SNAPSHOT.nodes.filter(n => n.cluster === "UPSTREAM") },
+    { title: "# core_engines", list: SNAPSHOT.nodes.filter(n => n.cluster === "ENGINE") },
+    { title: "# caches_&_vaults", list: SNAPSHOT.nodes.filter(n => n.cluster === "CACHE" || n.cluster === "VAULT") },
+    { title: "# api_endpoints", list: SNAPSHOT.nodes.filter(n => n.cluster === "API") }
+  ];
+
+  let html = "";
+  groups.forEach(g => {
+    if (g.list.length === 0) return;
+    html += `<div class="wiki-sec-hdr">${g.title} (${g.list.length})</div>`;
+    g.list.forEach(n => {
+      const act = n.id === SELECTED_NODE_ID ? "active" : "";
+      const col = STATE_COLORS[n.state] || STATE_COLORS.IDLE;
+      html += `
+        <div class="wiki-item ${act}" onclick="selectNode('${n.id}')" title="${n.file} — ${n.last_detail}">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.short} · ${n.id.split('.')[1] || n.id}</span>
+          <span class="wi-st" style="background:${col};box-shadow:0 0 5px ${col}"></span>
+        </div>`;
+    });
+  });
+  sidebar.innerHTML = html;
+
+  renderBezierFanOut();
+}
+
+function renderBezierFanOut() {
+  const svg = document.getElementById("svg-bezier");
+  if (!svg) return;
+  const centerNode = NODES_MAP[SELECTED_NODE_ID] || SNAPSHOT.nodes[0];
+  if (!centerNode) return;
+
+  // Gather 1st-hop direct edges
+  const connected = [];
+  const seenPeers = new Set([centerNode.id]);
+  SNAPSHOT.edges.forEach(e => {
+    if (e.src === centerNode.id && !seenPeers.has(e.dst)) {
+      seenPeers.add(e.dst);
+      connected.push({ dir: "OUT", hop: 1, peerId: e.dst, edge: e });
+    } else if (e.dst === centerNode.id && !seenPeers.has(e.src)) {
+      seenPeers.add(e.src);
+      connected.push({ dir: "IN", hop: 1, peerId: e.src, edge: e });
+    }
+  });
+
+  // If node has fewer than 6 direct connections (e.g. an upstream like MT5 -> PRICE),
+  // automatically include 2nd-hop blast-radius targets so the Bezier tree always fans out richly!
+  if (connected.length < 7) {
+    const firstHopIds = connected.map(c => c.peerId);
+    for (const hop1Id of firstHopIds) {
+      for (const e of SNAPSHOT.edges) {
+        if (connected.length >= 7) break;
+        if (e.src === hop1Id && !seenPeers.has(e.dst)) {
+          seenPeers.add(e.dst);
+          connected.push({ dir: "2ND", hop: 2, peerId: e.dst, edge: e, via: NODES_MAP[hop1Id]?.short || hop1Id });
+        } else if (e.dst === hop1Id && !seenPeers.has(e.src)) {
+          seenPeers.add(e.src);
+          connected.push({ dir: "2ND", hop: 2, peerId: e.src, edge: e, via: NODES_MAP[hop1Id]?.short || hop1Id });
+        }
+      }
+    }
+  }
+
+  const targets = connected.slice(0, 7);
+  const ox = 64, oy = 115;
+  const rx = 310;
+  const count = Math.max(1, targets.length);
+
+  let svgHtml = `
+    <defs>
+      <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="2.5" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
+    </defs>`;
+
+  targets.forEach((t, idx) => {
+    const peer = NODES_MAP[t.peerId] || { short: t.peerId, label: t.peerId, state: "IDLE" };
+    const st = t.edge.state !== "IDLE" ? t.edge.state : peer.state;
+    const col = STATE_COLORS[st] || "#38BDF8";
+    const ty = count === 1 ? 115 : 22 + (idx * (186 / (count - 1)));
+    const pathId = `bpath-${idx}`;
+    const d = `M ${ox} ${oy} C ${ox + 115} ${oy}, ${rx - 115} ${ty}, ${rx} ${ty}`;
+
+    const dirPrefix = t.hop === 2 ? `↳ via ${t.via} → ` : (t.dir === "IN" ? "← " : "→ ");
+
+    svgHtml += `
+      <path id="${pathId}" d="${d}" fill="none" stroke="${col}" stroke-width="1.6" stroke-opacity="${t.hop === 2 ? '0.48' : '0.75'}" />
+      <circle r="3.2" fill="${col}" filter="url(#glow)">
+        <animateMotion dur="${st === 'ERROR' ? '3.2s' : (1.3 + idx * 0.12) + 's'}" repeatCount="indefinite" keyPoints="${t.dir === 'IN' ? '1;0' : '0;1'}" keyTimes="0;1" calcMode="linear">
+          <mpath href="#${pathId}" />
+        </animateMotion>
+      </circle>
+      <g transform="translate(${rx}, ${ty - 11})" style="cursor:pointer" onclick="selectNode('${t.peerId}')">
+        <rect x="0" y="0" width="295" height="22" rx="11" fill="#0B111C" stroke="${col}" stroke-width="1.15" />
+        <text x="12" y="14" fill="#F8FAFC" font-family="JetBrains Mono, monospace" font-size="8.8" font-weight="700">
+          ${dirPrefix}${peer.short} · ${peer.id.split('.')[1] || ''}
+        </text>
+        <text x="284" y="14" text-anchor="end" fill="${col}" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">
+          ${st} ${t.edge.last_latency_ms > 0 ? '(' + t.edge.last_latency_ms + 'ms)' : ''}
+        </text>
+      </g>`;
+  });
+
+  // Origin Node Circle on Left
+  const cCol = STATE_COLORS[centerNode.state] || "#FF6B2B";
+  svgHtml += `
+    <circle cx="${ox}" cy="${oy}" r="20" fill="#080D16" stroke="${cCol}" stroke-width="2.5" filter="url(#glow)" />
+    <text x="${ox}" y="${oy + 3}" text-anchor="middle" fill="${cCol}" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="800">
+      ${centerNode.short}
+    </text>
+    <text x="${ox}" y="${oy + 34}" text-anchor="middle" fill="#CBD5E1" font-family="JetBrains Mono, monospace" font-size="8.5" font-weight="700">
+      ${centerNode.state}
+    </text>`;
+
+  svg.innerHTML = svgHtml;
+  const p02Meta = document.getElementById("p02-meta");
+  if (p02Meta) p02Meta.textContent = `${centerNode.short} · ${targets.length} blast-radius branches`;
+}
+
+// ============================================================================
+// PANEL 03, 04, 05, 06 UI UPDATERS
+// ============================================================================
+function escHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function renderPanel03() {
+  const liveBox = document.getElementById("stream-live");
+  const faultBox = document.getElementById("stream-faults");
+  const evs = (SNAPSHOT.events || []).slice(-30).reverse();
+  const flts = (SNAPSHOT.faults || []).slice(-30).reverse();
+
+  document.getElementById("term-live-cnt").textContent = `${SNAPSHOT.seq || evs.length} pkts`;
+  document.getElementById("term-fault-cnt").textContent = `${flts.length} anomalies`;
+
+  liveBox.innerHTML = evs.map(ev => `
+    <div class="t-line ${ev.state}" onclick="selectNode('${ev.dst}')" title="${escHtml(ev.file)} | ${escHtml(ev.detail)}">
+      <span style="color:#64748B">${ev.iso.slice(0,8)}</span>
+      <b>${escHtml(ev.src_label)}→${escHtml(ev.dst_label)}</b>
+      [${ev.state}] ${escHtml(ev.detail)}
+    </div>`).join("") || `<div class="t-line">Awaiting movements...</div>`;
+
+  faultBox.innerHTML = flts.map(f => `
+    <div class="t-line ${f.state}" onclick="selectNode('${f.dst}')" title="${escHtml(f.file)}">
+      <b>[${f.state}] ${escHtml(f.src_label)}→${escHtml(f.dst_label)}</b>
+      ${escHtml(f.detail)} <span style="color:#94A3B8">(${escHtml(f.file)})</span>
+    </div>`).join("") || `<div class="t-line LIVE">✓ Zero active blockages, fallbacks, or errors</div>`;
+
+  const nc = SNAPSHOT.node_counts || {};
+  const totalActive = Math.max(1, (SNAPSHOT.total_nodes || 44) - (nc.IDLE || 0));
+  const faultNodes = (nc.ERROR || 0) + (nc.FALLBACK || 0) + (nc.STALE || 0);
+  const healthyPct = Math.max(0, Math.min(100, Math.round(((totalActive - faultNodes) / totalActive) * 100)));
+  const faultPct = Math.max(0, Math.min(100, Math.round((faultNodes / totalActive) * 100)));
+
+  document.getElementById("bar-live-pct").textContent = `${healthyPct}%`;
+  document.getElementById("bar-live-fill").style.width = `${healthyPct}%`;
+  document.getElementById("bar-fault-pct").textContent = `${faultPct}% · ${faultNodes} nodes`;
+  document.getElementById("bar-fault-fill").style.width = `${Math.max(4, faultPct)}%`;
+
+  const setVaultCard = (cardId, stId, nodeId) => {
+    const n = NODES_MAP[nodeId];
+    const el = document.getElementById(cardId);
+    const stEl = document.getElementById(stId);
+    if (!n || !el || !stEl) return;
+    el.className = "v-card" + (SELECTED_NODE_ID === nodeId ? " active" : "") +
+      (n.state === "ERROR" ? " fault" : (n.state === "FALLBACK" || n.state === "STALE" ? " fallback" : ""));
+    stEl.textContent = `${n.state} (${n.items_count || 0})`;
+    stEl.style.color = STATE_COLORS[n.state] || "#94A3B8";
+  };
+  setVaultCard("vc-candles", "vc-candles-st", "cache.candles_pkl");
+  setVaultCard("vc-briefing", "vc-briefing-st", "cache.session_briefing");
+  setVaultCard("vc-dna", "vc-dna-st", "vault.trader_dna_profile");
+  setVaultCard("vc-d-vault", "vc-dvault-st", "vault.d_drive_dataset");
+}
+
+function renderPanel04() {
+  const upList = document.getElementById("upstream-list");
+  const upNodes = SNAPSHOT.nodes.filter(n => n.cluster === "UPSTREAM");
+  upList.innerHTML = upNodes.map(n => {
+    const col = STATE_COLORS[n.state] || STATE_COLORS.IDLE;
+    return `
+      <div class="up-row" onclick="selectNode('${n.id}')" title="${escHtml(n.last_detail)}">
+        <span style="display:flex;align-items:center;gap:5px;overflow:hidden">
+          <span style="width:6px;height:6px;border-radius:50%;background:${col};box-shadow:0 0 6px ${col};flex-shrink:0"></span>
+          <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700">${escHtml(n.short)}</span>
+        </span>
+        <span style="color:${col};font-weight:700">${n.state}</span>
+      </div>`;
+  }).join("");
+
+  const sel = NODES_MAP[SELECTED_NODE_ID] || upNodes[0];
+  if (sel) {
+    document.getElementById("up-dossier-body").innerHTML = `
+      <div style="color:${STATE_COLORS[sel.state] || '#00E5FF'};font-weight:800;margin-bottom:3px">
+        [${sel.state}] ${escHtml(sel.label)}
+      </div>
+      <div style="color:#CBD5E1;margin-bottom:4px">${escHtml(sel.last_detail)}</div>
+      <div style="color:#64748B;font-size:8px">file: ${escHtml(sel.file)}</div>`;
+    document.getElementById("up-tag-1").textContent = `[[${sel.id}]]`;
+    document.getElementById("up-tag-2").textContent = `[[${sel.cluster}]]`;
+  }
+}
+
+function renderDots(elId, score5, isWarn = false) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  let h = "";
+  for (let i = 1; i <= 5; i++) {
+    const cls = i <= score5 ? (isWarn ? "warn" : "on") : "";
+    h += `<span class="dm-dot ${cls}"></span>`;
+  }
+  el.innerHTML = h;
+}
+
+function renderPanel05() {
+  const scoreFor = (id) => {
+    const n = NODES_MAP[id];
+    if (!n) return { s: 3, w: false };
+    if (n.state === "LIVE") return { s: 5, w: false };
+    if (n.state === "CACHED") return { s: 4, w: false };
+    if (n.state === "FALLBACK" || n.state === "STALE") return { s: 3, w: true };
+    if (n.state === "ERROR") return { s: 1, w: true };
+    return { s: 2, w: false };
+  };
+
+  const sSpot = scoreFor("eng.price_engine");
+  const sBars = scoreFor("cache.candles_pkl");
+  const sMac  = scoreFor("eng.macro_intel");
+  const sNews = scoreFor("eng.news_engine");
+  const sVlt  = scoreFor("vault.d_drive_dataset");
+
+  renderDots("dm-spot", sSpot.s, sSpot.w);
+  renderDots("dm-bars", sBars.s, sBars.w);
+  renderDots("dm-macro", sMac.s, sMac.w);
+  renderDots("dm-news", sNews.s, sNews.w);
+  renderDots("dm-vault", sVlt.s, sVlt.w);
+
+  const flts = SNAPSHOT.faults || [];
+  const l1 = document.getElementById("p05-rule-line1");
+  const l2 = document.getElementById("p05-rule-line2");
+  if (flts.length > 0) {
+    const latest = flts[flts.length - 1];
+    l1.style.color = STATE_COLORS[latest.state] || "#FFB800";
+    l1.textContent = `! [${latest.state}] ${latest.src_label} → ${latest.dst_label}: ${latest.detail}`;
+    l2.textContent = `> inspect: ${latest.file}`;
+  } else {
+    l1.style.color = "var(--green)";
+    l1.textContent = "+ all 44 nodes & 60 pipes operating within nominal parameters";
+    l2.textContent = "- zero silent fallbacks or blocked pipes detected";
+  }
+}
+
+const chronoCanvas = document.getElementById("canvas-chrono");
+const chronoCtx = chronoCanvas.getContext("2d");
+function drawChronoClock() {
+  const w = 108, h = 108, cx = 54, cy = 54, r = 44;
+  chronoCtx.clearRect(0, 0, w, h);
+
+  for (let i = 0; i < 36; i++) {
+    const ang = (i / 36) * Math.PI * 2 - Math.PI / 2;
+    const r1 = i % 3 === 0 ? r - 5 : r - 3;
+    chronoCtx.beginPath();
+    chronoCtx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+    chronoCtx.lineTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+    chronoCtx.strokeStyle = i % 3 === 0 ? "#475569" : "#1E293B";
+    chronoCtx.lineWidth = 1;
+    chronoCtx.stroke();
+  }
+
+  const now = Date.now() / 1000;
+  const cycleAngle = ((now % 5) / 5) * Math.PI * 2 - Math.PI / 2;
+
+  chronoCtx.beginPath();
+  chronoCtx.arc(cx, cy, r, -Math.PI / 2, cycleAngle, false);
+  chronoCtx.strokeStyle = "#F43F5E";
+  chronoCtx.lineWidth = 2.5;
+  chronoCtx.stroke();
+
+  chronoCtx.beginPath();
+  chronoCtx.moveTo(cx, cy);
+  chronoCtx.lineTo(cx + Math.cos(cycleAngle) * (r - 7), cy + Math.sin(cycleAngle) * (r - 7));
+  chronoCtx.strokeStyle = "#E2E8F0";
+  chronoCtx.lineWidth = 1.4;
+  chronoCtx.stroke();
+
+  chronoCtx.fillStyle = "#94A3B8";
+  chronoCtx.font = "600 8px 'JetBrains Mono', monospace";
+  chronoCtx.textAlign = "center";
+  chronoCtx.fillText("5s LOOP", cx, cy - 8);
+
+  const utcStr = new Date().toISOString().slice(11, 19);
+  chronoCtx.fillStyle = "#F8FAFC";
+  chronoCtx.font = "800 9.5px 'JetBrains Mono', monospace";
+  chronoCtx.fillText(utcStr, cx, cy + 16);
+
+  requestAnimationFrame(drawChronoClock);
+}
+
+function renderPanel06() {
+  const grid = document.getElementById("wafer-grid");
+  const orbs = document.getElementById("api-orbs");
+  document.getElementById("cli-seq").textContent = `seq #${SNAPSHOT.seq || 0}`;
+
+  // 36 non-API nodes in the 9x4 wafer matrix, 8 API gateway orbs on the right
+  const nonApiNodes = SNAPSHOT.nodes.filter(n => n.cluster !== "API");
+  grid.innerHTML = nonApiNodes.map(n => {
+    const sel = n.id === SELECTED_NODE_ID ? "selected" : "";
+    return `
+      <div class="wafer-cell ${n.state} ${sel}" onclick="selectNode('${n.id}')" title="[${n.state}] ${escHtml(n.label)} — ${escHtml(n.last_detail)}">
+        ${escHtml(n.short.slice(0, 4))}
+      </div>`;
+  }).join("");
+
+  const apiNodes = SNAPSHOT.nodes.filter(n => n.cluster === "API");
+  orbs.innerHTML = apiNodes.map(n => `
+    <div class="agent-orb ${n.state}" onclick="selectNode('${n.id}')" title="${escHtml(n.label)}: ${escHtml(n.last_detail)}">
+      ${escHtml(n.short.replace('API-', '').slice(0, 3))}
+    </div>`).join("");
+
+  updateInspectorAndDiag();
+}
+
+function updateInspectorAndDiag() {
+  const n = NODES_MAP[SELECTED_NODE_ID] || SNAPSHOT.nodes[0];
+  if (!n) return;
+
+  const ic = document.getElementById("p01-inspector");
+  ic.className = "inspector-card" + (n.state === "ERROR" ? " fault" : (n.state === "FALLBACK" || n.state === "STALE" ? " fallback" : ""));
+  document.getElementById("ic-title").textContent = `${n.id} — ${n.label}`;
+  document.getElementById("ic-sub").textContent = `${n.last_detail} | source = ${n.file}`;
+
+  const badge = document.getElementById("ic-badge");
+  const col = STATE_COLORS[n.state] || STATE_COLORS.IDLE;
+  badge.textContent = n.state;
+  badge.style.color = col;
+  badge.style.borderColor = col;
+  badge.style.background = col + "22";
+
+  document.getElementById("diag-node-id").textContent = `# ${n.id} [${n.state}]`;
+  document.getElementById("diag-node-id").style.color = col;
+  document.getElementById("diag-node-file").textContent = n.file;
+  document.getElementById("diag-node-detail").textContent = n.last_detail || n.role;
+  document.getElementById("diag-node-moves").textContent = n.total_movements || 0;
+  document.getElementById("diag-node-lat").textContent = `${n.last_latency_ms || 0}ms`;
+  document.getElementById("diag-node-faults").textContent = (n.error_count || 0) + (n.fallback_count || 0) + (n.stale_count || 0);
+}
+
+function updateTopKPIs() {
+  const nc = SNAPSHOT.node_counts || {};
+  document.getElementById("kpi-live").textContent = nc.LIVE || 0;
+  document.getElementById("kpi-cached").textContent = nc.CACHED || 0;
+  document.getElementById("kpi-fallback").textContent = nc.FALLBACK || 0;
+  document.getElementById("kpi-stale").textContent = nc.STALE || 0;
+  document.getElementById("kpi-error").textContent = nc.ERROR || 0;
+  document.getElementById("kpi-lat").textContent = `${SNAPSHOT.avg_latency_ms || 0}ms`;
+
+  document.getElementById("p01-meta").textContent =
+    `${SNAPSHOT.total_nodes || 44} NODES · ${SNAPSHOT.total_edges || 60} PIPES · ${SNAPSHOT.seq || 0} MOVEMENTS`;
+
+  const hasErr = (nc.ERROR || 0) > 0;
+  document.getElementById("panel-01").classList.toggle("has-fault", hasErr);
+  document.getElementById("panel-03").classList.toggle("has-fault", hasErr);
+}
+
+function selectNode(nodeId) {
+  if (!NODES_MAP[nodeId]) return;
+  SELECTED_NODE_ID = nodeId;
+  renderPanel02();
+  renderPanel03();
+  renderPanel04();
+  renderPanel06();
+}
+
+function filterCluster(cluster) {
+  ACTIVE_CLUSTER_FILTER = cluster;
+  document.querySelectorAll(".cl-row").forEach(el => {
+    el.classList.toggle("active", el.getAttribute("data-cluster") === cluster);
+  });
+}
+
+function applySnapshot(data) {
+  if (!data || !data.nodes) return;
+  const firstLoad = SNAPSHOT.nodes.length === 0;
+  SNAPSHOT = data;
+  NODES_MAP = {};
+  SNAPSHOT.nodes.forEach(n => { NODES_MAP[n.id] = n; });
+  EDGES_MAP = {};
+  SNAPSHOT.edges.forEach(e => { EDGES_MAP[e.id] = e; });
+
+  if (firstLoad) {
+    assign3DCoordinates(SNAPSHOT.nodes);
+    const firstAnomaly = SNAPSHOT.nodes.find(n => n.state === "ERROR" || n.state === "FALLBACK" || n.state === "STALE");
+    if (firstAnomaly) SELECTED_NODE_ID = firstAnomaly.id;
+  }
+
+  updateTopKPIs();
+  renderPanel02();
+  renderPanel03();
+  renderPanel04();
+  renderPanel05();
+  renderPanel06();
+}
+
+async function fetchSnapshot() {
+  try {
+    const res = await fetch("/api/telemetry/snapshot?probe=true");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    applySnapshot(data);
+  } catch (err) {
+    console.warn("Telemetry snapshot fetch failed:", err);
+  }
+}
+
+async function triggerDeepProbe() {
+  const btn = document.getElementById("btn-deep-probe");
+  btn.textContent = "⏳ PROBING...";
+  try {
+    const res = await fetch("/api/telemetry/probe", { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      applySnapshot(data);
+      SNAPSHOT.edges.forEach(e => {
+        if (e.state !== "IDLE") spawnPhoton(e.src, e.dst, e.state, 2);
+      });
+    }
+  } catch (e) {
+    console.error("Deep probe failed:", e);
+  } finally {
+    btn.textContent = "⚡ DEEP PROBE";
+  }
+}
+
+function connectSSE() {
+  const pill = document.getElementById("sse-status");
+  const txt = document.getElementById("sse-text");
+  const es = new EventSource("/api/telemetry/stream");
+
+  es.onopen = () => {
+    pill.classList.remove("disconnected");
+    txt.textContent = "SSE LIVE";
+  };
+
+  es.onmessage = (ev) => {
+    try {
+      const pkt = JSON.parse(ev.data);
+      if (pkt.type === "connected") return;
+      TOTAL_PACKETS_SEEN++;
+      SNAPSHOT.seq = pkt.seq || (SNAPSHOT.seq + 1);
+
+      spawnPhoton(pkt.src, pkt.dst, pkt.state, pkt.state === "ERROR" ? 3 : 2);
+
+      if (NODES_MAP[pkt.dst]) {
+        const n = NODES_MAP[pkt.dst];
+        n.state = pkt.state;
+        n.last_latency_ms = pkt.latency_ms;
+        n.total_movements = (n.total_movements || 0) + 1;
+        if (pkt.detail) n.last_detail = pkt.detail;
+        if (pkt.items) n.items_count = pkt.items;
+      }
+      if (EDGES_MAP[pkt.edge_id]) {
+        const e = EDGES_MAP[pkt.edge_id];
+        e.state = pkt.state;
+        e.last_latency_ms = pkt.latency_ms;
+        e.total_movements = (e.total_movements || 0) + 1;
+        if (pkt.detail) e.last_detail = pkt.detail;
+      }
+
+      SNAPSHOT.events = SNAPSHOT.events || [];
+      SNAPSHOT.events.push(pkt);
+      if (SNAPSHOT.events.length > 150) SNAPSHOT.events.shift();
+
+      if (["ERROR", "FALLBACK", "STALE"].includes(pkt.state)) {
+        SNAPSHOT.faults = SNAPSHOT.faults || [];
+        SNAPSHOT.faults.push(pkt);
+        if (SNAPSHOT.faults.length > 100) SNAPSHOT.faults.shift();
+      }
+
+      const counts = { LIVE: 0, CACHED: 0, FALLBACK: 0, STALE: 0, ERROR: 0, IDLE: 0 };
+      SNAPSHOT.nodes.forEach(n => { counts[n.state] = (counts[n.state] || 0) + 1; });
+      SNAPSHOT.node_counts = counts;
+
+      updateTopKPIs();
+      renderPanel03();
+      renderPanel05();
+      renderPanel06();
+      if (pkt.src === SELECTED_NODE_ID || pkt.dst === SELECTED_NODE_ID) {
+        renderPanel02();
+        renderPanel04();
+      }
+    } catch (e) {}
+  };
+
+  es.onerror = () => {
+    pill.classList.add("disconnected");
+    txt.textContent = "STREAM LOST · RETRYING";
+    es.close();
+    setTimeout(connectSSE, 2500);
+  };
+}
+
+resize3DCanvas();
+requestAnimationFrame(render3DLoop);
+requestAnimationFrame(drawChronoClock);
+fetchSnapshot().then(() => {
+  triggerDeepProbe();
+});
+connectSSE();
+setInterval(fetchSnapshot, 8000);
+</script>
+</body>
+</html>

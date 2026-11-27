@@ -5,7 +5,9 @@
 import os
 import sys
 import csv
+import json
 import time
+import asyncio
 import threading
 import logging
 import pandas as pd
@@ -19,8 +21,8 @@ if ROOT not in sys.path:
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from typing import List, Optional
@@ -45,6 +47,10 @@ from core.macro_scenario_engine import MacroScenarioEngine
 from core.trap_radar_engine import TrapRadarEngine
 from core.session_briefing_engine import SessionBriefingEngine
 from core.battle_record_engine import BattleRecordEngine
+from core.telemetry_bus import (
+    get_telemetry_bus, emit_flow, run_comprehensive_probe,
+    STATE_LIVE, STATE_CACHED, STATE_STALE, STATE_FALLBACK, STATE_ERROR
+)
 import config
 
 tracker = PerformanceTracker()
@@ -264,17 +270,24 @@ _SCAN_ALL_TTL = 3.0  # seconds
 
 def _intermarket_snapshot():
     """Get DXY/US10Y/VIX snapshot; never prints per-scan, returns neutral fallback."""
+    t0 = time.time()
     try:
         snap = IntermarketEngine(get_price_engine()).get_snapshot()
         dxy_change = safe_float((snap.get("DXY") or {}).get("chg", 0.0))
         us10y_change = safe_float((snap.get("US10Y") or {}).get("chg", 0.0))
         vix_dir = (snap.get("VIX") or {}).get("dir", "FLAT")
         risk_sentiment = "RISK-OFF" if vix_dir == "UP" else "RISK-ON" if vix_dir == "DOWN" else "NEUTRAL"
+        emit_flow("eng.price_engine", "eng.intermarket_engine", STATE_LIVE,
+                  latency_ms=(time.time() - t0) * 1000.0, items=3,
+                  detail=f"DXY {dxy_change:+.2f}%, US10Y {us10y_change:+.2f}%, Risk={risk_sentiment}")
         return dxy_change, us10y_change, risk_sentiment
     except Exception as e:
         if not _im_logged["done"]:
             _im_logged["done"] = True
             print("intermarket snapshot failed:", e)
+        emit_flow("eng.price_engine", "eng.intermarket_engine", STATE_FALLBACK,
+                  latency_ms=(time.time() - t0) * 1000.0, items=0,
+                  detail=f"Intermarket snapshot failed ({type(e).__name__}: {e}) -> neutral fallback")
         return 0.0, 0.0, "NEUTRAL"
 
 
@@ -363,7 +376,10 @@ def _no_data_scan(symbol, reason="NO_DATA"):
 
 
 def _scan(symbol: str, cal=None):
+    t_scan0 = time.time()
     if not _ensure_data_feed():
+        emit_flow("eng.price_engine", "hub.tomoko_core", STATE_ERROR,
+                  items=0, detail=f"[{symbol}] PriceEngine data feed not connected")
         return _no_data_scan(symbol, reason="CONNECTING")
 
     if cal is None:
@@ -378,24 +394,43 @@ def _scan(symbol: str, cal=None):
                        ("w1", TIMEFRAME_W1, 20)):
         frames[key] = _safe_rates(symbol, tf, n)
     if frames.get("h4") is None or frames.get("h1") is None:
+        emit_flow("eng.price_engine", "hub.tomoko_core", STATE_ERROR,
+                  latency_ms=(time.time() - t_scan0) * 1000.0, items=0,
+                  detail=f"[{symbol}] Missing critical H4/H1 candle frames -> degraded CONNECTING scan")
         degraded = _no_data_scan(symbol, reason="CONNECTING")
         degraded["news"] = get_news_engine().get_news_for_symbol(symbol)
         return degraded
+
+    tf_fallbacks = []
     if frames.get("m15") is None:
         log.warning("[Scanner] M15 candles missing for %s; using H1 as fallback", symbol)
         frames["m15"] = frames["h1"]
+        tf_fallbacks.append("M15->H1")
     if frames.get("d1") is None:
         frames["d1"] = frames["h4"]
+        tf_fallbacks.append("D1->H4")
     if frames.get("w1") is None:
         frames["w1"] = frames["d1"]
+        tf_fallbacks.append("W1->D1")
     df_h4 = frames["h4"]
     df_h1 = frames["h1"]
     df_m15 = frames["m15"]
     df_d1 = frames["d1"]
     df_w1 = frames["w1"]
 
+    t_reg = time.time()
     regime = RegimeEngine(config).evaluate_mtf_trend(df_h4, df_h1, df_m15)
+    emit_flow("eng.price_engine", "eng.regime_engine",
+              STATE_FALLBACK if tf_fallbacks else STATE_LIVE,
+              latency_ms=(time.time() - t_reg) * 1000.0, items=3,
+              detail=f"[{symbol}] H4={regime.get('H4_bias')} H1={regime.get('H1_bias')} M15={regime.get('M15_bias')}"
+                     + (f" (TF fallback: {','.join(tf_fallbacks)})" if tf_fallbacks else ""))
+
+    t_lvl = time.time()
     levels = LevelsEngine().get_key_levels(df_d1, df_w1, df_h1)
+    emit_flow("eng.price_engine", "eng.levels_engine", STATE_LIVE,
+              latency_ms=(time.time() - t_lvl) * 1000.0, items=5,
+              detail=f"[{symbol}] PDH={levels.get('daily_high')} PDL={levels.get('daily_low')} WOpen={levels.get('weekly_open')}")
     daily_open = safe_float(df_d1["open"].iloc[-1]) if (df_d1 is not None and len(df_d1) > 0) else 0.0
     price = safe_float(df_h1["close"].iloc[-1])
     if daily_open <= 0.0:
@@ -414,9 +449,14 @@ def _scan(symbol: str, cal=None):
 
     # --- Fundamental engine: structural / intermarket / bias (dynamic rates) ---
     # dxy_change / us10y_change wired from intermarket snapshot (spec TODO, done here)
+    t_fnd = time.time()
     fund = FundamentalEngine().get_fundamental(symbol, dxy_change=dxy_change, us10y_change=us10y_change)
+    emit_flow("eng.intermarket_engine", "eng.fundamental_engine", STATE_LIVE,
+              latency_ms=(time.time() - t_fnd) * 1000.0, items=1,
+              detail=f"[{symbol}] {fund.get('bias')} (intermarket={fund.get('intermarket')})")
 
     # --- Watchout zones (watch areas, not signals) ---
+    t_wz = time.time()
     try:
         _ema21 = safe_float(df_h1["EMA21"].iloc[-1])
         _atr = safe_float(df_h1["ATR"].iloc[-1])
@@ -426,21 +466,40 @@ def _scan(symbol: str, cal=None):
             levels["liq_high"], levels["liq_low"], _ema21, _atr,
             symbol=symbol, h4_dir=h4.get("direction", "UP"),
         )
+        emit_flow("eng.price_engine", "eng.watchout_zones", STATE_LIVE,
+                  latency_ms=(time.time() - t_wz) * 1000.0, items=1,
+                  detail=f"[{symbol}] WatchoutZones computed ({_zone_label(watchout_zones)})")
+        emit_flow("eng.levels_engine", "eng.watchout_zones", STATE_LIVE,
+                  latency_ms=(time.time() - t_wz) * 1000.0, items=1,
+                  detail=f"[{symbol}] Levels -> WatchoutZones")
     except Exception as e:
         print("watchout zones failed:", e)
         _atr = 0.0
         watchout_zones = None
+        emit_flow("eng.price_engine", "eng.watchout_zones", STATE_ERROR,
+                  latency_ms=(time.time() - t_wz) * 1000.0, items=0,
+                  detail=f"[{symbol}] WatchoutZones failed: {type(e).__name__}: {e}")
 
     # --- Multi-timeframe Decision Zones (floating relative to current price) ---
+    t_dz = time.time()
     try:
         h1_bias = regime.get("H1_bias", "Neutral")
         htf_dir = "UP" if h1_bias == "Bullish" else ("DOWN" if h1_bias == "Bearish" else h4.get("direction", "UP"))
         decision_zones = calculate_all_decision_zones(
             df_m15, df_h1, df_h4, price, levels, symbol=symbol, htf_direction=htf_dir
         )
+        emit_flow("eng.price_engine", "eng.decision_zones", STATE_LIVE,
+                  latency_ms=(time.time() - t_dz) * 1000.0, items=3,
+                  detail=f"[{symbol}] M15/H1/H4 DecisionZones (50% CE) calculated")
+        emit_flow("eng.levels_engine", "eng.decision_zones", STATE_LIVE,
+                  latency_ms=(time.time() - t_dz) * 1000.0, items=3,
+                  detail=f"[{symbol}] Levels -> DecisionZones")
     except Exception as e:
         print("decision zones calculation failed:", e)
         decision_zones = None
+        emit_flow("eng.price_engine", "eng.decision_zones", STATE_ERROR,
+                  latency_ms=(time.time() - t_dz) * 1000.0, items=0,
+                  detail=f"[{symbol}] DecisionZones failed: {type(e).__name__}: {e}")
 
     # --- Real brain score ---
     # structural comes from H4/H1/M15 technical regime; intermarket / news come from
@@ -550,6 +609,26 @@ def _scan(symbol: str, cal=None):
     }
 
     tracker.log(full_data)
+    scan_lat = (time.time() - t_scan0) * 1000.0
+    emit_flow("eng.regime_engine", "eng.brain_score", STATE_LIVE, latency_ms=scan_lat, items=1,
+              detail=f"[{symbol}] Structural={structural}")
+    emit_flow("eng.fundamental_engine", "eng.brain_score", STATE_LIVE, latency_ms=scan_lat, items=1,
+              detail=f"[{symbol}] Intermarket={intermarket}")
+    emit_flow("eng.watchout_zones", "eng.brain_score",
+              STATE_LIVE if watchout_zones is not None else STATE_ERROR,
+              latency_ms=scan_lat, items=1, detail=f"[{symbol}] Zone={z_label or 'NONE'}")
+    emit_flow("eng.levels_engine", "eng.brain_score", STATE_LIVE, latency_ms=scan_lat, items=1,
+              detail=f"[{symbol}] LevelsScore={levels_score}")
+    emit_flow("eng.news_engine", "eng.brain_score",
+              STATE_LIVE if cal_count > 0 else STATE_FALLBACK,
+              latency_ms=scan_lat, items=cal_count, detail=f"[{symbol}] NewsScore={news_score} ({news_why_str})")
+    emit_flow("eng.brain_score", "hub.tomoko_core", STATE_LIVE, latency_ms=scan_lat, items=1,
+              detail=f"[{symbol}] Score={score} Action={action}")
+    emit_flow("eng.decision_zones", "hub.tomoko_core",
+              STATE_LIVE if decision_zones is not None else STATE_ERROR,
+              latency_ms=scan_lat, items=1, detail=f"[{symbol}] DecisionZones -> Cortex")
+    emit_flow("eng.brain_score", "vault.perf_tracker", STATE_LIVE, latency_ms=1.0, items=1,
+              detail=f"[{symbol}] Logged scan row (score={score})")
     return full_data
 
 
@@ -1112,3 +1191,216 @@ def root():
         "Expires": "0",
         "X-Tomoko-Version": "V5.0"
     })
+
+
+# ============================================================================
+# NEURAL CORTEX DATA-FLOW & HEALTH MONITOR ROUTES + AUTOMATIC HTTP MIDDLEWARE
+# ============================================================================
+def _build_probe_ctx():
+    return {
+        "price_engine": get_price_engine(),
+        "news_engine": get_news_engine(),
+        "world_news_engine": get_world_news_engine(),
+        "macro_engine": get_macro_engine(),
+        "session_briefing_engine": get_session_briefing_engine(),
+        "battle_record_engine": get_battle_record_engine(),
+        "trap_radar_engine": get_trap_radar_engine(),
+        "macro_scenario_engine": get_macro_scenario_engine(),
+        "scan_all_cache": _scan_all_cache,
+    }
+
+
+def _map_path_to_telemetry_edge(path: str):
+    """Maps an incoming FastAPI path to its (src_node, api_node) edge in the Neural HUD topology."""
+    if path in ("/api/scan_all", "/api/market_heatmap"):
+        return ("cache.scan_all", "api.scan_all")
+    if path in ("/api/prices", "/api/context"):
+        return ("eng.price_engine", "api.prices_context")
+    if path.startswith("/api/pair/") and ("/deep_dive" in path or "/candles" in path):
+        return ("hub.tomoko_core", "api.pair_deep_dive")
+    if path == "/api/macro_intel" or path.endswith("/macro_confluence"):
+        return ("eng.macro_intel", "api.macro_intel")
+    if path in ("/api/global_calendar", "/api/world_news", "/api/speeches", "/api/geopolitical_shocks"):
+        src = "eng.news_engine" if path == "/api/global_calendar" else "eng.world_news_engine"
+        return (src, "api.news_world")
+    if path.startswith("/api/briefing") or path == "/api/session_briefing":
+        return ("eng.session_briefing", "api.briefing")
+    if path.startswith("/api/traps") or (path.startswith("/api/pair/") and path.endswith("/traps")):
+        return ("eng.trap_radar", "api.traps_scenarios")
+    if path.startswith("/api/scenarios") or (path.startswith("/api/pair/") and path.endswith("/scenarios")):
+        return ("eng.macro_scenario", "api.traps_scenarios")
+    if path.endswith("/catalyst_prediction"):
+        return ("eng.us_catalyst", "api.traps_scenarios")
+    if path.startswith("/api/battle-record"):
+        return ("eng.battle_record", "api.battle_dna")
+    if path.startswith("/api/benchmarks/weekend_comparison"):
+        return ("vault.trader_dna_profile", "api.battle_dna")
+    return None
+
+
+@app.middleware("http")
+async def telemetry_http_middleware(request: Request, call_next):
+    path = request.url.path
+    # Skip telemetry's own endpoints and static JS from recursive movement emission
+    if path.startswith("/api/telemetry") or path.startswith("/ui/"):
+        return await call_next(request)
+
+    t0 = time.time()
+    edge_pair = _map_path_to_telemetry_edge(path)
+    try:
+        response = await call_next(request)
+        lat_ms = (time.time() - t0) * 1000.0
+        if edge_pair:
+            src, dst = edge_pair
+            st = STATE_LIVE if response.status_code < 400 else STATE_ERROR
+            emit_flow(
+                src, dst, st,
+                latency_ms=lat_ms, items=1,
+                detail=f"{request.method} {path} -> HTTP {response.status_code} ({round(lat_ms, 1)}ms)",
+            )
+        return response
+    except Exception as exc:
+        lat_ms = (time.time() - t0) * 1000.0
+        if edge_pair:
+            src, dst = edge_pair
+            emit_flow(
+                src, dst, STATE_ERROR,
+                latency_ms=lat_ms, items=0,
+                detail=f"{request.method} {path} -> EXCEPTION {type(exc).__name__}: {exc}",
+            )
+        raise
+
+
+@app.get("/neural", response_class=HTMLResponse)
+@app.get("/health-hud", response_class=HTMLResponse)
+def serve_neural_hud():
+    """Serves the 2nd-Monitor Landscape Neural Data-Flow & System Health HUD."""
+    html_path = os.path.join(ROOT, "ui", "neural_hud.html")
+    if not os.path.isfile(html_path):
+        raise HTTPException(status_code=404, detail="ui/neural_hud.html not found")
+    return FileResponse(html_path, headers={
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    })
+
+
+_last_probe_ts = {"ts": 0.0}
+
+
+@app.get("/api/telemetry/snapshot")
+def get_telemetry_snapshot(probe: bool = True):
+    """Returns full 44-node, 60-edge topology snapshot, live movements, and fault quarantine."""
+    now = time.time()
+    if probe and (now - _last_probe_ts["ts"]) > 2.0:
+        _last_probe_ts["ts"] = now
+        snap = run_comprehensive_probe(_build_probe_ctx())
+    else:
+        snap = get_telemetry_bus().get_snapshot()
+    return sanitize_for_json(snap)
+
+
+@app.post("/api/telemetry/probe")
+def force_telemetry_probe():
+    """
+    Executes an active end-to-end diagnostic sweep across all upstreams, core engines,
+    caches, and disk vaults so every pipe in the system is verified immediately.
+    """
+    t0 = time.time()
+    # 1. Run passive + cache/vault deep probes
+    run_comprehensive_probe(_build_probe_ctx())
+
+    # 2. Actively exercise core compute engines on XAUUSD to verify live data movement
+    try:
+        _scan("XAUUSD")
+        emit_flow("hub.tomoko_core", "cache.scan_all", STATE_LIVE,
+                  latency_ms=(time.time() - t0) * 1000.0, items=1,
+                  detail="Active diagnostic scan sweep verified on XAUUSD")
+    except Exception as e:
+        emit_flow("hub.tomoko_core", "cache.scan_all", STATE_ERROR,
+                  detail=f"Diagnostic _scan('XAUUSD') failed: {e}")
+
+    try:
+        t_tr = time.time()
+        tr = get_trap_radar_engine().scan_pair_liquidity_traps("XAUUSD")
+        emit_flow("eng.price_engine", "eng.trap_radar", STATE_LIVE,
+                  latency_ms=(time.time() - t_tr) * 1000.0, items=1,
+                  detail=f"TrapRadar XAUUSD verified (state={tr.get('trap_state', 'NONE')})")
+        emit_flow("eng.levels_engine", "eng.trap_radar", STATE_LIVE,
+                  latency_ms=(time.time() - t_tr) * 1000.0, items=1,
+                  detail="LevelsEngine -> TrapRadar verified")
+    except Exception as e:
+        emit_flow("eng.price_engine", "eng.trap_radar", STATE_ERROR, detail=f"TrapRadar error: {e}")
+
+    try:
+        t_sc = time.time()
+        sc = get_macro_scenario_engine().get_pair_catalyst_briefing("XAUUSD")
+        cats = len(sc.get("catalysts", []) or [])
+        emit_flow("eng.news_engine", "eng.macro_scenario", STATE_LIVE,
+                  latency_ms=(time.time() - t_sc) * 1000.0, items=cats,
+                  detail=f"MacroScenarioEngine XAUUSD verified ({cats} catalyst trees)")
+        emit_flow("eng.macro_intel", "eng.macro_scenario", STATE_LIVE,
+                  latency_ms=(time.time() - t_sc) * 1000.0, items=1,
+                  detail="MacroIntel -> MacroScenario verified")
+    except Exception as e:
+        emit_flow("eng.news_engine", "eng.macro_scenario", STATE_ERROR, detail=f"MacroScenario error: {e}")
+
+    try:
+        t_cp = time.time()
+        cp = get_us_catalyst_predictor().get_pair_catalyst_prediction("XAUUSD")
+        st_cp = STATE_ERROR if cp.get("status") == "ERROR" else STATE_LIVE
+        emit_flow("eng.news_engine", "eng.us_catalyst", st_cp,
+                  latency_ms=(time.time() - t_cp) * 1000.0, items=1,
+                  detail=f"USCatalystPredictor XAUUSD verified (status={cp.get('status', 'OK')})")
+        emit_flow("eng.world_news_engine", "eng.us_catalyst", st_cp,
+                  latency_ms=(time.time() - t_cp) * 1000.0, items=1,
+                  detail="WorldNews -> USCatalyst verified")
+        emit_flow("eng.macro_intel", "eng.us_catalyst", st_cp,
+                  latency_ms=(time.time() - t_cp) * 1000.0, items=1,
+                  detail="MacroIntel -> USCatalyst verified")
+    except Exception as e:
+        emit_flow("eng.news_engine", "eng.us_catalyst", STATE_ERROR, detail=f"USCatalyst error: {e}")
+
+    _last_probe_ts["ts"] = time.time()
+    return sanitize_for_json(get_telemetry_bus().get_snapshot())
+
+
+@app.get("/api/telemetry/stream")
+async def stream_telemetry(request: Request):
+    """Server-Sent Events (SSE) push stream of every live data movement packet."""
+    bus = get_telemetry_bus()
+    q = bus.subscribe()
+
+    async def event_generator():
+        try:
+            # Send initial connection handshake event
+            init_payload = json.dumps({"type": "connected", "ts": time.time()})
+            yield f"data: {init_payload}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                drained = []
+                while True:
+                    try:
+                        pkt = q.get_nowait()
+                        drained.append(pkt)
+                    except Exception:
+                        break
+                if drained:
+                    for pkt in drained:
+                        yield f"data: {json.dumps(pkt)}\n\n"
+                else:
+                    # Heartbeat ping every ~1s
+                    await asyncio.sleep(0.35)
+        finally:
+            bus.unsubscribe(q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

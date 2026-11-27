@@ -158,20 +158,59 @@ def load_unified_snapshots(symbol: str = "XAUUSD") -> Tuple[List[Dict[str, Any]]
     # Sort chronologically
     dedup_snaps.sort(key=lambda x: str(x.get("file_timestamp") or x.get("chart_date") or ""))
 
-    # Deduplicate trades
+    # Deduplicate trades (preserve distinct intraday trades by timestamp or telegram_msg_id)
     seen_trades = set()
     dedup_trades: List[Dict[str, Any]] = []
     for tr in raw_trades:
         sig = (
             str(tr.get("direction", "")),
             round(float(tr.get("entry_price", 0.0)), 3),
-            str(tr.get("chart_date", tr.get("file_timestamp", ""))),
+            str(tr.get("file_timestamp") or tr.get("chart_date", "")),
+            tr.get("telegram_msg_id"),
         )
         if sig in seen_trades:
             continue
         seen_trades.add(sig)
         dedup_trades.append(tr)
 
+    # Promote verified winning (TP_HIT) signal entry zones into M15 zone snapshots for ML tuning
+    for tr in dedup_trades:
+        if (
+            tr.get("eod_outcome") == "TP_HIT"
+            and tr.get("entry_zone_low") is not None
+            and tr.get("entry_zone_high") is not None
+        ):
+            z_low = float(tr["entry_zone_low"])
+            z_high = float(tr["entry_zone_high"])
+            if z_high > z_low:
+                z_mid = round((z_high + z_low) / 2.0, 2)
+                z_type = "SUPPORT" if str(tr.get("direction", "LONG")).upper() == "LONG" else "RESISTANCE"
+                tf = str(tr.get("timeframe", "M15")).upper()
+                ts = tr.get("file_timestamp") or str(tr.get("chart_date", ""))
+                sig = (tf, ts, round(z_low, 3), round(z_high, 3), 1)
+                if sig not in seen_snaps:
+                    seen_snaps.add(sig)
+                    synth = {
+                        "symbol": sym_up,
+                        "timeframe": tf,
+                        "file_timestamp": ts,
+                        "chart_date": tr.get("chart_date"),
+                        "live_price_on_chart": tr.get("live_price_on_chart"),
+                        "source": tr.get("source", "telegram"),
+                        "_from_trade_signal": True,
+                        "zones": [{
+                            "name": f"TG {tr.get('direction', 'LONG')} Entry Zone",
+                            "type": z_type,
+                            "low": z_low,
+                            "high": z_high,
+                            "midline": z_mid,
+                            "why_marked": tr.get("why_entered", ""),
+                        }],
+                    }
+                    synth["_utc_ts"] = parse_snapshot_utc(synth)
+                    dedup_snaps.append(synth)
+
+    dedup_snaps.sort(key=lambda x: str(x.get("file_timestamp") or x.get("chart_date") or ""))
     return dedup_snaps, dedup_trades
 
 

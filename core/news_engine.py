@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
+from core.telemetry_bus import emit_flow, STATE_LIVE, STATE_CACHED, STATE_FALLBACK, STATE_ERROR
 
 CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "decoupled_calendar_cache.json")
 
@@ -157,13 +158,21 @@ class NewsEngine:
 
     def sync_calendar(self, force: bool = False) -> Dict:
         if not force and not self.should_refresh_daily():
+            emit_flow("up.faireconomy_tradays", "eng.news_engine", STATE_CACHED,
+                      latency_ms=0.5, items=len(self.events),
+                      detail=f"Macro calendar daily cache valid ({len(self.events)} events)")
             return {"status": "cached", "count": len(self.events)}
 
+        t0 = time.time()
         log.info("[NewsEngine] Refreshing weekly macroeconomic calendar...")
         try:
             ff_raw = self.fetch_forex_factory()
         except Exception as e:
             log.warning("[NewsEngine] ForexFactory fetch failed: %s. Keeping cached events.", e)
+            emit_flow("up.faireconomy_tradays", "eng.news_engine",
+                      STATE_FALLBACK if self.events else STATE_ERROR,
+                      latency_ms=(time.time() - t0) * 1000.0, items=len(self.events),
+                      detail=f"ForexFactory fetch failed ({type(e).__name__}: {e}) -> keeping {len(self.events)} cached events")
             return {"status": "cached_fallback", "count": len(self.events), "error": str(e)}
 
         now = datetime.now(timezone.utc)
@@ -173,8 +182,14 @@ class NewsEngine:
         tradays_raw = []
         try:
             tradays_raw = self.fetch_tradays_content(date_from, date_to)
+            emit_flow("up.faireconomy_tradays", "eng.news_engine", STATE_LIVE,
+                      latency_ms=(time.time() - t0) * 1000.0, items=len(ff_raw),
+                      detail=f"Synced {len(ff_raw)} FF events + {len(tradays_raw)} Tradays actual items")
         except Exception as e:
             log.warning("[NewsEngine] Tradays content fetch warning: %s", e)
+            emit_flow("up.faireconomy_tradays", "eng.news_engine", STATE_FALLBACK,
+                      latency_ms=(time.time() - t0) * 1000.0, items=len(ff_raw),
+                      detail=f"FF synced ({len(ff_raw)} events) but Tradays widget failed: {type(e).__name__}: {e}")
 
         # Index Tradays by (currency, minute)
         td_index = {}
